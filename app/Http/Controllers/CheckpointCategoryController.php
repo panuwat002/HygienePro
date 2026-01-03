@@ -1,0 +1,55 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\CheckpointCategory;
+use Illuminate\Http\Request;
+
+class CheckpointCategoryController extends Controller
+{
+    public function index()
+    {
+        $categories = CheckpointCategory::withCount('checkpoints')->get();
+        return view('checkpoint-categories.index', compact('categories'));
+    }
+
+    public function create()
+    {
+        return view('checkpoint-categories.create');
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'icon' => 'nullable|string|max:50',
+        ]);
+
+        CheckpointCategory::create($request->all());
+
+        return redirect()->route('checkpoint-categories.index')->with('success', 'Category created successfully.');
+    }
+
+    public function edit(CheckpointCategory $checkpoint_category)
+    {
+        return view('checkpoint-categories.edit', compact('checkpoint_category'));
+    }
+
+    public function update(Request $request, CheckpointCategory $checkpoint_category)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'icon' => 'nullable|string|max:50',
+        ]);
+
+        $checkpoint_category->update($request->all());
+
+        return redirect()->route('checkpoint-categories.index')->with('success', 'Category updated successfully.');
+    }
+
+    public function destroy(CheckpointCategory $checkpoint_category)
+    {
+        $checkpoint_category->delete();
+        return redirect()->route('checkpoint-categories.index')->with('success', 'Category deleted successfully.');
+    }
+}

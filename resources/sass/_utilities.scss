@@ -1,0 +1,66 @@
+// Custom Utilities
+
+// Soft Badges
+.badge-soft-success {
+    background-color: #d1fae5; // Emerald 100
+    color: #065f46; // Emerald 800
+    border: 1px solid rgba(6, 95, 70, 0.1);
+}
+
+.badge-soft-danger {
+    background-color: #fee2e2; // Red 100
+    color: #991b1b; // Red 800
+    border: 1px solid rgba(153, 27, 27, 0.1);
+}
+
+.badge-soft-warning {
+    background-color: #fef3c7; // Amber 100
+    color: #92400e; // Amber 800
+    border: 1px solid rgba(146, 64, 14, 0.1);
+}
+
+.badge-soft-primary {
+    background-color: #dbeafe; // Blue 100
+    color: #1e40af; // Blue 800
+    border: 1px solid rgba(30, 64, 175, 0.1);
+}
+
+.badge-soft-secondary {
+    background-color: #f1f5f9; // Slate 100
+    color: #475569; // Slate 600
+    border: 1px solid rgba(71, 85, 105, 0.1);
+}
+
+// Card Improvements
+.card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border: none;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); // Tailwind Shadow SM
+
+    &.hover-lift:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); // Tailwind Shadow MD
+    }
+}
+
+// Gradients
+.bg-gradient-primary-custom {
+    background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+}
+
+// Table Styles
+.table-hover tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+// Mobile specific utilities
+@media (max-width: 576px) {
+    .modal-header .p-4 {
+        padding: 1.5rem !important;
+    }
+
+    .badge-wrap-mobile {
+        white-space: normal;
+        text-align: left;
+    }
+}

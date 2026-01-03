@@ -1,0 +1,107 @@
+// Fonts
+@import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap');
+
+// Bootstrap
+@import 'bootstrap/scss/bootstrap';
+@import 'sidebar';
+@import 'utilities';
+
+// Custom Styles
+// Custom Styles
+body {
+    font-family: 'Kanit', sans-serif;
+    /* Switch to Kanit for Thai support per design */
+    background-color: #F4F7FE;
+    /* Light blue-ish gray from design */
+}
+
+// Sidebar Styles
+#wrapper {
+    overflow-x: hidden;
+}
+
+#sidebar-wrapper {
+    min-height: 100vh;
+    width: 280px;
+    margin-left: 0;
+    transition: margin 0.25s ease-out;
+    background-color: #fff;
+    border-right: 1px solid #e5e7eb;
+    /* Flex Layout for sticky footer */
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    /* Fix sidebar on screen */
+    z-index: 1000;
+}
+
+#sidebar-wrapper .sidebar-heading {
+    padding: 1.5rem 1.5rem;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #1a1c23;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+#sidebar-wrapper .list-group {
+    width: 100%;
+}
+
+#sidebar-wrapper .list-group-item {
+    border: none;
+    padding: 1rem 1.5rem;
+    color: #64748b;
+    /* Slate 500 */
+    font-weight: 500;
+}
+
+#sidebar-wrapper .list-group-item.active {
+    background-color: #2563eb;
+    /* Primary Blue */
+    color: #fff;
+    border-radius: 0 50px 50px 0;
+    /* Rounded right edge style */
+    margin-right: 1rem;
+}
+
+#sidebar-wrapper .list-group-item:hover:not(.active) {
+    background-color: #f1f5f9;
+    color: #0f172a;
+}
+
+#sidebar-wrapper .sidebar-footer {
+    width: 100%;
+    padding: 1rem;
+    border-top: 1px solid #e5e7eb;
+    margin-top: auto;
+    /* Push to bottom */
+}
+
+/* Page Content */
+#page-content-wrapper {
+    width: 100%;
+    min-height: 100vh;
+    margin-left: 280px;
+    /* Offset for fixed sidebar */
+}
+
+/* Utils */
+.text-primary-custom {
+    color: #2563eb;
+}
+
+.btn-primary-custom {
+    background-color: #2563eb;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.btn-primary-custom:hover {
+    background-color: #1d4ed8;
+    color: white;
+}
