@@ -1,0 +1,217 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\InspectionSession;
+use App\Models\InspectionLog;
+use App\Models\Department;
+use App\Models\Checkpoint;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+use Carbon\Carbon;
+
+class InspectionService
+{
+    /**
+     * Start or Retrieve an active Inspection Session.
+     */
+    public function startSession(User $user, int $departmentId, string $type, bool $forceNew = false): InspectionSession
+    {
+        // 1. Get Auto Shift (Logic moved here or passed in? For now assume auto-shift logic is simple or passed in)
+        // 1. Get Auto Shift from DB (consistent with InspectionController::getAutoShift)
+        $time = now()->format('H:i:s');
+        $dbShift = \App\Models\Shift::where(function($q) use ($time) {
+            $q->where('start_time', '<=', $time)->where('end_time', '>=', $time);
+        })->orWhere(function($q) use ($time) {
+            // Night shift spanning midnight (e.g., 22:00 - 06:00)
+            $q->where('start_time', '>', 'end_time')
+              ->where(function($sub) use ($time) {
+                  $sub->where('start_time', '<=', $time)
+                      ->orWhere('end_time', '>=', $time);
+              });
+        })->first();
+
+        if ($dbShift && in_array(strtolower($dbShift->shift_name), ['morning', 'afternoon', 'night'])) {
+            $shift = strtolower($dbShift->shift_name);
+        } else {
+            // Hardcoded Fallback based on start times:
+            // Morning: 06:00 - 12:59
+            // Afternoon: 13:00 - 18:59
+            // Night: 19:00 - 05:59
+            $currentHour = now()->hour;
+            if ($currentHour >= 6 && $currentHour < 13) {
+                $shift = 'morning';
+            } elseif ($currentHour >= 13 && $currentHour < 19) {
+                $shift = 'afternoon';
+            } else {
+                $shift = 'night';
+            }
+        }
+        $today = now()->toDateString();
+
+        return DB::transaction(function () use ($user, $departmentId, $type, $today, $shift, $forceNew) {
+            $session = InspectionSession::where('department_id', $departmentId)
+                ->where('inspection_date', $today)
+                ->where('shift', $shift)
+                ->where('type', $type)
+                ->latest('id')
+                ->first();
+
+            if ($session && in_array($session->status, ['in_progress', 'paused'], true)) {
+                if ($forceNew) {
+                    throw ValidationException::withMessages([
+                        'session' => 'มีเซสชันที่ยังดำเนินการอยู่ ไม่สามารถเริ่มรอบใหม่ได้ (Active Session Exists)',
+                    ]);
+                }
+
+                if ($session->status === 'paused') {
+                    $session->update(['status' => 'in_progress']);
+                }
+
+                return $session;
+            }
+
+            $nextRound = $session ? $session->round + 1 : 1;
+
+            return InspectionSession::create([
+                'department_id' => $departmentId,
+                'inspection_date' => $today,
+                'shift' => $shift,
+                'inspector_id' => $user->id,
+                'status' => 'in_progress',
+                'type' => $type,
+                'round' => $nextRound,
+            ]);
+        });
+    }
+
+    /**
+     * Finish a session (Inspector Done).
+     */
+    public function finishSession(InspectionSession $session): void
+    {
+        if ($session->status === 'completed') {
+            return; // Already done
+        }
+
+        $session->update([
+            'status' => 'completed',
+        ]);
+    }
+
+    /**
+     * Verify a session (Supervisor).
+     */
+    public function verifySession(InspectionSession $session, User $verifier): void
+    {
+        if (!$verifier->can('verify')) {
+             throw new \Exception("User not authorized to verify.");
+        }
+
+        // Logic: Cannot verify if there are pending re-cleans?
+        // Or specific logic from controller. 
+        // For now, we update the session level strictly.
+        
+        $session->update([
+            'verified_by' => $verifier->id,
+            'verified_at' => now(),
+            // Status could arguably translate to 'Verified' state if we added a specific column,
+            // but currently system uses verified_at not null.
+        ]);
+        
+        // Also bulk approve logs if implementation requires it? 
+        // Current controller logic seems to verified individual groups of logs. 
+        // We will keep session-level verification simple.
+    }
+
+    /**
+     * Approve a session (Manager). This Finalizes and Locks.
+     */
+    public function approveSession(InspectionSession $session, User $approver): void
+    {
+        if (!$approver->can('approve')) {
+             throw new \Exception("User not authorized to approve.");
+        }
+
+        DB::transaction(function () use ($session, $approver) {
+            $session->update([
+                'approved_by' => $approver->id,
+                'approved_at' => now(),
+                'is_locked' => true
+            ]);
+
+            // Optional: Bulk approve all logs inside?
+            // InspectionLog::where('session_id', $session->id)->update(['verification_status' => 'approved']);
+        });
+    }
+
+    /**
+     * Store a Log Entry (Single Checkpoint).
+     */
+    public function storeLog(InspectionSession $session, int $employeeId, int $checkpointId, array $data, ?string $photoPath = null): InspectionLog
+    {
+        if ($session->is_locked) {
+            throw ValidationException::withMessages(['session' => 'Session is Locked.']);
+        }
+
+        // Check Completion Lock (unless fixing reclean)
+        if ($session->status === 'completed') {
+             $isRecleanFix = InspectionLog::where('session_id', $session->id)
+                ->where('employee_id', $employeeId)
+                ->where('checkpoint_id', $checkpointId)
+                ->where('verification_status', 'reclean')
+                ->exists();
+                
+             if (!$isRecleanFix) {
+                 throw ValidationException::withMessages(['session' => 'Session is Completed.']);
+             }
+        }
+
+        return DB::transaction(function () use ($session, $employeeId, $checkpointId, $data, $photoPath) {
+            $logData = [
+                'session_id' => $session->id,
+                'employee_id' => $employeeId,
+                'checkpoint_id' => $checkpointId,
+                'result' => $data['result'],
+                'correction_action' => $data['correction'] ?? null,
+                'inspected_at' => now(),
+                'dept_snapshot' => $session->department->dept_name ?? 'N/A',
+            ];
+
+            if ($photoPath) {
+                $logData['photo_path'] = $photoPath;
+            }
+
+            $pendingLog = InspectionLog::where('employee_id', $employeeId)
+                ->where('checkpoint_id', $checkpointId)
+                ->where('verification_status', 'reclean')
+                ->whereDoesntHave('rechecks')
+                ->latest()
+                ->first();
+
+            if ($pendingLog) {
+                $logData['verification_status'] = null;
+                $logData['verified_at'] = null;
+                $logData['verifier_id'] = null;
+                $logData['verification_comment'] = null;
+
+                $isSameSessionRow = $pendingLog->session_id === $session->id;
+
+                if (!$isSameSessionRow) {
+                    $logData['parent_id'] = $pendingLog->id;
+                    return InspectionLog::create($logData);
+                }
+            }
+
+            return InspectionLog::updateOrCreate(
+                [
+                    'session_id' => $session->id,
+                    'employee_id' => $employeeId,
+                    'checkpoint_id' => $checkpointId,
+                ],
+                $logData
+            );
+        });
+    }
+}
