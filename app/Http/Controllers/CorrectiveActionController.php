@@ -157,7 +157,7 @@ class CorrectiveActionController extends Controller
         return back()->with('success', 'Defect escalated' . ($assigneeId ? ' & assigned' : '') . ' successfully.');
     }
 
-    public function resolve(Request $request) 
+    public function resolve(Request $request)
     {
         $request->validate([
             'action_id' => 'required|exists:corrective_actions,id',
@@ -165,7 +165,12 @@ class CorrectiveActionController extends Controller
             'proof_image' => 'required|image|max:10240' // 10MB
         ]);
 
-        $action = \App\Models\CorrectiveAction::find($request->action_id);
+        $action = \App\Models\CorrectiveAction::findOrFail($request->action_id);
+
+        $user = auth()->user();
+        if ($action->assigned_to !== $user->id && $action->escalated_by !== $user->id && !$user->isAdmin() && !$user->isQA()) {
+            return back()->with('error', 'คุณไม่มีสิทธิ์แก้ไขรายการนี้ (Only assigned user or escalator can resolve)');
+        }
         
         $path = $request->file('proof_image')->store('corrective_proofs', 'public');
 

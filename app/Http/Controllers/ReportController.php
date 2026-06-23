@@ -325,8 +325,7 @@ class ReportController extends Controller
         });
 
         // Collect Signatures (Unique Managers and Supervisors involved)
-        // We take the verified_by and approved_by from the SESSIONS, not just logs.
-        $verifierIds = $sessions->pluck('verified_by')->unique()->filter();
+        $verifierIds = $sessions->flatMap(fn($s) => $s->logs->pluck('verifier_id'))->unique()->filter();
         $approverIds = $sessions->pluck('approved_by')->unique()->filter();
 
         $verifiers = \App\Models\User::whereIn('id', $verifierIds)->get();

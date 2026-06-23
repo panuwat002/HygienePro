@@ -84,9 +84,12 @@ class InspectionService
     protected function notifySupervisorsStarted(InspectionSession $session): void
     {
         try {
-            $supervisors = User::where('role', 'supervisor')->orWhere('level', 4)->get()->filter(function($u) {
-                return $u->isQA();
-            });
+            $supervisors = User::with('department')
+                ->where(function($q) {
+                    $q->where('role', 'supervisor')->orWhere('level', 4);
+                })
+                ->get()
+                ->filter(fn($u) => $u->isQA());
 
             foreach ($supervisors as $supervisor) {
                 if ($supervisor->email) {
@@ -101,9 +104,12 @@ class InspectionService
     protected function notifySupervisorsFinished(InspectionSession $session): void
     {
         try {
-            $supervisors = User::where('role', 'supervisor')->orWhere('level', 4)->get()->filter(function($u) {
-                return $u->isQA();
-            });
+            $supervisors = User::with('department')
+                ->where(function($q) {
+                    $q->where('role', 'supervisor')->orWhere('level', 4);
+                })
+                ->get()
+                ->filter(fn($u) => $u->isQA());
 
             $logs = InspectionLog::where('session_id', $session->id)->get();
             $stats = [
@@ -160,7 +166,8 @@ class InspectionService
             $session->update([
                 'approved_by' => $approver->id,
                 'approved_at' => now(),
-                'is_locked' => true
+                'is_locked' => true,
+                'locked_at' => now(),
             ]);
 
             // Optional: Bulk approve all logs inside?
@@ -209,6 +216,7 @@ class InspectionService
                 ->where('checkpoint_id', $checkpointId)
                 ->where('verification_status', 'reclean')
                 ->whereDoesntHave('rechecks')
+                ->whereHas('session', fn($q) => $q->where('department_id', $session->department_id))
                 ->latest()
                 ->first();
 

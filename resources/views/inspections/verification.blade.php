@@ -586,7 +586,7 @@
                                 </form>
                             </div>
 
-                        @elseif($group->is_approved && !$group->is_acknowledged && $group->status === 'fail' && (Auth::user()->department_id == $group->department_id || Auth::user()->isAdmin()))
+                        @elseif($group->is_approved && !$group->is_acknowledged && $group->status === 'fail' && Auth::check() && (Auth::user()->department_id == $group->department_id || Auth::user()->isAdmin()))
                             {{-- Gap 3: Dept Head Acknowledge Form --}}
                             <div class="w-100">
                                 <div class="alert alert-warning border-0 bg-warning bg-opacity-10 mb-3 d-flex align-items-center">
@@ -702,7 +702,8 @@ function updateBulkActionUI() {
     const checkboxes = document.querySelectorAll('.item-checkbox:checked');
     const bulkBar = document.getElementById('bulkActionBar');
     const countSpan = document.getElementById('selectedCount');
-    
+    if (!bulkBar || !countSpan) return;
+
     if (checkboxes.length > 0) {
         countSpan.textContent = checkboxes.length;
         bulkBar.style.display = 'flex';

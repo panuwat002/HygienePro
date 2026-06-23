@@ -771,7 +771,7 @@ class InspectionController extends Controller
                     }
                     // Photo validation could be dynamic based on rules, keeping simple here
                     if (!$request->hasFile("logs.$checkpointId.photo")) {
-                         $cpTitle = Checkpoint::find($checkpointId)->title ?? 'รายการที่ไม่ผ่าน';
+                         $cpTitle = Checkpoint::find($checkpointId)?->title ?? 'รายการที่ไม่ผ่าน';
                          return back()->with('error', "กรุณาถ่ายรูปหลักฐาน (Evidence Photo) สำหรับ: $cpTitle");
                     }
                 }
@@ -840,9 +840,11 @@ class InspectionController extends Controller
 
         if ($scopeDeptId) {
             $query->where(function($q) use ($scopeDeptId) {
-                $q->whereHas('employee', function($subQ) use ($scopeDeptId) {
-                    $subQ->where('department_id', $scopeDeptId);
-                })->orWhereNull('employee_id');
+                $q->whereHas('employee', fn($subQ) => $subQ->where('department_id', $scopeDeptId))
+                  ->orWhere(function($q2) use ($scopeDeptId) {
+                      $q2->whereNull('employee_id')
+                         ->whereHas('session', fn($sq) => $sq->where('department_id', $scopeDeptId));
+                  });
             });
         }
 

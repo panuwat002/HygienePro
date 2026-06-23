@@ -21,14 +21,9 @@ class EnsureMatrixPermission
             abort(401);
         }
 
-        // 1. Check Role
+        // 1. Check Role (admin bypasses role check)
         if ($role !== 'any' && $user->role !== $role && $user->role !== 'admin') {
-             // Hierarchy check: Manager can do Supervisor work? Maybe not strictly in this matrix.
-             // PRD says: Staff = Inputter, Sup = Verifier. Roles are distinct.
-             // But Admin is usually superuser.
-             if ($user->role !== 'admin') { 
-                abort(403, "Unauthorized: Requires role {$role}");
-             }
+            abort(403, "Unauthorized: Requires role {$role}");
         }
 
         // 2. Check Level

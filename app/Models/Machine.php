@@ -20,6 +20,10 @@ class Machine extends Model
         'is_active',
     ];
 
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
+
     public function location()
     {
         return $this->belongsTo(Location::class);

@@ -167,6 +167,10 @@ class AreaInspectionController extends Controller
 
     public function storeBulk(Request $request, InspectionSession $session)
     {
+        if ($session->inspector_id !== Auth::id() && !Auth::user()->isAdmin()) {
+            abort(403, 'Unauthorized: not session owner');
+        }
+
         if ($session->isLocked()) {
             return redirect()->route('inspection.dashboard', $session->type)
                 ->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)');
@@ -206,6 +210,7 @@ class AreaInspectionController extends Controller
                 $locationId = $targetId;
             } else {
                 $machine = \App\Models\Machine::find($targetId);
+                if (!$machine) continue;
                 $machineId = $targetId;
                 $locationId = $machine->location_id;
             }
