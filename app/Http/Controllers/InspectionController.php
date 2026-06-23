@@ -62,8 +62,8 @@ class InspectionController extends Controller
         $row = (clone $todayBase)->selectRaw("COUNT(DISTINCT {$entityExpr}) as cnt")->first();
         $inspectionsToday = $row ? (int) $row->cnt : 0;
 
-        // 2. Pending Verification
-        $pendingBase = InspectionLog::where('verification_status', 'pending');
+        // 2. Pending Verification (unverified logs have NULL verification_status)
+        $pendingBase = InspectionLog::whereNull('verification_status');
         $applyScope($pendingBase);
         $row = $pendingBase->selectRaw("COUNT(DISTINCT {$entityExpr}) as cnt")->first();
         $pendingVerificationCount = $row ? (int) $row->cnt : 0;
@@ -166,7 +166,9 @@ class InspectionController extends Controller
             ->orderBy('verified_at', 'desc')
             ->get()
             ->groupBy(function($log) {
-                return $log->session_id . '_' . ($log->employee_id ? 'e' . $log->employee_id : 'l' . $log->location_id);
+                if ($log->employee_id) return $log->session_id . '_e' . $log->employee_id;
+                if ($log->machine_id) return $log->session_id . '_m' . $log->machine_id;
+                return $log->session_id . '_l' . ($log->location_id ?? 0);
             });
 
         // 3. Current Session Status & Remaining Items Logic
@@ -439,13 +441,18 @@ class InspectionController extends Controller
         // Assuming DB requires it based on previous code.
         $deptId = $request->department_id;
         if (empty($deptId) && ($type === 'area' || $type === 'machine')) {
-            $deptId = Auth::user()->department_id ?? Department::first()->id;
+            $deptId = Auth::user()->department_id ?? Department::first()?->id;
+        }
+
+        if (empty($deptId)) {
+            return redirect()->route('inspection.dashboard', $type)
+                ->with('error', 'ไม่พบแผนกในระบบ กรุณาสร้างแผนกก่อน (No department found)');
         }
 
         try {
             $session = $this->inspectionService->startSession(
                 Auth::user(),
-                $request->department_id ?? $deptId,
+                (int) ($request->department_id ?? $deptId),
                 $type,
                 $request->boolean('force_new_round')
             );
@@ -637,12 +644,13 @@ class InspectionController extends Controller
             $checkpointQuery->where('type', $checkpointType);
         }
 
-        if ($employee->location_id) {
-            $checkpoints = $employee->location->checkpoints()
+        $employeeLocation = $employee->location_id ? $employee->location : null;
+        if ($employeeLocation) {
+            $checkpoints = $employeeLocation->checkpoints()
                 ->where('is_active', true)
                 ->when($checkpointType, fn($q) => $q->where('type', $checkpointType))
                 ->get();
-            
+
             // If the location has NO checkpoints mapped, fall back to global ones
             if ($checkpoints->isEmpty()) {
                 $checkpoints = $checkpointQuery->get();
@@ -1204,14 +1212,17 @@ class InspectionController extends Controller
             'verification_comment' => $request->comment,
         ]);
 
-        // Reset Session Status to allow editing (only when not fully approved/locked)
-        $log = $logs->first();
-        if ($log && $log->session && !$log->session->isLocked()) {
-            $log->session->update(['status' => 'in_progress']);
+        // Reset ALL affected sessions to allow editing (not just the first)
+        $affectedSessions = $logs->pluck('session')->filter()->unique('id');
+        foreach ($affectedSessions as $affectedSession) {
+            if (!$affectedSession->isLocked()) {
+                $affectedSession->update(['status' => 'in_progress']);
+            }
         }
 
-        // Send Notification to Inspector
-        $inspector = $log->session->inspector;
+        // Send Notification to Inspector(s)
+        $log = $logs->first();
+        $inspector = $log?->session?->inspector;
         if ($inspector) {
              $inspector->notify(new \App\Notifications\InspectionRejectedNotification($log->session, $request->comment));
         }
@@ -1234,17 +1245,17 @@ class InspectionController extends Controller
         ]);
 
         $user = Auth::user();
-        
-        // Security: Only allow acknowledging logs from their own department
-        $logs = InspectionLog::whereIn('id', $request->ids)
-                ->whereHas('employee', function($q) use ($user) {
-                    $q->where('department_id', $user->department_id);
-                })
-                ->get();
 
-        // Admin can acknowledge any department
+        // Admin can acknowledge any department; Dept Head scoped via session's department
         if ($user->isAdmin()) {
             $logs = InspectionLog::whereIn('id', $request->ids)->get();
+        } else {
+            $logs = InspectionLog::with('session')->whereIn('id', $request->ids)
+                ->where(function ($q) use ($user) {
+                    $q->whereHas('employee', fn($eq) => $eq->where('department_id', $user->department_id))
+                      ->orWhereHas('session', fn($sq) => $sq->where('department_id', $user->department_id));
+                })
+                ->get();
         }
 
         if ($logs->isEmpty()) {
@@ -1274,14 +1285,24 @@ class InspectionController extends Controller
             'ids' => 'required|array',
         ]);
 
-        // Granular Approval: Update status to 'approved' for specific logs
-        $approvedLogs = InspectionLog::with('session')->whereIn('id', $request->ids)->get();
+        $user = Auth::user();
+
+        // Department scope: non-admin managers can only approve their own department
+        $logsQuery = InspectionLog::with('session')->whereIn('id', $request->ids);
+        if (!$user->isAdmin() && !$user->hasGlobalVisibility()) {
+            $logsQuery->whereHas('session', fn($q) => $q->where('department_id', $user->department_id));
+        }
+        $approvedLogs = $logsQuery->get();
+
+        if ($approvedLogs->isEmpty()) {
+            return back()->with('error', 'ไม่พบรายการในแผนกของคุณ (No items found in your department)');
+        }
 
         if ($approvedLogs->contains(fn ($log) => $log->session?->isLocked())) {
             return back()->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถอนุมัติเพิ่มได้ (Session Locked)');
         }
 
-        InspectionLog::whereIn('id', $request->ids)->update([
+        InspectionLog::whereIn('id', $approvedLogs->pluck('id'))->update([
             'verification_status' => 'approved',
             'verified_at' => now(), // Treat approval as a stamp
             'verifier_id' => Auth::id(),

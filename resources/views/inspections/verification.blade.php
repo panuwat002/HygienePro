@@ -193,7 +193,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="8" class="text-center py-5 text-muted">
+                                    <td colspan="{{ ($activeTab === 'pending' || $activeTab === 'completed') ? 9 : 8 }}" class="text-center py-5 text-muted">
                                         <i class="bi bi-clipboard-x fs-1 d-block mb-3"></i>
                                         ไม่พบข้อมูลการตรวจในวันนี้
                                     </td>
@@ -686,7 +686,6 @@ function submitReclean(modalId, logIds) {
         idsContainer.appendChild(input);
     });
     
-    document.getElementById('recleanComment').value = comment;
     document.getElementById('recleanComment').value = comment;
     
     console.log('Submitting Re-clean with IDs:', logIds, 'Comment:', comment);

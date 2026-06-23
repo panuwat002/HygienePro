@@ -68,7 +68,7 @@
                                 <h6 class="fw-bold mb-1">{{ $task['schedule']->title }}</h6>
                                 <div class="small text-muted">
                                     <i class="bi bi-clock me-1"></i>{{ $task['formatted_window'] }} | 
-                                    <i class="bi bi-crosshair me-1"></i>{{ $task['schedule']->targetable->name ?? $task['schedule']->targetable->location_name ?? 'Unknown' }}
+                                    <i class="bi bi-crosshair me-1"></i>{{ $task['schedule']->targetable?->name ?? $task['schedule']->targetable?->location_name ?? 'Unknown' }}
                                     @if($task['schedule']->department)
                                         | <i class="bi bi-building me-1"></i>{{ $task['schedule']->department->dept_name }}
                                     @endif
@@ -354,8 +354,8 @@
 
     @push('scripts')
     <script>
+    let currentSessionData = null;
     document.addEventListener('DOMContentLoaded', function() {
-        let currentSessionData = null;
         const deptSelect = document.getElementById('department_id');
         const overviewContainer = document.getElementById('location-overview');
         const cardsContainer = document.getElementById('location-cards');
@@ -410,12 +410,20 @@
                         refreshSessionUI(data);
                     } else {
                         const errorMsg = data.message || 'ไม่สามารถโหลดข้อมูลได้';
-                        cardsContainer.innerHTML = `<div class="col-12 text-center text-danger">${errorMsg}</div>`;
+                        const errDiv = document.createElement('div');
+                        errDiv.className = 'col-12 text-center text-danger';
+                        errDiv.textContent = errorMsg;
+                        cardsContainer.innerHTML = '';
+                        cardsContainer.appendChild(errDiv);
                     }
                 })
                 .catch(err => {
                     console.error('Fetch Error:', err);
-                    cardsContainer.innerHTML = `<div class="col-12 text-center text-danger">เกิดข้อผิดพลาดในการเชื่อมต่อ หรือ SQL Error <br><small>${err.message}</small></div>`;
+                    const errDiv = document.createElement('div');
+                    errDiv.className = 'col-12 text-center text-danger';
+                    errDiv.textContent = 'เกิดข้อผิดพลาดในการเชื่อมต่อ: ' + err.message;
+                    cardsContainer.innerHTML = '';
+                    cardsContainer.appendChild(errDiv);
                 });
         }
 

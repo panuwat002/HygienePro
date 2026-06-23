@@ -35,16 +35,14 @@ class InspectionService
 
             if ($session && in_array($session->status, ['in_progress', 'paused'], true)) {
                 if ($forceNew) {
-                    throw ValidationException::withMessages([
-                        'session' => 'มีเซสชันที่ยังดำเนินการอยู่ ไม่สามารถเริ่มรอบใหม่ได้ (Active Session Exists)',
-                    ]);
+                    $session->update(['status' => 'completed']);
+                    // Fall through to create a new round below
+                } else {
+                    if ($session->status === 'paused') {
+                        $session->update(['status' => 'in_progress']);
+                    }
+                    return $session;
                 }
-
-                if ($session->status === 'paused') {
-                    $session->update(['status' => 'in_progress']);
-                }
-
-                return $session;
             }
 
             $nextRound = $session ? $session->round + 1 : 1;
