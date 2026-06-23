@@ -137,7 +137,7 @@
                                                 </div>
                                                 <span class="small fw-bold text-dark">{{ $emp->fullname }}</span>
                                             </div>
-                                            <a href="{{ route('inspection.checklist', ['session' => $currentSession->id, 'hash' => base64_encode($emp->id)]) }}" class="btn btn-sm btn-outline-primary rounded-pill px-3">
+                                            <a href="{{ route('inspection.checklist', ['session' => $currentSession->id, 'hash' => $emp->qr_code_hash ?? $emp->employee_id]) }}" class="btn btn-sm btn-outline-primary rounded-pill px-3">
                                                 ตรวจ
                                             </a>
                                         </li>

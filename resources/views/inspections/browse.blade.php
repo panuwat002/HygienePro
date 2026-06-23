@@ -45,7 +45,7 @@
             <div class="mb-3 animate-in animate-in-delay-2">
                 <div class="input-group input-group-lg">
                     <span class="input-group-text bg-white border-end-0" style="border-radius: var(--radius-md) 0 0 var(--radius-md);"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" id="employee-search" class="form-control border-start-0 ps-0" placeholder="ค้นหาชื่อ, รหัสพนักงาน..." style="border-radius: 0 var(--radius-md) var(--radius-md) 0;" autofocus>
+                    <input type="text" id="employee-search" class="form-control border-start-0 ps-0" placeholder="ค้นหาชื่อ, รหัสพนักงาน..." style="border-radius: 0 var(--radius-md) var(--radius-md) 0;" autofocus value="{{ $search }}">
                 </div>
                 <div class="form-check form-switch mt-2 ps-5 ms-1">
                     <input class="form-check-input" type="checkbox" id="toggleShowAll" {{ $showAll ? 'checked' : '' }} style="cursor: pointer; transform: scale(1.1);">
@@ -241,7 +241,9 @@
             window.confirmFinishSession = function(btn) {
                 Swal.fire({
                     title: 'ยืนยันสรุปยอดการตรวจ?',
-                    text: "หลังจากจบงานแล้วจะไม่สามารถตรวจเพิ่มในรอบนี้ได้อีก",
+                    html: 'ตรวจแล้ว <strong>{{ $inspectedCount }}</strong> จาก <strong>{{ $totalEmployees }}</strong> คน ({{ $progressPercent }}%)'
+                        + ({{ $totalEmployees - $inspectedCount }} > 0 ? '<br><span class="text-danger">ยังเหลืออีก {{ $totalEmployees - $inspectedCount }} คนที่ยังไม่ได้ตรวจ</span>' : '')
+                        + '<br><small class="text-muted">หลังจากจบงานแล้วจะไม่สามารถตรวจเพิ่มในรอบนี้ได้อีก</small>',
                     icon: 'question',
                     showCancelButton: true,
                     confirmButtonColor: '#16a34a',
@@ -268,7 +270,13 @@
                     } else {
                         url.searchParams.set('show_all', '0');
                     }
-                    
+
+                    // Preserve current search query
+                    const currentSearch = searchInput.value.trim();
+                    if (currentSearch) {
+                        url.searchParams.set('q', currentSearch);
+                    }
+
                     // Show loading state
                     document.body.style.opacity = '0.5';
                     window.location.href = url.toString();

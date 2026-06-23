@@ -162,11 +162,18 @@
                 </div>
 
                 <div class="d-grid mt-5 pb-5">
-                    <button type="submit" class="btn btn-primary-custom btn-lg shadow">
+                    <button type="submit" id="submit-inspection-btn" class="btn btn-primary-custom btn-lg shadow">
                          บันทึกผลการตรวจ <i class="bi bi-save ms-2"></i>
                     </button>
                 </div>
             </form>
+            <script>
+                document.querySelector('form[action*="inspection"]').addEventListener('submit', function() {
+                    var btn = document.getElementById('submit-inspection-btn');
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> กำลังบันทึก...';
+                });
+            </script>
         </div>
     </div>
     @include('inspections.alert_script')

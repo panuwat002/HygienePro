@@ -305,7 +305,9 @@
             window.confirmFinishSession = function(btn) {
                 Swal.fire({
                     title: 'ยืนยันสรุปยอดการตรวจ?',
-                    text: "คุณต้องการบันทึกจบงานรอบนี้ใช่หรือไม่? หลังจากจบงานแล้วจะไม่สามารถสแกนเพิ่มในรอบนี้ได้อีก",
+                    html: 'ตรวจแล้ว <strong>{{ $inspectedCount }}</strong> จาก <strong>{{ $totalEmployees }}</strong> คน ({{ $progressPercent }}%)'
+                        + ({{ $totalEmployees - $inspectedCount }} > 0 ? '<br><span class="text-danger">ยังเหลืออีก {{ $totalEmployees - $inspectedCount }} คนที่ยังไม่ได้ตรวจ</span>' : '')
+                        + '<br><small class="text-muted">หลังจากจบงานแล้วจะไม่สามารถสแกนเพิ่มในรอบนี้ได้อีก</small>',
                     icon: 'question',
                     showCancelButton: true,
                     confirmButtonColor: '#16a34a',
@@ -323,12 +325,24 @@
             }
         });
 
-        // Define global function for manual input toggle
         function toggleManualInput() {
-            let code = prompt("กรุณากรอกรหัสพนักงาน (QR Hash):");
-            if (code) {
-                window.location.href = `/inspection/session/{{ $session->id }}/verify/${encodeURIComponent(code.trim())}`;
-            }
+            Swal.fire({
+                title: 'กรอกรหัสพนักงาน',
+                input: 'text',
+                inputPlaceholder: 'รหัสพนักงาน เช่น EMP001',
+                inputAttributes: { autocomplete: 'off', inputmode: 'text' },
+                showCancelButton: true,
+                confirmButtonText: '<i class="bi bi-search me-1"></i> ค้นหา',
+                cancelButtonText: 'ยกเลิก',
+                confirmButtonColor: '#0d6efd',
+                inputValidator: (value) => {
+                    if (!value || !value.trim()) return 'กรุณากรอกรหัสพนักงาน';
+                }
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    window.location.href = `/inspection/session/{{ $session->id }}/verify/${encodeURIComponent(result.value.trim())}`;
+                }
+            });
         }
     </script>
     @endpush
