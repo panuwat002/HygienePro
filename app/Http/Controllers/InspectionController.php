@@ -495,6 +495,8 @@ class InspectionController extends Controller
     
     public function browseEmployees(InspectionSession $session, Request $request)
     {
+        $this->authorizeSessionOwner($session);
+
         if ($session->isLocked()) {
             return redirect()->route('inspection.dashboard', $session->type)
                 ->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)');
@@ -548,6 +550,8 @@ class InspectionController extends Controller
 
     public function scan(InspectionSession $session)
     {
+        $this->authorizeSessionOwner($session);
+
         if ($session->isLocked()) {
             return redirect()->route('inspection.dashboard', $session->type)
                 ->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)');
@@ -562,6 +566,8 @@ class InspectionController extends Controller
 
     public function pauseSession(InspectionSession $session)
     {
+        $this->authorizeSessionOwner($session);
+
         if ($session->status !== 'completed') {
             $session->update(['status' => 'paused']);
         }
@@ -572,6 +578,8 @@ class InspectionController extends Controller
 
     public function finishSession(InspectionSession $session)
     {
+        $this->authorizeSessionOwner($session);
+
         $this->inspectionService->finishSession($session);
 
         return redirect()->route('inspection.dashboard', $session->type)
@@ -580,6 +588,8 @@ class InspectionController extends Controller
 
     public function showChecklist(InspectionSession $session, $hash, Request $request)
     {
+        $this->authorizeSessionOwner($session);
+
         if ($session->isLocked()) {
             return redirect()->route('inspection.dashboard', $session->type)
                 ->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)');
@@ -681,6 +691,8 @@ class InspectionController extends Controller
 
     public function storeLog(Request $request, InspectionSession $session)
     {
+        $this->authorizeSessionOwner($session);
+
         if ($session->isLocked()) {
             return redirect()->route('inspection.dashboard', $session->type)
                 ->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)');
@@ -1274,6 +1286,13 @@ class InspectionController extends Controller
             : 'อนุมัติรายการที่เลือกเรียบร้อย (ยังมีรายการอื่นในเซสชันที่รออนุมัติ)';
 
         return back()->with('success', $message);
+    }
+
+    private function authorizeSessionOwner(InspectionSession $session): void
+    {
+        if ($session->inspector_id !== Auth::id() && !Auth::user()->isAdmin()) {
+            abort(403, 'คุณไม่มีสิทธิ์เข้าถึงเซสชันนี้ (Unauthorized: not session owner)');
+        }
     }
 
     private function getAutoShift()

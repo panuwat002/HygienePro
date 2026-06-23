@@ -58,6 +58,7 @@ class InspectionService
                 ->where('inspection_date', $today)
                 ->where('shift', $shift)
                 ->where('type', $type)
+                ->lockForUpdate()
                 ->latest('id')
                 ->first();
 

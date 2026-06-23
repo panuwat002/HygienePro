@@ -32,9 +32,9 @@ Route::middleware('auth')->group(function () {
     // Inspection Routes
     Route::middleware(['auth'])->group(function () {
         Route::middleware(['can:inspect'])->group(function () {
-            Route::get('/inspection/{type}', [InspectionController::class, 'dashboard'])->name('inspection.dashboard');
-            Route::get('/inspection/summary/{type}/{department}', [InspectionController::class, 'getDepartmentStats'])->name('inspection.stats');
-            Route::post('/inspection/start/{type}', [InspectionController::class, 'startSession'])->name('inspection.start');
+            Route::get('/inspection/{type}', [InspectionController::class, 'dashboard'])->name('inspection.dashboard')->whereIn('type', ['personnel', 'area', 'machine']);
+            Route::get('/inspection/summary/{type}/{department}', [InspectionController::class, 'getDepartmentStats'])->name('inspection.stats')->whereIn('type', ['personnel', 'area', 'machine']);
+            Route::post('/inspection/start/{type}', [InspectionController::class, 'startSession'])->name('inspection.start')->whereIn('type', ['personnel', 'area', 'machine']);
             
             // Area Inspection Routes
             Route::get('/inspection/area/bulk/{department}', [App\Http\Controllers\AreaInspectionController::class, 'showBulkChecklist'])->name('inspection.area.bulk');
