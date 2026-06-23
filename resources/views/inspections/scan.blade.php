@@ -2,8 +2,11 @@
     @section('header', 'ตรวจพนักงาน')
 
     @php
-        // Calculate progress percentage
-        $totalEmployees = $session->department->employees()->where('is_active', true)->count();
+        // Calculate progress percentage (filtered by session's shift)
+        $totalEmployees = $session->department->employees()
+            ->where('is_active', true)
+            ->whereHas('shift', fn($q) => $q->where('shift_name', $session->shift))
+            ->count();
         $inspectedCount = $session->logs()->distinct('employee_id')->count();
         $progressPercent = $totalEmployees > 0 ? round(($inspectedCount / $totalEmployees) * 100) : 0;
     @endphp

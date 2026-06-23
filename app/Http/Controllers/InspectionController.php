@@ -372,22 +372,24 @@ class InspectionController extends Controller
                 }
             }
 
-            // 3. Map Inspection Data
-            $locations->transform(function ($loc) use ($inspectedEmployeeIds, $inspectedLocationIds, $inspectedMachineIds, $type, $department) {
-                if ($type === 'personnel') {
-                    // This logic needs to be adjusted for 'all' departments if employee count is desired
-                    // For now, it assumes a single department context for employee filtering
-                    $locEmployees = $loc->employees()
-                                    ->when($department !== 'all', function ($q) use ($department) {
-                                        $deptModel = is_numeric($department) ? Department::find($department) : $department;
-                                        $q->where('department_id', $deptModel->id);
-                                    })
-                                    ->where('is_active', true)
-                                    ->pluck('id')
-                                    ->toArray();
+            // 3. Pre-fetch employee IDs by location to avoid N+1 queries
+            $employeeIdsByLocation = collect();
+            if ($type === 'personnel') {
+                $empQuery = \App\Models\Employee::where('is_active', true)->whereNotNull('location_id');
+                if ($department !== 'all' && isset($deptModel)) {
+                    $empQuery->where('department_id', $deptModel->id);
+                }
+                $employeeIdsByLocation = $empQuery->select('id', 'location_id')->get()
+                    ->groupBy('location_id')
+                    ->map(fn($group) => $group->pluck('id')->toArray());
+            }
 
+            // 4. Map Inspection Data
+            $locations->transform(function ($loc) use ($inspectedEmployeeIds, $inspectedLocationIds, $inspectedMachineIds, $type, $employeeIdsByLocation) {
+                if ($type === 'personnel') {
+                    $locEmployees = $employeeIdsByLocation->get($loc->id, []);
                     $loc->inspected_count = count(array_intersect($locEmployees, $inspectedEmployeeIds));
-                    $loc->has_checkpoints = true; // Not strictly used for personnel but consistent
+                    $loc->has_checkpoints = true;
                 } else {
                     // For Area
                     $loc->inspected_count = in_array($loc->id, $inspectedLocationIds) ? 1 : 0;
@@ -419,10 +421,10 @@ class InspectionController extends Controller
                 'session_round' => $session ? $session->round : null,
             ]);
         } catch (\Exception $e) {
+            \Log::error('getDepartmentStats error', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage(),
-                'trace' => config('app.debug') ? $e->getTraceAsString() : null
+                'message' => config('app.debug') ? $e->getMessage() : 'เกิดข้อผิดพลาดในการโหลดข้อมูล',
             ], 500);
         }
     }
@@ -568,6 +570,11 @@ class InspectionController extends Controller
     {
         $this->authorizeSessionOwner($session);
 
+        if ($session->isLocked()) {
+            return redirect()->route('inspection.dashboard', $session->type)
+                ->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)');
+        }
+
         if ($session->status !== 'completed') {
             $session->update(['status' => 'paused']);
         }
@@ -579,6 +586,11 @@ class InspectionController extends Controller
     public function finishSession(InspectionSession $session)
     {
         $this->authorizeSessionOwner($session);
+
+        if ($session->isLocked()) {
+            return redirect()->route('inspection.dashboard', $session->type)
+                ->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)');
+        }
 
         $this->inspectionService->finishSession($session);
 
@@ -602,7 +614,7 @@ class InspectionController extends Controller
 
         if (!$employee) {
             return redirect()->route('inspection.scan', $session->id)
-                ->with('error', "Employee not found for code: " . $hash);
+                ->with('error', 'ไม่พบพนักงานสำหรับรหัส: ' . e($hash));
         }
 
         // Security Check: Is employee in the session's department?
@@ -717,7 +729,7 @@ class InspectionController extends Controller
                 }
                 
                 $imageBinary = base64_decode($base64String);
-                $filename = 'evidence_random_' . time() . '_' . $session->id . '_' . $request->employee_id . '.webp';
+                $filename = 'evidence_random_' . uniqid() . '_' . $session->id . '_' . $request->employee_id . '.webp';
                 $path = 'evidence/' . $filename;
                 
                 try {
@@ -754,7 +766,7 @@ class InspectionController extends Controller
                 $photoPath = null;
                 if ($request->hasFile("logs.$checkpointId.photo")) {
                     $file = $request->file("logs.$checkpointId.photo");
-                    $filename = 'evidence_' . time() . '_' . $session->id . '_' . $checkpointId . '.webp';
+                    $filename = 'evidence_' . uniqid() . '_' . $session->id . '_' . $checkpointId . '.webp';
                     $path = 'evidence/' . $filename;
 
                     try {
@@ -1297,41 +1309,6 @@ class InspectionController extends Controller
 
     private function getAutoShift()
     {
-        $now = now();
-        $time = $now->format('H:i:s');
-
-        // Check DB first with Night Shift Logic (Cross-Midnight)
-        $dbShift = \App\Models\Shift::where(function($q) use ($time) {
-            // Normal shift (e.g., 08:00 - 17:00)
-            $q->where('start_time', '<=', $time)
-              ->where('end_time', '>=', $time);
-        })->orWhere(function($q) use ($time) {
-            // Night shift spanning midnight (e.g., 22:00 - 06:00)
-            $q->where('start_time', '>', 'end_time')
-              ->where(function($sub) use ($time) {
-                  $sub->where('start_time', '<=', $time)
-                      ->orWhere('end_time', '>=', $time);
-              });
-        })->first();
-
-        if ($dbShift) {
-            $name = strtolower($dbShift->shift_name);
-            if (in_array($name, ['morning', 'afternoon', 'night'])) {
-                return $name;
-            }
-        }
-
-        // Hardcoded Fallback based on start times:
-        // Morning: 06:00 - 12:59
-        // Afternoon: 13:00 - 18:59
-        // Night: 19:00 - 05:59
-        $hour = $now->hour;
-        if ($hour >= 6 && $hour < 13) {
-            return 'morning';
-        } elseif ($hour >= 13 && $hour < 19) {
-            return 'afternoon';
-        } else {
-            return 'night';
-        }
+        return \App\Models\Shift::detectCurrent();
     }
 }
