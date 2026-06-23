@@ -1097,6 +1097,35 @@ class InspectionController extends Controller
             }
         }
 
+        // 3. Notify QA Manager if this was a normal verification
+        if ($status !== 'reclean') {
+            try {
+                $session = $logs->first()->session;
+                
+                // Check if all logs in this session are now verified/reclean/approved 
+                // i.e., no pending logs left.
+                $pendingLogsCount = \App\Models\InspectionLog::where('session_id', $session->id)
+                    ->whereNull('verification_status')
+                    ->count();
+
+                // If no pending logs left, the supervisor has finished verifying this session.
+                if ($pendingLogsCount === 0) {
+                    $qaManagers = \App\Models\User::where('level', '>=', 5)->get()->filter(function($u) {
+                        return $u->isQA();
+                    });
+
+                    foreach ($qaManagers as $manager) {
+                        if ($manager->email) {
+                            \Illuminate\Support\Facades\Mail::to($manager->email)
+                                ->send(new \App\Mail\InspectionVerified($session, Auth::user()));
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to send Verification email to QA Manager: ' . $e->getMessage());
+            }
+        }
+
         $message = ($status === 'reclean') ? 'ส่งกลับแก้ไข (เฉพาะรายการที่ไม่ผ่าน) เรียบร้อย (Sent for Re-clean)' : 'ตรวจสอบเรียบร้อย (Verified)';
 
         return back()->with('success', $message);
@@ -1238,38 +1267,6 @@ class InspectionController extends Controller
                 ]);
                 $fullyLockedSessions++;
             }
-        }
-
-        // Gap 4: Send Line Notify to affected Dept Heads
-        try {
-            $failedLogs = InspectionLog::whereIn('id', $request->ids)
-                            ->where('result', 'fail')
-                            ->with(['employee.department', 'session'])
-                            ->get();
-
-            if ($failedLogs->isNotEmpty()) {
-                $affectedDepts = $failedLogs->pluck('employee.department_id')->unique()->filter();
-                
-                $lineService = new \App\Services\LineNotifyService();
-                
-                foreach ($affectedDepts as $deptId) {
-                    // Find Dept Manager (Level >= 5) with Line token
-                    $managers = \App\Models\User::where('department_id', $deptId)
-                                ->where('level', '>=', 5)
-                                ->whereNotNull('line_token')
-                                ->get();
-
-                    $deptName = \App\Models\Department::find($deptId)?->dept_name ?? 'Unknown';
-                    $failCount = $failedLogs->where('employee.department_id', $deptId)->count();
-                    
-                    $message = $lineService->buildHygieneAlertMessage($deptName, $failCount, now()->format('d/m/Y'));
-
-                    $lineService->sendToUsers($managers, $message);
-                }
-            }
-        } catch (\Exception $e) {
-            \Log::error('Line Notify failed in managerApprove: ' . $e->getMessage());
-            // Don't fail the approval, just log the error
         }
 
         $message = $fullyLockedSessions > 0

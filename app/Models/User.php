@@ -6,10 +6,11 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use App\Traits\LogsActivity;
 
 class User extends Authenticatable
 {
-    use HasFactory, Notifiable;
+    use HasFactory, Notifiable, LogsActivity;
 
     /**
      * The attributes that are mass assignable.
@@ -18,6 +19,7 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name',
+        'employee_code',
         'email',
         'password',
         'department_id',
@@ -85,5 +87,128 @@ class User extends Authenticatable
     public function isAdmin()
     {
         return $this->role === 'admin';
+    }
+
+    // --- Role Matrix Methods (PRD Compliance) ---
+
+    /**
+     * Check if user belongs to QA department
+     * QA users have Global scope and can inspect all departments
+     */
+    public function isQA(): bool
+    {
+        if (!$this->department) {
+            return false;
+        }
+
+        $deptName = strtolower($this->department->dept_name ?? '');
+        $deptCode = strtolower($this->department->dept_code ?? '');
+
+        return str_contains($deptName, 'qa') 
+            || str_contains($deptName, 'quality')
+            || str_contains($deptName, 'คุณภาพ')
+            || $deptCode === 'qa';
+    }
+
+    /**
+     * Check if user is Executive (C-Suite) - Read-Only Dashboard access
+     */
+    public function isExecutive(): bool
+    {
+        return $this->role === 'executive' 
+            || ($this->level >= 6 && !$this->isQA() && !$this->isAdmin());
+    }
+
+    /**
+     * Check if user has Global visibility (can see all departments)
+     * QA, Admin, and Executives have Global visibility
+     */
+    public function hasGlobalVisibility(): bool
+    {
+        // Admin always has global scope
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        // QA department has global scope
+        if ($this->isQA()) {
+            return true;
+        }
+
+        // Executives have global read-only scope
+        if ($this->isExecutive()) {
+            return true;
+        }
+
+        // Check department visibility type
+        if ($this->department && $this->department->visibility_type === 'global') {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if user can view data from a specific department
+     */
+    public function canViewDepartment(int $departmentId): bool
+    {
+        // Global visibility users can view all departments
+        if ($this->hasGlobalVisibility()) {
+            return true;
+        }
+
+        // Isolated scope users can only view their own department
+        return $this->department_id === $departmentId;
+    }
+
+    // --- Action Permission Methods ---
+
+    /**
+     * Can user perform inspections? (QA Staff only)
+     */
+    public function canInspect(): bool
+    {
+        return $this->isQA() && ($this->role === 'staff' || $this->level <= 3);
+    }
+
+    /**
+     * Can user verify inspections? (QA Supervisor only)
+     */
+    public function canVerify(): bool
+    {
+        return $this->isQA() && ($this->role === 'supervisor' || $this->level === 4);
+    }
+
+    /**
+     * Can user approve inspections? (QA Manager only, Level >= 5)
+     */
+    public function canApprove(): bool
+    {
+        return $this->isQA() && ($this->role === 'manager' || $this->level >= 5);
+    }
+
+    /**
+     * Can user acknowledge for a department? (Dept Head, Level >= 4, own dept only)
+     */
+    public function canAcknowledge(int $departmentId): bool
+    {
+        // Must be non-QA
+        if ($this->isQA()) {
+            return false;
+        }
+
+        // Must have Level >= 4 (Supervisor or Manager of department)
+        if ($this->level < 4) {
+            return false;
+        }
+
+        // Admin can acknowledge any department
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        // Must be from the same department
+        return $this->department_id === $departmentId;
     }
 }

@@ -12,7 +12,7 @@
             <div class="row">
                 <div class="col-md-7">
                     <div class="card border-0 shadow-sm rounded-4 p-4">
-                        <form action="{{ route('checkpoints.store') }}" method="POST">
+                        <form action="{{ route('checkpoints.store') }}" method="POST" enctype="multipart/form-data">
                             @csrf
                             <div class="mb-3">
                                 <label class="form-label fw-bold">หมวดหมู่จุดตรวจ</label>
@@ -32,6 +32,23 @@
                             <div class="mb-3">
                                 <label class="form-label fw-bold">คำอธิบาย</label>
                                 <textarea name="description" class="form-control" rows="3" placeholder="ระบุรายละเอียด หรือ สิ่งที่ต้องการให้ตรวจสอบ"></textarea>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold text-success"><i class="bi bi-check-circle-fill me-1"></i>รูปตัวอย่างที่ถูกต้อง (Good)</label>
+                                        <input type="file" name="image_good" class="form-control" accept="image/*">
+                                        <div class="form-text small">แสดงเมื่อกดดูมาตรฐาน</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold text-danger"><i class="bi bi-x-circle-fill me-1"></i>รูปตัวอย่างที่ไม่ถูกต้อง (Bad)</label>
+                                        <input type="file" name="image_bad" class="form-control" accept="image/*">
+                                        <div class="form-text small">แสดงเมื่อกดดูมาตรฐาน</div>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="mt-4 pt-3 border-top">

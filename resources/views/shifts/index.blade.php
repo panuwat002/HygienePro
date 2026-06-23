@@ -21,7 +21,7 @@
 
             <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
                 <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
+                    <table class="table table-hover align-middle mb-0 table-modern">
                         <thead class="bg-light">
                             <tr>
                                 <th class="ps-4 py-3 text-muted fw-bold">ชื่อกะ</th>
@@ -37,17 +37,17 @@
                                 <td class="ps-4">
                                     <span class="fw-bold text-dark">{{ $shift->shift_name }}</span>
                                 </td>
-                                <td>
+                                <td data-label="เวลาเริ่มต้น">
                                     <span class="badge bg-info-subtle text-info px-3 py-2 rounded-pill border border-info-subtle">
                                         <i class="bi bi-clock me-1"></i> {{ date('H:i', strtotime($shift->start_time)) }}
                                     </span>
                                 </td>
-                                <td>
+                                <td data-label="เวลาสิ้นสุด">
                                     <span class="badge bg-warning-subtle text-warning-emphasis px-3 py-2 rounded-pill border border-warning-subtle">
                                         <i class="bi bi-clock-fill me-1"></i> {{ date('H:i', strtotime($shift->end_time)) }}
                                     </span>
                                 </td>
-                                <td>
+                                <td data-label="จำนวนพนักงาน">
                                     <span class="text-secondary fw-medium">{{ $shift->employees_count ?? 0 }} คน</span>
                                 </td>
                                 <td class="pe-4 text-end">

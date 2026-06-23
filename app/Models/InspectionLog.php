@@ -16,16 +16,25 @@ class InspectionLog extends Model
         'checkpoint_id',
         'employee_id',
         'result',
+        'parent_id',
         'note',
         'correction_action',
         'photo_path',
         'inspected_at',
         'checkpoint_title_snapshot',
         'dept_snapshot',
+        'verified_at',
+        'verifier_id',
+        'verification_status',
+        'verification_comment',
+        'acknowledged_by', // Gap 3: Dept Head acknowledgement
+        'acknowledged_at', // Gap 3: Dept Head acknowledgement
     ];
 
     protected $casts = [
         'inspected_at' => 'datetime',
+        'verified_at' => 'datetime',
+        'acknowledged_at' => 'datetime', // Gap 3
     ];
 
     public function employee()
@@ -61,5 +70,21 @@ class InspectionLog extends Model
     public function rechecks()
     {
         return $this->hasMany(InspectionLog::class, 'parent_id');
+    }
+
+    public function verifier()
+    {
+        return $this->belongsTo(User::class, 'verifier_id');
+    }
+
+    public function correctiveAction()
+    {
+        return $this->hasOne(CorrectiveAction::class);
+    }
+
+    // Gap 3: Acknowledgement relationship
+    public function acknowledgedBy()
+    {
+        return $this->belongsTo(User::class, 'acknowledged_by');
     }
 }

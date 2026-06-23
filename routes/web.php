@@ -24,24 +24,31 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
+    // Pending Approvals (For all authenticated users that might be approvers)
+    Route::get('/approvals/pending', [App\Http\Controllers\ApprovalController::class, 'pending'])->name('approvals.pending');
+    Route::post('/approvals/{approval}/approve', [App\Http\Controllers\ApprovalController::class, 'approve'])->name('approvals.approve');
+    Route::post('/approvals/{approval}/reject', [App\Http\Controllers\ApprovalController::class, 'reject'])->name('approvals.reject');
+
     // Inspection Routes
     Route::middleware(['auth'])->group(function () {
-        Route::get('/inspection/{type}', [InspectionController::class, 'dashboard'])->name('inspection.dashboard');
-        Route::get('/inspection/summary/{type}/{department}', [InspectionController::class, 'getDepartmentStats'])->name('inspection.stats');
-        Route::post('/inspection/start/{type}', [InspectionController::class, 'startSession'])->name('inspection.start');
-        
-        // Area Inspection Routes
-        Route::get('/inspection/area/bulk/{department}', [App\Http\Controllers\AreaInspectionController::class, 'showBulkChecklist'])->name('inspection.area.bulk');
-        Route::get('/inspection/area/{department}/{location}', [App\Http\Controllers\AreaInspectionController::class, 'showChecklist'])->name('inspection.area.checklist');
-        Route::post('/inspection/area/{session}/{location}', [App\Http\Controllers\AreaInspectionController::class, 'store'])->name('inspection.area.store');
+        Route::middleware(['can:inspect'])->group(function () {
+            Route::get('/inspection/{type}', [InspectionController::class, 'dashboard'])->name('inspection.dashboard');
+            Route::get('/inspection/summary/{type}/{department}', [InspectionController::class, 'getDepartmentStats'])->name('inspection.stats');
+            Route::post('/inspection/start/{type}', [InspectionController::class, 'startSession'])->name('inspection.start');
+            
+            // Area Inspection Routes
+            Route::get('/inspection/area/bulk/{department}', [App\Http\Controllers\AreaInspectionController::class, 'showBulkChecklist'])->name('inspection.area.bulk');
+            Route::get('/inspection/area/{department}/{location}', [App\Http\Controllers\AreaInspectionController::class, 'showChecklist'])->name('inspection.area.checklist');
+            Route::post('/inspection/area/{session}/{location}', [App\Http\Controllers\AreaInspectionController::class, 'store'])->name('inspection.area.store');
 
-        Route::get('/inspection/session/{session}/scan', [InspectionController::class, 'scan'])->name('inspection.scan');
-        Route::get('/inspection/session/{session}/browse', [InspectionController::class, 'browseEmployees'])->name('inspection.browse');
-        Route::get('/inspection/session/{session}/verify/{hash}', [InspectionController::class, 'showChecklist'])->name('inspection.checklist');
-        Route::post('/inspection/session/{session}/verify-with-photo/{hash}', [InspectionController::class, 'showChecklist'])->name('inspection.checklist.photo');
-        Route::post('/inspection/session/{session}/store', [InspectionController::class, 'storeLog'])->name('inspection.log.store');
-        Route::post('/inspection/session/{session}/finish', [InspectionController::class, 'finishSession'])->name('inspection.finish');
-        Route::post('/inspection/session/{session}/pause', [InspectionController::class, 'pauseSession'])->name('inspection.pause');
+            Route::get('/inspection/session/{session}/scan', [InspectionController::class, 'scan'])->name('inspection.scan');
+            Route::get('/inspection/session/{session}/browse', [InspectionController::class, 'browseEmployees'])->name('inspection.browse');
+            Route::get('/inspection/session/{session}/verify/{hash}', [InspectionController::class, 'showChecklist'])->name('inspection.checklist');
+            Route::post('/inspection/session/{session}/verify-with-photo/{hash}', [InspectionController::class, 'showChecklist'])->name('inspection.checklist.photo');
+            Route::post('/inspection/session/{session}/store', [InspectionController::class, 'storeLog'])->name('inspection.log.store');
+            Route::post('/inspection/session/{session}/finish', [InspectionController::class, 'finishSession'])->name('inspection.finish');
+            Route::post('/inspection/session/{session}/pause', [InspectionController::class, 'pauseSession'])->name('inspection.pause');
+        });
 
         Route::get('/verification', [InspectionController::class, 'verification'])
             ->middleware('can:access-verification')
@@ -81,6 +88,11 @@ Route::middleware('auth')->group(function () {
         Route::middleware(['can:manage-system'])->group(function () {
             Route::resource('users', App\Http\Controllers\UserController::class);
             Route::resource('activity-logs', App\Http\Controllers\Admin\ActivityLogController::class)->only(['index']);
+
+            // Approval Flow Admin Setup
+            Route::get('/admin/approvals/setup', [App\Http\Controllers\Admin\ApprovalFlowController::class, 'setup'])->name('admin.approvals.setup');
+            Route::post('/admin/approvals/{flow}/steps', [App\Http\Controllers\Admin\ApprovalFlowController::class, 'storeStep'])->name('admin.approvals.steps.store');
+            Route::delete('/admin/approvals/steps/{step}', [App\Http\Controllers\Admin\ApprovalFlowController::class, 'destroyStep'])->name('admin.approvals.steps.destroy');
         });
 
         // Group 1.5: Master Data Management

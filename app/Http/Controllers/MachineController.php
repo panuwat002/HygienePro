@@ -6,6 +6,9 @@ use App\Models\Machine;
 use App\Models\Location;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\MachinesExport;
+use App\Imports\MachinesImport;
 
 class MachineController extends Controller
 {
@@ -115,5 +118,68 @@ class MachineController extends Controller
 
         return redirect()->route('machines.map', $machine->id)
             ->with('success', 'บันทึกรายการจุดตรวจสำหรับเครื่องจักรเรียบร้อยแล้ว');
+    }
+
+    public function export()
+    {
+        return Excel::download(new MachinesExport, 'machines.xlsx');
+    }
+
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|mimes:xlsx,xls,csv',
+        ]);
+
+        Excel::import(new MachinesImport, $request->file('file'));
+
+        return redirect()->route('machines.index')->with('success', 'นำเข้าข้อมูลเครื่องจักรเรียบร้อยแล้ว');
+    }
+
+    public function showBulkMapping()
+    {
+        $machines = Machine::with('location')->orderBy('location_id')->get();
+        $locations = Location::all();
+        
+        $allCheckpoints = \App\Models\Checkpoint::where('is_active', true)
+                            ->with('category')
+                            ->get()
+                            ->groupBy('category.name');
+
+        return view('machines.bulk-map', compact('machines', 'locations', 'allCheckpoints'));
+    }
+
+    public function saveBulkMapping(Request $request)
+    {
+        $request->validate([
+            'machine_ids' => 'required|array|min:1',
+            'machine_ids.*' => 'exists:machines,id',
+            'checkpoint_ids' => 'required|array|min:1',
+            'checkpoint_ids.*' => 'exists:checkpoints,id',
+            'mode' => 'required|in:add,replace',
+        ]);
+
+        $machineIds = $request->machine_ids;
+        $checkpointIds = $request->checkpoint_ids;
+        $mode = $request->mode;
+
+        $count = 0;
+        foreach ($machineIds as $machineId) {
+            $machine = Machine::find($machineId);
+            if ($machine) {
+                if ($mode === 'replace') {
+                    // Replace: sync (removes old, adds new)
+                    $machine->checkpoints()->sync($checkpointIds);
+                } else {
+                    // Add: syncWithoutDetaching (keeps existing, adds new)
+                    $machine->checkpoints()->syncWithoutDetaching($checkpointIds);
+                }
+                $count++;
+            }
+        }
+
+        $modeText = $mode === 'replace' ? 'แทนที่' : 'เพิ่ม';
+        return redirect()->route('machines.index')
+            ->with('success', "{$modeText}จุดตรวจ " . count($checkpointIds) . " รายการ ให้เครื่องจักร {$count} รายการ เรียบร้อยแล้ว");
     }
 }

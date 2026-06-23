@@ -8,8 +8,11 @@ use App\Models\Department;
 use App\Models\Checkpoint;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
+use App\Mail\InspectionSessionStarted;
+use App\Mail\InspectionSessionFinished;
 
 class InspectionService
 {
@@ -50,7 +53,7 @@ class InspectionService
         }
         $today = now()->toDateString();
 
-        return DB::transaction(function () use ($user, $departmentId, $type, $today, $shift, $forceNew) {
+        $session = DB::transaction(function () use ($user, $departmentId, $type, $today, $shift, $forceNew) {
             $session = InspectionSession::where('department_id', $departmentId)
                 ->where('inspection_date', $today)
                 ->where('shift', $shift)
@@ -84,6 +87,12 @@ class InspectionService
                 'round' => $nextRound,
             ]);
         });
+
+        if ($session->wasRecentlyCreated) {
+            $this->notifySupervisorsStarted($session);
+        }
+
+        return $session;
     }
 
     /**
@@ -98,6 +107,49 @@ class InspectionService
         $session->update([
             'status' => 'completed',
         ]);
+
+        $this->notifySupervisorsFinished($session);
+    }
+
+    protected function notifySupervisorsStarted(InspectionSession $session): void
+    {
+        try {
+            $supervisors = User::where('role', 'supervisor')->orWhere('level', 4)->get()->filter(function($u) {
+                return $u->isQA();
+            });
+
+            foreach ($supervisors as $supervisor) {
+                if ($supervisor->email) {
+                    Mail::to($supervisor->email)->send(new InspectionSessionStarted($session));
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send Inspection Started email: ' . $e->getMessage());
+        }
+    }
+
+    protected function notifySupervisorsFinished(InspectionSession $session): void
+    {
+        try {
+            $supervisors = User::where('role', 'supervisor')->orWhere('level', 4)->get()->filter(function($u) {
+                return $u->isQA();
+            });
+
+            $logs = InspectionLog::where('session_id', $session->id)->get();
+            $stats = [
+                'total' => $logs->count(),
+                'pass' => $logs->where('result', 'pass')->count(),
+                'fail' => $logs->where('result', 'fail')->count(),
+            ];
+
+            foreach ($supervisors as $supervisor) {
+                if ($supervisor->email) {
+                    Mail::to($supervisor->email)->send(new InspectionSessionFinished($session, $stats));
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send Inspection Finished email: ' . $e->getMessage());
+        }
     }
 
     /**

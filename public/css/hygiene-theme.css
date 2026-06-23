@@ -1,0 +1,341 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* Hygiene Clean Theme Variables */
+  --hygiene-bg: #f1f5f9; /* Slate 100 - Slightly darker to make white cards pop */
+  --hygiene-surface: #ffffff; /* White */
+  --hygiene-surface-hover: #f8fafc; /* Slate 50 */
+  
+  --hygiene-primary: #3b82f6; /* Vibrant Blue */
+  --hygiene-primary-hover: #2563eb;
+  --hygiene-primary-soft: #eff6ff;
+  
+  --hygiene-success: #10b981; /* Mint Green */
+  --hygiene-success-soft: #d1fae5;
+  
+  --hygiene-warning: #f59e0b; /* Amber */
+  --hygiene-danger: #ef4444; /* Red */
+  
+  --hygiene-text-main: #1e293b; /* Slate 800 - Darker for readability */
+  --hygiene-text-heading: #0f172a; /* Slate 900 */
+  --hygiene-text-muted: #475569; /* Slate 600 - Darker than 500 for better contrast */
+  
+  --hygiene-border: #cbd5e1; /* Slate 300 - Slightly darker border */
+  --hygiene-border-light: #f8fafc; /* Slate 50 */
+
+  /* Sidebar Dark Theme Variables */
+  --sidebar-bg: #0f172a;
+  --sidebar-border: #1e293b;
+  --sidebar-text: #94a3b8;
+  --sidebar-text-active: #ffffff;
+  --sidebar-active-bg: rgba(59, 130, 246, 0.15);
+
+  /* Typography */
+  --font-sans: "Inter", "IBM Plex Sans Thai", system-ui, -apple-system, sans-serif;
+
+  /* Shadows & Radii */
+  --shadow-soft: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-float: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --transition-smooth: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Bootstrap Core Overrides */
+  --bs-body-bg: var(--hygiene-bg);
+  --bs-body-color: var(--hygiene-text-main);
+  --bs-body-font-family: var(--font-sans);
+  --bs-link-color: var(--hygiene-primary);
+  --bs-link-hover-color: var(--hygiene-primary-hover);
+  --bs-border-color: var(--hygiene-border);
+}
+
+/* Base Elements */
+body {
+    background-color: var(--hygiene-bg) !important;
+    color: var(--hygiene-text-main) !important;
+    font-family: var(--font-sans) !important;
+    line-height: 1.6;
+}
+
+h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
+    color: var(--hygiene-text-heading) !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.02em;
+}
+
+.text-muted { color: var(--hygiene-text-muted) !important; }
+.text-dark { color: var(--hygiene-text-heading) !important; }
+
+/* Buttons */
+.btn {
+    border-radius: var(--radius-sm) !important;
+    font-weight: 600;
+    transition: all var(--transition-smooth);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+    padding: 10px 24px;
+}
+
+.btn-primary, .btn-primary-custom {
+    background-color: var(--hygiene-primary) !important;
+    border-color: var(--hygiene-primary) !important;
+    color: #ffffff !important;
+}
+
+.btn-primary:hover, .btn-primary-custom:hover {
+    background-color: var(--hygiene-primary-hover) !important;
+    border-color: var(--hygiene-primary-hover) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3) !important;
+}
+
+.btn-success {
+    background-color: var(--hygiene-success) !important;
+    border-color: var(--hygiene-success) !important;
+    color: #ffffff !important;
+}
+
+/* Cards & Panels */
+.card, .stat-card, .info-card {
+    background-color: var(--hygiene-surface) !important;
+    border: 1px solid var(--hygiene-border) !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: var(--shadow-soft) !important;
+}
+
+.card-header {
+    background-color: var(--hygiene-surface) !important;
+    border-bottom: 1px solid var(--hygiene-border) !important;
+    color: var(--hygiene-text-heading);
+    font-weight: 700;
+    padding: 1.25rem 1.5rem;
+}
+
+.card-footer {
+    background-color: var(--hygiene-surface-hover) !important;
+    border-top: 1px solid var(--hygiene-border) !important;
+}
+
+/* Inputs & Forms */
+.form-control, .form-select {
+    background-color: var(--hygiene-surface) !important;
+    border: 1px solid var(--hygiene-border) !important;
+    color: var(--hygiene-text-main) !important;
+    border-radius: var(--radius-sm) !important;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.02) !important;
+    font-weight: 500;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: var(--hygiene-primary) !important;
+    box-shadow: 0 0 0 4px var(--hygiene-primary-soft) !important;
+}
+
+.form-control:disabled, .form-select:disabled, .form-control[readonly] {
+    background-color: var(--hygiene-surface-hover) !important;
+    color: var(--hygiene-text-muted) !important;
+    opacity: 1;
+}
+
+.form-label {
+    color: var(--hygiene-text-heading);
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+
+/* Tables */
+.table, .table-hover {
+    color: var(--hygiene-text-main) !important;
+    border-color: var(--hygiene-border) !important;
+}
+
+.table thead th {
+    background-color: var(--hygiene-surface-hover) !important;
+    color: var(--hygiene-text-muted) !important;
+    border-bottom: 2px solid var(--hygiene-border) !important;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.75rem;
+    padding: 1rem;
+}
+
+.table tbody td {
+    background-color: var(--hygiene-surface) !important;
+    border-bottom: 1px solid var(--hygiene-border) !important;
+    vertical-align: middle;
+}
+
+.table-hover tbody tr:hover td {
+    background-color: var(--hygiene-surface-hover) !important;
+}
+
+/* Sidebar Customization (Dark Theme to anchor the layout) */
+#sidebar-wrapper {
+    background: var(--sidebar-bg) !important;
+    border-right: 1px solid var(--sidebar-border) !important;
+    box-shadow: 4px 0 15px rgba(0,0,0,0.05) !important;
+}
+
+.sidebar-heading {
+    border-bottom: 1px solid var(--sidebar-border) !important;
+    color: #ffffff !important;
+    background: var(--sidebar-bg) !important;
+}
+
+.sidebar-heading .logo-icon {
+    background: var(--hygiene-primary);
+    color: #ffffff;
+    border-radius: 8px;
+    padding: 6px;
+    box-shadow: 0 2px 6px rgba(59, 130, 246, 0.4);
+}
+
+.sidebar-heading span {
+    color: #ffffff !important;
+}
+.sidebar-heading small {
+    color: var(--sidebar-text) !important;
+}
+
+.list-group-item {
+    background-color: transparent !important;
+    color: var(--sidebar-text) !important;
+    border: none !important;
+    font-weight: 500;
+    margin: 2px 12px;
+    border-radius: 8px;
+    padding: 10px 16px;
+    transition: all 0.2s;
+}
+
+.list-group-item:hover {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    color: #ffffff !important;
+}
+
+.list-group-item.active {
+    background-color: var(--sidebar-active-bg) !important;
+    color: var(--sidebar-text-active) !important;
+    font-weight: 600;
+    border-left: 4px solid var(--hygiene-primary) !important;
+}
+
+/* Sidebar Toggle Buttons for Dark Sidebar */
+#sidebar-toggle-mobile i, #sidebar-toggle-desktop i {
+    color: var(--sidebar-text) !important;
+}
+#sidebar-toggle-mobile:hover i, #sidebar-toggle-desktop:hover i {
+    color: #ffffff !important;
+}
+
+/* Fix generic background utility classes */
+.bg-white { background-color: var(--hygiene-surface) !important; }
+.bg-light { background-color: var(--hygiene-bg) !important; }
+
+/* =========================================================
+   ✨ SEGMENTED TABS (Nav Pills Modern)
+   ========================================================= */
+.nav-pills-modern {
+    background-color: var(--hygiene-bg);
+    border-radius: 50px;
+    padding: 0.35rem;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.04);
+    border: 1px solid var(--hygiene-border);
+}
+.nav-pills-modern .nav-item {
+    margin: 0;
+}
+.nav-pills-modern .nav-link {
+    border-radius: 50px;
+    color: var(--hygiene-text-muted);
+    font-weight: 600;
+    padding: 0.6rem 1.5rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.nav-pills-modern .nav-link:hover {
+    color: var(--hygiene-primary);
+}
+.nav-pills-modern .nav-link.active {
+    background-color: var(--hygiene-primary);
+    color: #ffffff;
+    box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4);
+    transform: translateY(-1px);
+}
+
+/* Status Badges */
+.badge {
+    border-radius: 6px;
+    padding: 0.4em 0.75em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.bg-success { background-color: var(--hygiene-success-soft) !important; color: #065f46 !important; }
+.bg-warning { background-color: #fef3c7 !important; color: #92400e !important; }
+.bg-danger { background-color: #fee2e2 !important; color: #991b1b !important; }
+.bg-primary { background-color: var(--hygiene-primary-soft) !important; color: #075985 !important; }
+.bg-info { background-color: #e0f2fe !important; color: #075985 !important; }
+
+/* Text Utilities */
+.text-primary { color: var(--hygiene-primary) !important; }
+.text-success { color: var(--hygiene-success) !important; }
+.text-warning { color: var(--hygiene-warning) !important; }
+.text-danger { color: var(--hygiene-danger) !important; }
+.text-info { color: #0284c7 !important; }
+
+/* =========================================================
+   ✨ ANIMATIONS & MICRO-INTERACTIONS
+   ========================================================= */
+
+/* 1. Card Float on Hover */
+.card, .stat-card, .info-card {
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease !important;
+}
+.card:hover, .stat-card:hover, .info-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-float) !important;
+}
+
+/* 2. Button Pulse & Lift */
+@keyframes pulseGlow {
+    0% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(14, 165, 233, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0); }
+}
+.btn-primary:hover, .btn-primary-custom:hover {
+    animation: pulseGlow 1.5s infinite;
+}
+
+/* 3. Table Row Fade & Slide Up */
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(15px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.table tbody tr {
+    animation: fadeInUp 0.5s ease-out forwards;
+    opacity: 0;
+}
+/* Stagger first 10 rows for a cascading effect */
+.table tbody tr:nth-child(1) { animation-delay: 0.05s; }
+.table tbody tr:nth-child(2) { animation-delay: 0.1s; }
+.table tbody tr:nth-child(3) { animation-delay: 0.15s; }
+.table tbody tr:nth-child(4) { animation-delay: 0.2s; }
+.table tbody tr:nth-child(5) { animation-delay: 0.25s; }
+.table tbody tr:nth-child(6) { animation-delay: 0.3s; }
+.table tbody tr:nth-child(7) { animation-delay: 0.35s; }
+.table tbody tr:nth-child(8) { animation-delay: 0.4s; }
+.table tbody tr:nth-child(9) { animation-delay: 0.45s; }
+.table tbody tr:nth-child(10) { animation-delay: 0.5s; }
+/* Any row beyond 10 will just fade in slightly later */
+.table tbody tr:nth-child(n+11) { animation-delay: 0.55s; }
+
+/* 4. Logo Suble Bounce */
+@keyframes softBounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+}
+.sidebar-heading:hover .logo-icon i {
+    animation: softBounce 1s ease infinite;
+    display: inline-block;
+}

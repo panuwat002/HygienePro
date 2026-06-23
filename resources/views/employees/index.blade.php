@@ -4,20 +4,20 @@
     <div class="row">
         <div class="col-12">
             <div class="card border-0 shadow-sm rounded-4 mb-4">
-                <div class="card-body p-4 d-flex justify-content-between align-items-center">
+                <div class="card-body p-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
                     <div>
                         <h5 class="fw-bold mb-1">รายชื่อพนักงานทั้งหมด</h5>
                         <p class="text-muted mb-0 small">จัดการข้อมูลพนักงาน / สร้าง QR Code / นำเข้า-ส่งออก Excel</p>
                     </div>
-                    <div class="d-flex gap-2">
-                        <a href="{{ route('employees.export') }}" class="btn btn-outline-success shadow-sm">
-                            <i class="bi bi-file-earmark-excel me-2"></i> Export
+                    <div class="d-flex flex-wrap gap-2 justify-content-md-end mt-3 mt-md-0">
+                        <a href="{{ route('employees.export') }}" class="btn btn-outline-success shadow-sm" title="Export">
+                            <i class="bi bi-file-earmark-excel"></i><span class="d-none d-sm-inline ms-1">Export</span>
                         </a>
-                        <button type="button" class="btn btn-outline-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#importModal">
-                            <i class="bi bi-file-earmark-arrow-up me-2"></i> Import
+                        <button type="button" class="btn btn-outline-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#importModal" title="Import">
+                            <i class="bi bi-file-earmark-arrow-up"></i><span class="d-none d-sm-inline ms-1">Import</span>
                         </button>
-                        <a href="{{ route('employees.create') }}" class="btn btn-primary-custom shadow-sm">
-                            <i class="bi bi-person-plus-fill me-2"></i> เพิ่มพนักงานใหม่
+                        <a href="{{ route('employees.create') }}" class="btn btn-primary-custom shadow-sm" title="เพิ่มพนักงานใหม่">
+                            <i class="bi bi-person-plus-fill"></i><span class="d-none d-sm-inline ms-2">เพิ่มพนักงานใหม่</span>
                         </a>
                     </div>
                 </div>
@@ -57,7 +57,7 @@
                 </div>
             </div>
 
-            <div class="card border-0 shadow-sm rounded-4">
+            <div class="card border-0 shadow-sm rounded-4 table-modern">
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-hover align-middle mb-0">
@@ -75,7 +75,7 @@
                             <tbody>
                                 @forelse($employees as $employee)
                                 <tr>
-                                    <td class="ps-4">
+                                    <td class="ps-4" data-label="พนักงาน">
                                         <div class="d-flex align-items-center">
                                             <div class="rounded-circle bg-light d-flex justify-content-center align-items-center me-3 object-fit-cover" style="width:40px; height:40px; overflow:hidden;">
                                                 @if($employee->profile_image)
@@ -90,20 +90,20 @@
                                             </div>
                                         </div>
                                     </td>
-                                    <td class="text-center">
+                                    <td data-label="ระดับ" class="text-center">
                                         <span class="badge bg-info-subtle text-info border border-info-subtle">{{ $employee->level ?? '-' }}</span>
                                     </td>
-                                    <td><span class="badge bg-light text-dark border">{{ $employee->employee_id }}</span></td>
-                                    <td class="text-secondary">{{ $employee->department->dept_name ?? '-' }}</td>
-                                    <td class="text-center">
+                                    <td data-label="รหัสพนักงาน"><span class="badge bg-light text-dark border">{{ $employee->employee_id }}</span></td>
+                                    <td data-label="แผนก" class="text-secondary">{{ $employee->department->dept_name ?? '-' }}</td>
+                                    <td data-label="กะ / จุดประจำการ" class="text-center">
                                         <div class="d-flex flex-column gap-1 align-items-center">
                                             <span class="badge bg-primary-subtle text-primary border border-primary-subtle small" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">{{ $employee->shift->shift_name ?? '-' }}</span>
                                             <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle small" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">{{ $employee->location->location_name ?? '-' }}</span>
                                         </div>
                                     </td>
-                                    <td>
-                                        <div class="input-group input-group-sm" style="width: 150px;">
-                                            <input type="text" class="form-control bg-light" value="{{ $employee->qr_code_hash }}" readonly>
+                                    <td data-label="QR Hash">
+                                        <div class="input-group input-group-sm" style="width: 150px; justify-content: flex-end;">
+                                            <input type="text" class="form-control bg-light text-end" value="{{ $employee->qr_code_hash }}" readonly style="max-width: 90px; font-size: 0.8rem;">
                                             <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText('{{ $employee->qr_code_hash }}')">
                                                 <i class="bi bi-clipboard"></i>
                                             </button>

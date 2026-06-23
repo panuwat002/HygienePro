@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Checkpoint;
 use App\Models\CheckpointCategory;
 use Illuminate\Http\Request;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\CheckpointsExport;
+use App\Imports\CheckpointsImport;
 
 class CheckpointController extends Controller
 {
@@ -26,9 +29,20 @@ class CheckpointController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'category_id' => 'nullable|exists:checkpoint_categories,id',
+            'image_good' => 'nullable|image|max:10240',
+            'image_bad' => 'nullable|image|max:10240',
         ]);
 
-        Checkpoint::create($request->all());
+        $data = $request->all();
+
+        if ($request->hasFile('image_good')) {
+            $data['image_good'] = $request->file('image_good')->store('standards', 'public');
+        }
+        if ($request->hasFile('image_bad')) {
+            $data['image_bad'] = $request->file('image_bad')->store('standards', 'public');
+        }
+
+        Checkpoint::create($data);
 
         return redirect()->route('checkpoints.index')->with('success', 'Checkpoint created successfully.');
     }
@@ -45,9 +59,20 @@ class CheckpointController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'category_id' => 'nullable|exists:checkpoint_categories,id',
+            'image_good' => 'nullable|image|max:10240',
+            'image_bad' => 'nullable|image|max:10240',
         ]);
 
-        $checkpoint->update($request->all());
+        $data = $request->all();
+
+        if ($request->hasFile('image_good')) {
+            $data['image_good'] = $request->file('image_good')->store('standards', 'public');
+        }
+        if ($request->hasFile('image_bad')) {
+            $data['image_bad'] = $request->file('image_bad')->store('standards', 'public');
+        }
+
+        $checkpoint->update($data);
 
         if ($request->wantsJson()) {
             return response()->json(['success' => true, 'message' => 'Updated successfully']);
@@ -67,6 +92,22 @@ class CheckpointController extends Controller
         return redirect()->route('checkpoints.index')->with('success', 'Checkpoint deleted successfully.');
     }
 
+    public function export()
+    {
+        return Excel::download(new CheckpointsExport, 'checkpoints.xlsx');
+    }
+
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|mimes:xlsx,xls,csv',
+        ]);
+
+        Excel::import(new CheckpointsImport, $request->file('file'));
+
+        return redirect()->route('checkpoints.index')->with('success', 'นำเข้าข้อมูลจุดตรวจเรียบร้อยแล้ว');
+    }
+
     public function quickStore(Request $request)
     {
         $request->validate([
@@ -75,6 +116,8 @@ class CheckpointController extends Controller
             'category_id' => 'nullable|exists:checkpoint_categories,id',
             'new_category_name' => 'nullable|string|max:255|unique:checkpoint_categories,name',
             'type' => 'nullable|in:person,area',
+            'image_good' => 'nullable|image|max:10240',
+            'image_bad' => 'nullable|image|max:10240',
         ]);
 
         $categoryId = $request->category_id;
@@ -89,13 +132,22 @@ class CheckpointController extends Controller
             $categoryId = $category->id;
         }
 
-        $checkpoint = Checkpoint::create([
+        $data = [
             'title' => $request->title,
             'description' => $request->description,
             'category_id' => $categoryId,
             'is_active' => true,
             'type' => $request->type ?? 'person',
-        ]);
+        ];
+
+        if ($request->hasFile('image_good')) {
+            $data['image_good'] = $request->file('image_good')->store('standards', 'public');
+        }
+        if ($request->hasFile('image_bad')) {
+            $data['image_bad'] = $request->file('image_bad')->store('standards', 'public');
+        }
+
+        $checkpoint = Checkpoint::create($data);
 
         // Return JSON with category name for UI grouping
         $checkpoint->load('category');

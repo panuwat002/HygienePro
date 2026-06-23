@@ -5,10 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\LogsActivity;
 
 class Checkpoint extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, LogsActivity, SoftDeletes;
 
     protected $fillable = [
         'title',
@@ -17,6 +18,8 @@ class Checkpoint extends Model
         'version',
         'is_active',
         'type', // person, area
+        'image_good',
+        'image_bad',
     ];
 
     public function scopeActive($query)

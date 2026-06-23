@@ -35,9 +35,9 @@ class DatabaseSeeder extends Seeder
 
         // IT Admin (Global, Level 6)
         User::create([
-            'name' => 'System Admin',
-            'email' => 'admin@example.com',
-            'password' => Hash::make('password'),
+            'name' => 'panuwat sakutem',
+            'email' => 'panuwat.sa@allcoco.co.th',
+            'password' => Hash::make('088286@p'),
             'role' => 'admin',
             'level' => 6,
             'department_id' => $deptQA->id, // Admin usually in QA or IT

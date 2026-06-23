@@ -9,11 +9,11 @@
     <form method="POST" action="{{ route('login') }}">
         @csrf
 
-        <!-- Email Address -->
+        <!-- Login (Email / Employee Code) -->
         <div class="mb-3">
-            <label for="email" class="form-label">{{ __('Email') }}</label>
-            <input id="email" type="email" class="form-control @error('email') is-invalid @enderror" name="email" value="{{ old('email') }}" required autofocus autocomplete="username">
-            @error('email')
+            <label for="login" class="form-label">{{ __('Email หรือ รหัสพนักงาน') }}</label>
+            <input id="login" type="text" class="form-control @error('login') is-invalid @enderror" name="login" value="{{ old('login') }}" required autofocus autocomplete="username">
+            @error('login')
                 <div class="invalid-feedback">
                     {{ $message }}
                 </div>

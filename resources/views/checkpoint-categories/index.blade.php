@@ -3,13 +3,15 @@
 
     <div class="row">
         <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center mb-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4">
                 <div>
                     <h5 class="fw-bold mb-0">จัดกลุ่มจุดตรวจเพื่อความสะดวกในการจัดการ</h5>
                 </div>
-                <a href="{{ route('checkpoint-categories.create') }}" class="btn btn-primary px-4 bg-gradient shadow-sm rounded-pill">
-                    <i class="bi bi-tags-fill me-2"></i>เพิ่มหมวดหมู่
-                </a>
+                <div class="mt-3 mt-md-0">
+                    <a href="{{ route('checkpoint-categories.create') }}" class="btn btn-primary px-4 bg-gradient shadow-sm rounded-pill">
+                        <i class="bi bi-tags-fill"></i><span class="d-none d-sm-inline ms-2">เพิ่มหมวดหมู่</span>
+                    </a>
+                </div>
             </div>
 
             @if(session('success'))
@@ -19,7 +21,7 @@
             </div>
             @endif
 
-            <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+            <div class="card border-0 shadow-sm rounded-4 overflow-hidden table-modern">
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                         <thead class="bg-light">
@@ -33,15 +35,15 @@
                         <tbody>
                             @forelse($categories as $category)
                             <tr>
-                                <td class="ps-4">
+                                <td class="ps-4" data-label="ไอคอน">
                                     <div class="bg-light rounded-circle d-flex align-items-center justify-content-center shadow-sm" style="width: 40px; height: 40px;">
                                         <i class="bi bi-{{ $category->icon ?? 'tag' }} text-primary"></i>
                                     </div>
                                 </td>
-                                <td>
+                                <td data-label="ชื่อหมวดหมู่">
                                     <span class="fw-bold text-dark">{{ $category->name }}</span>
                                 </td>
-                                <td>
+                                <td data-label="จำนวนจุดตรวจ">
                                     <span class="badge bg-secondary-subtle text-secondary px-3 py-2 rounded-pill border border-secondary-subtle">
                                         <i class="bi bi-list-stars me-1"></i> {{ $category->checkpoints_count }} รายการ
                                     </span>

@@ -60,7 +60,10 @@ class EmployeesImport implements ToModel, WithStartRow
         }
         $department = Department::firstOrCreate(
             ['dept_name' => $deptName],
-            ['dept_description' => 'Imported via Excel']
+            [
+                'dept_code' => Str::slug($deptName, '_') . '_' . time(),
+                'dept_description' => 'Imported via Excel'
+            ]
         );
 
         return Employee::updateOrCreate(

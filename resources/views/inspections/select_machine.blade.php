@@ -38,7 +38,7 @@
             </div>
             
             <div class="text-center mt-4">
-                 <a href="{{ route('inspection.dashboard') }}" class="btn btn-light rounded-pill px-4">
+                 <a href="{{ route('inspection.dashboard', 'area') }}" class="btn btn-light rounded-pill px-4">
                     <i class="bi bi-arrow-left me-2"></i>ย้อนกลับ
                 </a>
             </div>

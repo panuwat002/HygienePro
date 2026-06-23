@@ -26,52 +26,120 @@
                                 </div>
                             </div>
                             <div class="card-body p-4">
-                                @forelse($allCheckpoints as $categoryName => $checkpoints)
-                                <div class="mb-4 last-child-mb-0">
-                                    <h6 class="text-uppercase text-muted fw-bold mb-3 border-bottom pb-2" style="font-size: 0.8rem; letter-spacing: 1px;">
-                                        {{ $categoryName ?: 'ไม่มีหมวดหมู่' }}
-                                    </h6>
-                                    <div class="row g-3">
-                                        @foreach($checkpoints as $cp)
-                                        <div class="col-md-6">
-                                            <div class="position-relative p-3 rounded-3 border h-100 hover-border {{ in_array($cp->id, $selectedCheckpoints) ? 'bg-primary-subtle border-primary' : 'bg-light border-transparent' }}">
-                                                <!-- Action Buttons (Top Right) -->
-                                                <div class="position-absolute top-0 end-0 p-2 d-flex gap-1" style="z-index: 10;">
-                                                    <button type="button" class="btn btn-sm bg-white border text-muted shadow-sm rounded-circle p-0 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;" 
-                                                        onclick="openEditModal({{ $cp->id }}, '{{ addslashes($cp->title) }}', '{{ addslashes($cp->description) }}', '{{ $cp->category_id }}', event)" title="แก้ไข">
-                                                        <i class="bi bi-pencil" style="font-size: 0.7rem;"></i>
-                                                    </button>
-                                                    <button type="button" class="btn btn-sm bg-white border text-danger shadow-sm rounded-circle p-0 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;" 
-                                                        onclick="deleteCheckpoint({{ $cp->id }}, event)" title="ลบ">
-                                                        <i class="bi bi-trash" style="font-size: 0.7rem;"></i>
-                                                    </button>
-                                                </div>
+                                {{-- Tabs Navigation --}}
+                                <ul class="nav nav-pills nav-fill mb-4 bg-light rounded-pill p-1" id="checkpointTabs" role="tablist">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link rounded-pill active" id="person-tab" data-bs-toggle="pill" data-bs-target="#person-panel" type="button" role="tab">
+                                            <i class="bi bi-person-check me-1"></i>ตรวจสุขลักษณะพนักงาน
+                                            <span class="badge bg-primary ms-1">{{ $allCheckpoints->flatten()->where('type', 'person')->count() }}</span>
+                                        </button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link rounded-pill" id="area-tab" data-bs-toggle="pill" data-bs-target="#area-panel" type="button" role="tab">
+                                            <i class="bi bi-geo-alt me-1"></i>ตรวจพื้นที่/อุปกรณ์
+                                            <span class="badge bg-dark ms-1">{{ $allCheckpoints->flatten()->where('type', 'area')->count() }}</span>
+                                        </button>
+                                    </li>
+                                </ul>
 
-                                                <div class="form-check">
-                                                    <input class="form-check-input ms-0 me-2" type="checkbox" name="checkpoint_ids[]" value="{{ $cp->id }}" id="cp_{{ $cp->id }}" @checked(in_array($cp->id, $selectedCheckpoints))>
-                                                    <label class="form-check-label d-block cursor-pointer pe-4" for="cp_{{ $cp->id }}">
-                                                        <div class="d-flex align-items-center mb-1">
-                                                            @if($cp->type === 'area')
-                                                                <span class="badge bg-dark me-2 rounded-pill px-2 py-1" style="font-size: 0.65rem;">Area</span>
-                                                            @else
-                                                                <span class="badge bg-primary me-2 rounded-pill px-2 py-1" style="font-size: 0.65rem;">Person</span>
-                                                            @endif
-                                                            <span class="fw-bold d-block text-break">{{ $cp->title }}</span>
+                                {{-- Tab Content --}}
+                                <div class="tab-content" id="checkpointTabsContent">
+                                    {{-- Person Tab --}}
+                                    <div class="tab-pane fade show active" id="person-panel" role="tabpanel">
+                                        @php
+                                            $personCheckpoints = $allCheckpoints->map(function($categoryCheckpoints, $categoryName) {
+                                                return collect($categoryCheckpoints)->where('type', 'person');
+                                            })->filter(function($cp) { return $cp->count() > 0; });
+                                        @endphp
+                                        
+                                        @forelse($personCheckpoints as $categoryName => $checkpoints)
+                                        <div class="mb-4 last-child-mb-0">
+                                            <h6 class="text-uppercase text-muted fw-bold mb-3 border-bottom pb-2" style="font-size: 0.8rem; letter-spacing: 1px;">
+                                                <i class="bi bi-folder me-1"></i>{{ $categoryName ?: 'ไม่มีหมวดหมู่' }}
+                                            </h6>
+                                            <div class="row g-3">
+                                                @foreach($checkpoints as $cp)
+                                                <div class="col-md-6">
+                                                    <div class="position-relative p-3 rounded-3 border h-100 hover-border {{ in_array($cp->id, $selectedCheckpoints) ? 'bg-primary-subtle border-primary' : 'bg-light border-transparent' }}">
+                                                        <div class="position-absolute top-0 end-0 p-2 d-flex gap-1" style="z-index: 10;">
+                                                            <button type="button" class="btn btn-sm bg-white border text-muted shadow-sm rounded-circle p-0 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;" 
+                                                                onclick="openEditModal({{ $cp->id }}, '{{ addslashes($cp->title) }}', '{{ addslashes($cp->description) }}', '{{ $cp->category_id }}', event)" title="แก้ไข">
+                                                                <i class="bi bi-pencil" style="font-size: 0.7rem;"></i>
+                                                            </button>
+                                                            <button type="button" class="btn btn-sm bg-white border text-danger shadow-sm rounded-circle p-0 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;" 
+                                                                onclick="deleteCheckpoint({{ $cp->id }}, event)" title="ลบ">
+                                                                <i class="bi bi-trash" style="font-size: 0.7rem;"></i>
+                                                            </button>
                                                         </div>
-                                                        <small class="text-muted d-block text-break">{{ Str::limit($cp->description, 50) }}</small>
-                                                    </label>
+                                                        <div class="form-check">
+                                                            <input class="form-check-input ms-0 me-2" type="checkbox" name="checkpoint_ids[]" value="{{ $cp->id }}" id="cp_{{ $cp->id }}" @checked(in_array($cp->id, $selectedCheckpoints))>
+                                                            <label class="form-check-label d-block cursor-pointer pe-4" for="cp_{{ $cp->id }}">
+                                                                <span class="badge bg-primary me-2 rounded-pill px-2 py-1" style="font-size: 0.65rem;">Person</span>
+                                                                <span class="fw-bold d-block text-break mt-1">{{ $cp->title }}</span>
+                                                                <small class="text-muted d-block text-break">{{ Str::limit($cp->description, 50) }}</small>
+                                                            </label>
+                                                        </div>
+                                                    </div>
                                                 </div>
+                                                @endforeach
                                             </div>
                                         </div>
-                                        @endforeach
+                                        @empty
+                                        <div class="text-center py-5 text-muted">
+                                            <i class="bi bi-person-x display-6 mb-3 d-block"></i>
+                                            ยังไม่มีจุดตรวจประเภท "สุขลักษณะพนักงาน"
+                                        </div>
+                                        @endforelse
+                                    </div>
+
+                                    {{-- Area Tab --}}
+                                    <div class="tab-pane fade" id="area-panel" role="tabpanel">
+                                        @php
+                                            $areaCheckpoints = $allCheckpoints->map(function($categoryCheckpoints, $categoryName) {
+                                                return collect($categoryCheckpoints)->where('type', 'area');
+                                            })->filter(function($cp) { return $cp->count() > 0; });
+                                        @endphp
+                                        
+                                        @forelse($areaCheckpoints as $categoryName => $checkpoints)
+                                        <div class="mb-4 last-child-mb-0">
+                                            <h6 class="text-uppercase text-muted fw-bold mb-3 border-bottom pb-2" style="font-size: 0.8rem; letter-spacing: 1px;">
+                                                <i class="bi bi-folder me-1"></i>{{ $categoryName ?: 'ไม่มีหมวดหมู่' }}
+                                            </h6>
+                                            <div class="row g-3">
+                                                @foreach($checkpoints as $cp)
+                                                <div class="col-md-6">
+                                                    <div class="position-relative p-3 rounded-3 border h-100 hover-border {{ in_array($cp->id, $selectedCheckpoints) ? 'bg-dark bg-opacity-10 border-dark' : 'bg-light border-transparent' }}">
+                                                        <div class="position-absolute top-0 end-0 p-2 d-flex gap-1" style="z-index: 10;">
+                                                            <button type="button" class="btn btn-sm bg-white border text-muted shadow-sm rounded-circle p-0 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;" 
+                                                                onclick="openEditModal({{ $cp->id }}, '{{ addslashes($cp->title) }}', '{{ addslashes($cp->description) }}', '{{ $cp->category_id }}', event)" title="แก้ไข">
+                                                                <i class="bi bi-pencil" style="font-size: 0.7rem;"></i>
+                                                            </button>
+                                                            <button type="button" class="btn btn-sm bg-white border text-danger shadow-sm rounded-circle p-0 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;" 
+                                                                onclick="deleteCheckpoint({{ $cp->id }}, event)" title="ลบ">
+                                                                <i class="bi bi-trash" style="font-size: 0.7rem;"></i>
+                                                            </button>
+                                                        </div>
+                                                        <div class="form-check">
+                                                            <input class="form-check-input ms-0 me-2" type="checkbox" name="checkpoint_ids[]" value="{{ $cp->id }}" id="cp_{{ $cp->id }}" @checked(in_array($cp->id, $selectedCheckpoints))>
+                                                            <label class="form-check-label d-block cursor-pointer pe-4" for="cp_{{ $cp->id }}">
+                                                                <span class="badge bg-dark me-2 rounded-pill px-2 py-1" style="font-size: 0.65rem;">Area</span>
+                                                                <span class="fw-bold d-block text-break mt-1">{{ $cp->title }}</span>
+                                                                <small class="text-muted d-block text-break">{{ Str::limit($cp->description, 50) }}</small>
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                @endforeach
+                                            </div>
+                                        </div>
+                                        @empty
+                                        <div class="text-center py-5 text-muted">
+                                            <i class="bi bi-geo display-6 mb-3 d-block"></i>
+                                            ยังไม่มีจุดตรวจประเภท "พื้นที่/อุปกรณ์"
+                                        </div>
+                                        @endforelse
                                     </div>
                                 </div>
-                                @empty
-                                <div class="text-center py-5 text-muted">
-                                    <i class="bi bi-list-columns-reverse display-6 mb-3 d-block"></i>
-                                    ยังไม่มีข้อมูลจุดตรวจในระบบ
-                                </div>
-                                @endforelse
                             </div>
                         </div>
                     </div>
@@ -110,6 +178,25 @@
                         <div class="mb-3">
                             <label for="new_description" class="form-label fw-bold small">คำอธิบายเพิ่มเติม</label>
                             <textarea class="form-control" id="new_description" rows="2" placeholder="อธิบายลายละเอียด..."></textarea>
+                        </div>
+
+                        <!-- Visual Standards -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">รูปตัวอย่างมาตรฐาน (Visual Standards)</label>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <div class="p-2 border rounded bg-light">
+                                        <label for="new_image_good" class="form-label text-success small fw-bold mb-1"><i class="bi bi-check-circle-fill me-1"></i>Good Example</label>
+                                        <input type="file" class="form-control form-control-sm" id="new_image_good" accept="image/*">
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="p-2 border rounded bg-light">
+                                        <label for="new_image_bad" class="form-label text-danger small fw-bold mb-1"><i class="bi bi-x-circle-fill me-1"></i>Bad Example</label>
+                                        <input type="file" class="form-control form-control-sm" id="new_image_bad" accept="image/*">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Type Selection -->
@@ -314,22 +401,30 @@
             // Get values
             const title = document.getElementById('new_title').value;
             const description = document.getElementById('new_description').value;
+
+            // Prepare FormData
+            const formData = new FormData();
+            formData.append('title', title);
+            formData.append('description', description);
+            formData.append('type', document.querySelector('input[name="new_type"]:checked').value);
             
-            // Determine Category Data
-            let categoryPayload = {};
+            // Category
             if (toggleNewCategory.checked) {
                 const newName = newCategoryInput.value.trim();
                 if (!newName) {
                     alert("กรุณาระบุชื่อหมวดหมู่ใหม่");
                     return;
                 }
-                categoryPayload = { new_category_name: newName };
+                formData.append('new_category_name', newName);
             } else {
-                categoryPayload = { category_id: existingCategoryConfig.value || null };
+                formData.append('category_id', existingCategoryConfig.value || "");
             }
-            
-            // Get Type
-            const type = document.querySelector('input[name="new_type"]:checked').value;
+
+            // Images
+            const fileGood = document.getElementById('new_image_good').files[0];
+            const fileBad = document.getElementById('new_image_bad').files[0];
+            if(fileGood) formData.append('image_good', fileGood);
+            if(fileBad) formData.append('image_bad', fileBad);
 
             const btn = quickForm.querySelector('button[type="submit"]');
             const originalText = btn.innerHTML;
@@ -339,15 +434,9 @@
             fetch('{{ route("checkpoints.quick-store") }}', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': '{{ csrf_token() }}'
                 },
-                body: JSON.stringify({
-                    title: title,
-                    description: description,
-                    type: type, // Add type to payload
-                    ...categoryPayload
-                })
+                body: formData
             })
             .then(response => response.json())
             .then(data => {

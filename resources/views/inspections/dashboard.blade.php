@@ -30,19 +30,19 @@
                 <li class="nav-item">
                     <a class="nav-link {{ $type === 'personnel' ? 'active' : '' }}" 
                        href="{{ route('inspection.dashboard', 'personnel') }}">
-                        <i class="bi bi-people-fill me-2"></i>ตรวจพนักงาน
+                        <i class="bi bi-people-fill me-2"></i>ตรวจพนักงาน<span class="d-none d-sm-inline"> (Personnel)</span>
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {{ $type === 'area' ? 'active' : '' }}" 
                        href="{{ route('inspection.dashboard', 'area') }}">
-                        <i class="bi bi-shop me-2"></i>ตรวจพื้นที่ (Area)
+                        <i class="bi bi-shop me-2"></i>ตรวจพื้นที่<span class="d-none d-sm-inline"> (Area)</span>
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {{ $type === 'machine' ? 'active' : '' }}" 
                        href="{{ route('inspection.dashboard', 'machine') }}">
-                        <i class="bi bi-gear-wide-connected me-2"></i>ตรวจเครื่องจักร (Machine)
+                        <i class="bi bi-gear-wide-connected me-2"></i>ตรวจเครื่องจักร<span class="d-none d-sm-inline"> (Machine)</span>
                     </a>
                 </li>
             </ul>

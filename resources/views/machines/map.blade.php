@@ -109,6 +109,25 @@
                             <label for="new_description" class="form-label fw-bold small">คำอธิบายเพิ่มเติม</label>
                             <textarea class="form-control" id="new_description" rows="2"></textarea>
                         </div>
+
+                        <!-- Visual Standards -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">รูปตัวอย่างมาตรฐาน (Visual Standards)</label>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <div class="p-2 border rounded bg-light">
+                                        <label for="new_image_good" class="form-label text-success small fw-bold mb-1"><i class="bi bi-check-circle-fill me-1"></i>Good Example</label>
+                                        <input type="file" class="form-control form-control-sm" id="new_image_good" accept="image/*">
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="p-2 border rounded bg-light">
+                                        <label for="new_image_bad" class="form-label text-danger small fw-bold mb-1"><i class="bi bi-x-circle-fill me-1"></i>Bad Example</label>
+                                        <input type="file" class="form-control form-control-sm" id="new_image_bad" accept="image/*">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                          <div class="mb-3">
                             <label class="form-label fw-bold small">ประเภท (Type)</label>
                             <div class="d-flex gap-2">
@@ -142,13 +161,23 @@
             const description = document.getElementById('new_description').value;
             const type = document.querySelector('input[name="new_type"]:checked').value;
 
+            // Prepare FormData
+            const formData = new FormData();
+            formData.append('title', title);
+            formData.append('description', description);
+            formData.append('type', type);
+            // Append Images
+            const fileGood = document.getElementById('new_image_good').files[0];
+            const fileBad = document.getElementById('new_image_bad').files[0];
+            if(fileGood) formData.append('image_good', fileGood);
+            if(fileBad) formData.append('image_bad', fileBad);
+
             fetch('{{ route("checkpoints.quick-store") }}', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': '{{ csrf_token() }}'
                 },
-                body: JSON.stringify({ title, description, type })
+                body: formData
             })
             .then(res => res.json())
             .then(data => {
