@@ -52,33 +52,31 @@ class InspectionController extends Controller
             return $query;
         };
 
+        // DB-level grouping key for unique inspection entities
+        $entityExpr = "CONCAT(session_id, '_', CASE WHEN machine_id IS NOT NULL THEN CONCAT('m', machine_id) WHEN employee_id IS NOT NULL THEN CONCAT('e', employee_id) ELSE CONCAT('l', COALESCE(location_id, 0)) END)";
+
         // 1. Total unique inspections today
-        $todayQuery = InspectionLog::whereDate('inspected_at', $today);
-        $todayLogs = $applyScope($todayQuery)->get();
-        
-        $inspectionsToday = $todayLogs->groupBy(function($log) {
-            return $log->session_id . '_' . ($log->machine_id ? 'm' . $log->machine_id : ($log->employee_id ? 'e' . $log->employee_id : 'l' . $log->location_id));
-        })->count();
+        $todayBase = InspectionLog::whereDate('inspected_at', $today);
+        $applyScope($todayBase);
+
+        $row = (clone $todayBase)->selectRaw("COUNT(DISTINCT {$entityExpr}) as cnt")->first();
+        $inspectionsToday = $row ? (int) $row->cnt : 0;
 
         // 2. Pending Verification
-        $pendingQuery = InspectionLog::where('verification_status', 'pending');
-        $pendingLogs = $applyScope($pendingQuery)->get();
-        
-        $pendingVerificationCount = $pendingLogs->groupBy(function($log) {
-             return $log->session_id . '_' . ($log->machine_id ? 'm' . $log->machine_id : ($log->employee_id ? 'e' . $log->employee_id : 'l' . $log->location_id));
-        })->count();
+        $pendingBase = InspectionLog::where('verification_status', 'pending');
+        $applyScope($pendingBase);
+        $row = $pendingBase->selectRaw("COUNT(DISTINCT {$entityExpr}) as cnt")->first();
+        $pendingVerificationCount = $row ? (int) $row->cnt : 0;
 
         // 3. Outstanding Re-cleans
-        $recleanQuery = InspectionLog::where('verification_status', 'reclean');
-        $recleanLogs = $applyScope($recleanQuery)->get();
+        $recleanBase = InspectionLog::where('verification_status', 'reclean');
+        $applyScope($recleanBase);
+        $row = $recleanBase->selectRaw("COUNT(DISTINCT {$entityExpr}) as cnt")->first();
+        $recleanCount = $row ? (int) $row->cnt : 0;
 
-        $recleanCount = $recleanLogs->groupBy(function($log) {
-            return $log->session_id . '_' . ($log->machine_id ? 'm' . $log->machine_id : ($log->employee_id ? 'e' . $log->employee_id : 'l' . $log->location_id));
-        })->count();
-
-        // 4. Daily Pass Rate (Based on Scope)
-        $totalPass = $todayLogs->where('result', 'pass')->count();
-        $totalFail = $todayLogs->where('result', 'fail')->count();
+        // 4. Daily Pass Rate (DB-level counts)
+        $totalPass = (clone $todayBase)->where('result', 'pass')->count();
+        $totalFail = (clone $todayBase)->where('result', 'fail')->count();
         $passRate = ($totalPass + $totalFail) > 0 ? round(($totalPass / ($totalPass + $totalFail)) * 100) : 100;
 
         // 5. Recent Activity
@@ -102,7 +100,7 @@ class InspectionController extends Controller
         $totalCars = $carsThisMonth->count();
         
         // Group by Department
-        $carsByDept = $carsThisMonth->groupBy(fn($c) => $c->log->session->department->dept_name ?? 'Unknown')
+        $carsByDept = $carsThisMonth->groupBy(fn($c) => $c->log?->session?->department?->dept_name ?? 'Unknown')
                         ->map->count();
                         
         // SLA Status
@@ -155,8 +153,7 @@ class InspectionController extends Controller
         } elseif ($user->department) {
             $departments = Department::where('id', $user->department_id)->get();
         } else {
-            // Failsafe for users with neither a department nor explicitly assigned global visibility
-            $departments = Department::all();
+            $departments = collect();
         }
 
         // 2. Fetch Pending Re-cleans (Global for the type)
@@ -270,10 +267,9 @@ class InspectionController extends Controller
 
             $progressPercent = $totalTargets > 0 ? round((($totalTargets - $remainingCount) / $totalTargets) * 100) : 0;
             
-            // Auto-complete if valid remaining is 0 (Self-Fix)
             if ($remainingCount === 0 && $currentSession->status !== 'completed') {
-                $currentSession->update(['status' => 'completed']);
-                $currentSession->refresh(); // explicit refresh
+                $this->inspectionService->finishSession($currentSession);
+                $currentSession->refresh();
             }
         }
 
@@ -575,9 +571,12 @@ class InspectionController extends Controller
                 ->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)');
         }
 
-        if ($session->status !== 'completed') {
-            $session->update(['status' => 'paused']);
+        if ($session->status === 'completed') {
+            return redirect()->route('inspection.dashboard', $session->type)
+                ->with('error', 'เซสชันนี้จบงานไปแล้ว ไม่สามารถพักได้ (Session already completed)');
         }
+
+        $session->update(['status' => 'paused']);
 
         return redirect()->route('inspection.dashboard', $session->type)
             ->with('success', 'พักการตรวจชั่วคราวแล้ว (Session Paused)');
@@ -718,6 +717,12 @@ class InspectionController extends Controller
             'logs.*.result' => 'required|in:pass,fail',
         ]);
 
+        $employee = Employee::findOrFail($request->employee_id);
+        if ($employee->department_id !== $session->department_id) {
+            return redirect()->route('inspection.scan', $session->id)
+                ->with('error', 'พนักงานไม่ได้อยู่ในแผนกของเซสชันนี้ (Employee not in session department)');
+        }
+
         try {
             // Process random evidence photo from Base64
             $randomPhotoPath = null;
@@ -845,7 +850,22 @@ class InspectionController extends Controller
             }
         });
 
-        $groupedInspections = $groupedInspections->map(function ($logsInGroup) use ($date) {
+        // Pre-fetch monthly failure counts to avoid N+1 queries in the map loop
+        $month = now()->month;
+        $year = now()->year;
+        $employeeIds = $logs->pluck('employee_id')->unique()->filter()->values();
+        $failureCounts = collect();
+        if ($employeeIds->isNotEmpty()) {
+            $failureCounts = InspectionLog::whereIn('employee_id', $employeeIds)
+                ->whereYear('inspected_at', $year)
+                ->whereMonth('inspected_at', $month)
+                ->where('result', 'fail')
+                ->selectRaw('employee_id, COUNT(*) as fail_count')
+                ->groupBy('employee_id')
+                ->pluck('fail_count', 'employee_id');
+        }
+
+        $groupedInspections = $groupedInspections->map(function ($logsInGroup) use ($date, $failureCounts) {
             $firstLog = $logsInGroup->first();
             $session = $firstLog->session;
             
@@ -883,11 +903,9 @@ class InspectionController extends Controller
                 $modalId = 'emp_' . $employee->id . '_sess_' . $firstLog->session_id;
                 $imagePath = $employee->profile_image;
 
-                $month = now()->month;
-                $year = now()->year;
-                $monthlyFailures = $employee->getMonthlyFailures($month, $year);
-                $hygieneScore = $employee->getHygieneScore($month, $year);
-                $trafficLight = $employee->getTrafficLightStatus();
+                $monthlyFailures = (int) ($failureCounts->get($employee->id, 0));
+                $hygieneScore = max(0, 100 - ($monthlyFailures * 5));
+                $trafficLight = $monthlyFailures <= 1 ? 'green' : ($monthlyFailures <= 3 ? 'yellow' : 'red');
             } else {
                 // Logic above handles basic type, but refine here if needed
                 $type = $machine ? 'machine' : 'area';
@@ -924,7 +942,7 @@ class InspectionController extends Controller
                 'name' => $name,
                 'subtext' => $subtext,
                 'modal_id' => $modalId,
-                'image_path' => str_replace('storage/', '', $imagePath),
+                'image_path' => str_replace('/storage/', '', $imagePath),
                 'employee' => $employee,
                 'machine' => $machine,
                 'location' => $location,
@@ -932,8 +950,8 @@ class InspectionController extends Controller
                 'shift' => $shiftLabel,
                 'round' => $round,
                 'session_id' => $session->id, // Important for Approval
-                'date' => $logsInGroup->max('inspected_at')->format('d/m/Y'),
-                'time' => $logsInGroup->max('inspected_at')->format('H:i'),
+                'date' => $logsInGroup->max('inspected_at')?->format('d/m/Y') ?? '-',
+                'time' => $logsInGroup->max('inspected_at')?->format('H:i') ?? '-',
                 'status' => $isPass ? 'pass' : 'fail',
                 'findings' => $failedLogs->values(),
                 'all_logs' => $logsInGroup->values(),

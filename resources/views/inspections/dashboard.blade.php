@@ -130,7 +130,7 @@
                                             <div class="d-flex align-items-center">
                                                 <div class="rounded-circle bg-light d-flex justify-content-center align-items-center me-2 flex-shrink-0" style="width:32px; height:32px;">
                                                     @if($emp->profile_image)
-                                                        <img src="{{ asset('storage/'.$emp->profile_image) }}" class="w-100 h-100 rounded-circle object-fit-cover">
+                                                        <img src="{{ $emp->profile_image }}" class="w-100 h-100 rounded-circle object-fit-cover">
                                                     @else
                                                         <i class="bi bi-person text-secondary"></i>
                                                     @endif
@@ -217,7 +217,7 @@
                                         <div class="d-flex align-items-center">
                                             <div class="me-3 position-relative">
                                                 @if($firstLog->employee_id && $firstLog->employee->profile_image)
-                                                    <img src="{{ asset('storage/' . $firstLog->employee->profile_image) }}" class="rounded-circle object-fit-cover" style="width: 40px; height: 40px;">
+                                                    <img src="{{ $firstLog->employee->profile_image }}" class="rounded-circle object-fit-cover" style="width: 40px; height: 40px;">
                                                 @else
                                                     <div class="rounded-circle bg-light d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
                                                         <i class="bi bi-{{ $firstLog->employee_id ? 'person' : 'gear' }}"></i>
