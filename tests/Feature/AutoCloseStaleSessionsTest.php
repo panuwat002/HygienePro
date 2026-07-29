@@ -130,3 +130,16 @@ test('handles a night shift that wraps past midnight', function () {
     expect($this->service->autoCloseStaleSessions())->toBe(1);
     expect($session->refresh()->status)->toBe('completed');
 });
+
+test('the inspections:auto-close-stale command closes stale sessions', function () {
+    Carbon::setTestNow('2026-07-29 12:00:00');
+    $session = makeOpenSession($this);
+
+    Carbon::setTestNow('2026-07-29 16:00:00');
+
+    $this->artisan('inspections:auto-close-stale')
+        ->expectsOutputToContain('Auto-closed 1')
+        ->assertExitCode(0);
+
+    expect($session->refresh()->status)->toBe('completed');
+});

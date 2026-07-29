@@ -10,3 +10,5 @@ Artisan::command('inspire', function () {
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('schedule:check-missed')->hourly();
+
+Schedule::command('inspections:auto-close-stale')->everyFifteenMinutes();
