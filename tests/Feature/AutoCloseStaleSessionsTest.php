@@ -11,9 +11,13 @@ use App\Models\ActivityLog;
 use App\Services\InspectionService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
+use App\Http\Controllers\InspectionController;
 
 beforeEach(function () {
     Cache::flush();
+    Http::fake(); // never hit the external AI service (localhost:8001) during tests
 
     $this->dept = Department::create([
         'dept_name' => 'Production', 'dept_code' => 'PD', 'visibility_type' => 'isolated',
@@ -142,4 +146,45 @@ test('the inspections:auto-close-stale command closes stale sessions', function 
         ->assertExitCode(0);
 
     expect($session->refresh()->status)->toBe('completed');
+});
+
+test('the dashboard heartbeat auto-closes stale sessions', function () {
+    Carbon::setTestNow('2026-07-29 12:00:00');
+    $session = makeOpenSession($this);
+
+    Carbon::setTestNow('2026-07-29 16:00:00');
+    app(InspectionController::class)->autoCloseHeartbeat();
+
+    expect($session->refresh()->status)->toBe('completed');
+});
+
+test('the heartbeat respects the enabled kill-switch', function () {
+    config(['inspection.auto_close.enabled' => false]);
+
+    Carbon::setTestNow('2026-07-29 12:00:00');
+    $session = makeOpenSession($this);
+
+    Carbon::setTestNow('2026-07-29 16:00:00');
+    app(InspectionController::class)->autoCloseHeartbeat();
+
+    expect($session->refresh()->status)->toBe('in_progress');
+});
+
+test('the heartbeat is throttled to once per window', function () {
+    $controller = app(InspectionController::class);
+    Carbon::setTestNow('2026-07-29 16:00:00');
+
+    // First run closes the first stale session and sets the throttle key
+    $first = makeOpenSession($this, 'morning', '2026-07-29', 1);
+    DB::table('inspection_sessions')->where('id', $first->id)
+        ->update(['created_at' => '2026-07-29 12:00:00', 'updated_at' => '2026-07-29 12:00:00']);
+    $controller->autoCloseHeartbeat();
+    expect($first->refresh()->status)->toBe('completed');
+
+    // A second stale session appears, but the heartbeat is throttled -> untouched
+    $second = makeOpenSession($this, 'morning', '2026-07-29', 2);
+    DB::table('inspection_sessions')->where('id', $second->id)
+        ->update(['created_at' => '2026-07-29 12:00:00', 'updated_at' => '2026-07-29 12:00:00']);
+    $controller->autoCloseHeartbeat();
+    expect($second->refresh()->status)->toBe('in_progress');
 });

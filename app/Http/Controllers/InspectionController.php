@@ -11,6 +11,7 @@ use App\Models\Location;
 use App\Models\Machine;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Intervention\Image\Laravel\Facades\Image; // Laravel 11/Intervention 3
 
@@ -24,8 +25,29 @@ class InspectionController extends Controller
         $this->inspectionService = $inspectionService;
         $this->scheduleService = $scheduleService;
     }
+    /**
+     * Throttled, fail-safe trigger that auto-closes stale inspection sessions
+     * when the dashboard loads. Runs at most once per configured window and
+     * must never throw into the request.
+     */
+    public function autoCloseHeartbeat(): void
+    {
+        try {
+            $heartbeatMinutes = (int) config('inspection.auto_close.heartbeat_minutes', 10);
+            if (config('inspection.auto_close.enabled', true)
+                && \Illuminate\Support\Facades\Cache::add('auto_close_heartbeat', 1, now()->addMinutes($heartbeatMinutes))) {
+                $this->inspectionService->autoCloseStaleSessions();
+            }
+        } catch (\Throwable $e) {
+            \Log::error('auto-close heartbeat failed: ' . $e->getMessage());
+        }
+    }
+
     public function home()
     {
+        // Opportunistically auto-close stale sessions on dashboard load (throttled, non-blocking).
+        $this->autoCloseHeartbeat();
+
         $today = now()->toDateString();
         $user = Auth::user();
 
@@ -119,6 +141,10 @@ class InspectionController extends Controller
         $inProgressCount = $totalCars - $onTimeCount - $overdueCount;
         if ($inProgressCount < 0) $inProgressCount = 0; // Guard
 
+        // AI Tag Insights
+        // Pluck tags, flatten them to a single list, remove empties, count occurrences, and get top 5
+        $aiTagCounts = $carsThisMonth->pluck('ai_tags')->flatten()->filter()->countBy()->sortDesc()->take(5);
+
         // 7. Today's Scheduled Inspections
         $scheduleDeptId = $user->isAdmin() || $user->hasGlobalVisibility() ? null : $user->department_id;
         $scheduledTasks = collect();
@@ -126,6 +152,31 @@ class InspectionController extends Controller
             $todaysSchedules = $this->scheduleService->getDailySchedules($scheduleDeptId, $today);
             $todaysSchedules->load('department');
             $scheduledTasks = $this->scheduleService->getComplianceStatus($todaysSchedules, $today);
+        }
+
+        // 8. Active Sessions (For Admins)
+        $activeSessions = collect();
+        if ($user->isAdmin() || $user->hasGlobalVisibility()) {
+            $activeSessions = InspectionSession::with(['inspector', 'department'])
+                ->where('inspection_date', $today)
+                ->where('status', 'in_progress')
+                ->orderBy('created_at', 'desc')
+                ->get();
+        }
+
+        // 9. Today's Random Audits (For Supervisors/Managers)
+        $todayAudits = collect();
+        if ($user->level >= 4 || $user->isAdmin()) { // Supervisor (level 4) and above
+            $auditQuery = \App\Models\RandomAudit::with('department')
+                ->where('audit_date', $today)
+                ->where('status', 'pending');
+            
+            // Non-admin supervisors only see their own department
+            if (!$user->isAdmin() && !$user->hasGlobalVisibility()) {
+                $auditQuery->where('department_id', $user->department_id);
+            }
+            
+            $todayAudits = $auditQuery->get();
         }
 
         return view('dashboard', compact(
@@ -139,7 +190,10 @@ class InspectionController extends Controller
             'onTimeCount',
             'overdueCount',
             'inProgressCount',
-            'scheduledTasks'
+            'aiTagCounts',
+            'scheduledTasks',
+            'activeSessions',
+            'todayAudits'
         ));
     }
 
@@ -210,10 +264,16 @@ class InspectionController extends Controller
         if ($currentSession) {
             if ($type === 'personnel') {
                 // Find Target Employees in the current shift
+                $shiftNames = match($currentSession->shift) {
+                    'morning' => ['morning', 'กะเช้า'],
+                    'afternoon' => ['afternoon', 'กะบ่าย'],
+                    'night' => ['night', 'กะดึก'],
+                    default => [$currentSession->shift]
+                };
                 $baseQuery = Employee::where('department_id', $currentSession->department_id)
                     ->where('is_active', true)
-                    ->whereHas('shift', function($q) use ($currentSession) {
-                        $q->where('shift_name', $currentSession->shift);
+                    ->whereHas('shift', function($q) use ($shiftNames) {
+                        $q->whereIn('shift_name', $shiftNames);
                     });
                 
                 $targetEmployeeIds = $baseQuery->pluck('id')->toArray();
@@ -269,11 +329,18 @@ class InspectionController extends Controller
 
             $progressPercent = $totalTargets > 0 ? round((($totalTargets - $remainingCount) / $totalTargets) * 100) : 0;
             
-            if ($remainingCount === 0 && $currentSession->status !== 'completed') {
-                $this->inspectionService->finishSession($currentSession);
-                $currentSession->refresh();
-            }
+            // Loop Engineering: Removed auto-complete logic here so it doesn't force close sessions 
+            // if an inspector wants to inspect outside their shift. They can use the "Finish" button.
         }
+        
+        // Fetch active sessions today
+        // TEMPORARY: Commented out the inspector_id filter so you can see it with your own session!
+        $activeOtherSessions = InspectionSession::with(['inspector', 'department'])
+            ->where('inspection_date', $today)
+            ->where('type', $type)
+            ->where('status', 'in_progress')
+            // ->where('inspector_id', '!=', Auth::id()) 
+            ->get();
 
         return view('inspections.dashboard', compact(
             'departments', 
@@ -285,7 +352,8 @@ class InspectionController extends Controller
             'totalTargets', 
             'progressPercent',
             'remainingList',
-            'scheduledTasks'
+            'scheduledTasks',
+            'activeOtherSessions'
         ));
     }
 
@@ -342,6 +410,127 @@ class InspectionController extends Controller
                 if ($session) {
                     $sessionIds = [$session->id];
                 }
+            }
+
+            if ($type === 'personnel') {
+                $shiftCards = [];
+                
+                if ($department !== 'all') {
+                    // Get all shifts that have employees in this department
+                    $shiftLabels = [
+                        'morning' => 'กะเช้า (Morning)',
+                        'afternoon' => 'กะบ่าย (Afternoon)',
+                        'night' => 'กะดึก (Night)',
+                    ];
+
+                    // Get all today's sessions for this department
+                    $allTodaySessions = InspectionSession::where('department_id', $deptModel->id)
+                                        ->where('inspection_date', $today)
+                                        ->where('type', 'personnel')
+                                        ->get();
+
+                    // Get all today's logs for this department
+                    $allTodaySessionIds = $allTodaySessions->pluck('id')->toArray();
+                    $allTodayLogs = collect();
+                    if (!empty($allTodaySessionIds)) {
+                        $allTodayLogs = InspectionLog::whereIn('session_id', $allTodaySessionIds)
+                                        ->whereNotNull('employee_id')
+                                        ->select('employee_id', 'session_id')
+                                        ->get();
+                    }
+
+                    // Get inspected employee IDs grouped by shift of the session
+                    $inspectedByShift = [];
+                    foreach ($allTodaySessions as $sess) {
+                        $sessShift = $sess->shift;
+                        if (!isset($inspectedByShift[$sessShift])) {
+                            $inspectedByShift[$sessShift] = collect();
+                        }
+                        $sessLogEmployees = $allTodayLogs->where('session_id', $sess->id)->pluck('employee_id');
+                        $inspectedByShift[$sessShift] = $inspectedByShift[$sessShift]->merge($sessLogEmployees);
+                    }
+
+                    // All inspected employee IDs across all shifts (for dedup)
+                    $allInspectedIds = $allTodayLogs->pluck('employee_id')->unique()->toArray();
+
+                    // Get total department employees as fallback
+                    $totalDeptEmployees = \App\Models\Employee::where('department_id', $deptModel->id)
+                                        ->where('is_active', true)
+                                        ->count();
+
+                    foreach ($shiftLabels as $shiftKey => $shiftLabel) {
+                        $shiftNames = match($shiftKey) {
+                            'morning' => ['morning', 'กะเช้า'],
+                            'afternoon' => ['afternoon', 'กะบ่าย'],
+                            'night' => ['night', 'กะดึก'],
+                            default => [$shiftKey]
+                        };
+                        $empCount = \App\Models\Employee::where('department_id', $deptModel->id)
+                                        ->where('is_active', true)
+                                        ->whereHas('shift', fn($q) => $q->whereIn('shift_name', $shiftNames))
+                                        ->count();
+                        
+                        // Count unique inspected employees for this shift
+                        $inspectedInShift = isset($inspectedByShift[$shiftKey]) 
+                            ? $inspectedByShift[$shiftKey]->unique()->count() 
+                            : 0;
+                            
+                        $isCurrentShift = ($shiftKey === $shift);
+
+                        // Only show if it's the current shift OR it has been inspected
+                        if (!$isCurrentShift && $inspectedInShift === 0) {
+                            continue;
+                        }
+
+                        // Fallback: If DB doesn't have shift assignments, use total department employees
+                        if ($empCount === 0) {
+                            $empCount = $totalDeptEmployees;
+                        }
+
+                        // Deduct people who were already inspected in OTHER shifts today
+                        // (because they are locked and cannot be inspected in this shift)
+                        $inspectedInThisShiftIds = isset($inspectedByShift[$shiftKey]) ? $inspectedByShift[$shiftKey]->toArray() : [];
+                        $inspectedInOtherShiftsIds = array_diff($allInspectedIds, $inspectedInThisShiftIds);
+                        $empCount -= count($inspectedInOtherShiftsIds);
+                        
+                        if ($empCount < 0) {
+                            $empCount = 0;
+                        }
+
+                        // Also count employees from THIS shift that were inspected in ANY session
+                        $shiftEmployeeIds = \App\Models\Employee::where('department_id', $deptModel->id)
+                                        ->where('is_active', true)
+                                        ->whereHas('shift', fn($q) => $q->whereIn('shift_name', $shiftNames))
+                                        ->pluck('id')->toArray();
+                                        
+                        // If we used the fallback for empCount, we should count all inspected employees in this shift's session
+                        $inspectedFromThisShift = count(array_intersect($shiftEmployeeIds, $allInspectedIds));
+                        if (empty($shiftEmployeeIds)) {
+                            $inspectedFromThisShift = $inspectedInShift;
+                        }
+
+                        $shiftCards[] = [
+                            'id' => 'shift_' . $shiftKey,
+                            'location_name' => $shiftLabel,
+                            'employees_count' => $empCount,
+                            'inspected_count' => $inspectedFromThisShift,
+                            'description' => $isCurrentShift 
+                                ? '🎯 กะที่กำลังตรวจอยู่ตอนนี้' 
+                                : 'จำนวนพนักงานที่ตรวจแล้วในกะนี้',
+                            'has_checkpoints' => true,
+                            'is_current_shift' => $isCurrentShift,
+                        ];
+                    }
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'locations' => $shiftCards,
+                    'shift' => $shift,
+                    'session_exists' => ($department !== 'all' ? !!$session : !empty($sessionIds)),
+                    'session_status' => $session ? $session->status : null,
+                    'session_round' => $session ? $session->round : null,
+                ]);
             }
 
             $locations = $query->get();
@@ -431,7 +620,8 @@ class InspectionController extends Controller
     {
         $rules = [
             'department_id' => ($type === 'personnel') ? 'required|exists:departments,id' : 'nullable',
-            'targets' => 'nullable|array' 
+            'targets' => 'nullable|array',
+            'shift' => 'nullable|in:morning,afternoon,night'
         ];
         
         $request->validate($rules);
@@ -454,7 +644,8 @@ class InspectionController extends Controller
                 Auth::user(),
                 (int) ($request->department_id ?? $deptId),
                 $type,
-                $request->boolean('force_new_round')
+                $request->boolean('force_new_round'),
+                $request->input('shift')
             );
         } catch (\Illuminate\Validation\ValidationException $e) {
             return redirect()->route('inspection.dashboard', $type)
@@ -497,6 +688,85 @@ class InspectionController extends Controller
             ]);
         }
     }
+
+    public function markAbsent(InspectionSession $session, Employee $employee)
+    {
+        $this->authorizeSessionOwner($session);
+
+        if ($session->isLocked()) {
+            return redirect()->back()
+                ->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)');
+        }
+
+        if ($session->status === 'completed') {
+            return redirect()->back()
+                ->with('error', 'เซสชันนี้ถูกบันทึกจบงานไปแล้ว (Session already completed)');
+        }
+
+        // Verify employee belongs to this session's department
+        if ($employee->department_id !== $session->department_id) {
+            return redirect()->back()
+                ->with('error', 'พนักงานไม่ได้อยู่ในแผนกของเซสชันนี้');
+        }
+
+        $checkpointType = match($session->type) {
+            'personnel' => 'person',
+            'area' => 'area',
+            'machine' => 'machine',
+            default => null,
+        };
+
+        $checkpointQuery = Checkpoint::where('is_active', true);
+        if ($checkpointType) {
+            $checkpointQuery->where('type', $checkpointType);
+        }
+
+        $employeeLocation = $employee->location_id ? $employee->location : null;
+        if ($employeeLocation) {
+            $checkpoints = $employeeLocation->checkpoints()
+                ->where('is_active', true)
+                ->when($checkpointType, fn($q) => $q->where('type', $checkpointType))
+                ->get();
+
+            if ($checkpoints->isEmpty()) {
+                $checkpoints = $checkpointQuery->get();
+            }
+        } else {
+            $checkpoints = $checkpointQuery->get();
+        }
+
+        if ($checkpoints->isEmpty()) {
+            return redirect()->back()->with('error', 'ไม่พบหัวข้อการตรวจสำหรับพนักงานคนนี้');
+        }
+
+        DB::beginTransaction();
+        try {
+            foreach ($checkpoints as $cp) {
+                // Check if log already exists
+                $exists = InspectionLog::where('session_id', $session->id)
+                    ->where('employee_id', $employee->id)
+                    ->where('checkpoint_id', $cp->id)
+                    ->exists();
+
+                if (!$exists) {
+                    InspectionLog::create([
+                        'session_id' => $session->id,
+                        'employee_id' => $employee->id,
+                        'checkpoint_id' => $cp->id,
+                        'result' => 'absent',
+                        'checkpoint_title_snapshot' => $cp->title,
+                        'dept_snapshot' => $employee->department->dept_name ?? null,
+                    ]);
+                }
+            }
+            DB::commit();
+            return redirect()->route('inspection.browse', $session->id)
+                ->with('success', "บันทึกสถานะลางานสำหรับ {$employee->fullname} เรียบร้อยแล้ว");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'เกิดข้อผิดพลาด: ' . $e->getMessage());
+        }
+    }
     
     public function browseEmployees(InspectionSession $session, Request $request)
     {
@@ -514,42 +784,115 @@ class InspectionController extends Controller
 
         // Get active employees in this department
         $showAll = $request->boolean('show_all');
-        $employeesQuery = Employee::with(['location', 'department', 'shift'])
+        $baseQuery = Employee::with(['location', 'department', 'shift'])
             ->where('department_id', $session->department_id)
             ->where('is_active', true);
 
         if (!$showAll) {
-            $employeesQuery->whereHas('shift', function ($q) use ($session) {
-                $q->where('shift_name', $session->shift);
+            $shiftNames = match($session->shift) {
+                'morning' => ['morning', 'กะเช้า'],
+                'afternoon' => ['afternoon', 'กะบ่าย'],
+                'night' => ['night', 'กะดึก'],
+                default => [$session->shift]
+            };
+            $baseQuery->whereHas('shift', function ($q) use ($shiftNames) {
+                $q->whereIn('shift_name', $shiftNames);
             });
         }
 
-        $employees = $employeesQuery->orderBy('location_id')
+        $allEmployeeIds = $baseQuery->pluck('id')->toArray();
+        $totalEmployees = count($allEmployeeIds);
+
+        // Search filter
+        $search = $request->input('q', '');
+        if ($search) {
+            $baseQuery->where(function($q) use ($search) {
+                $q->where('fullname', 'like', "%{$search}%")
+                  ->orWhere('employee_id', 'like', "%{$search}%");
+            });
+        }
+
+        $employees = $baseQuery->orderBy('location_id')
             ->orderBy('fullname')
             ->get();
 
-        // Get already inspected employee IDs
-        $inspectedIds = InspectionLog::where('session_id', $session->id)
+        // Get inspected TODAY across ALL sessions for this department
+        $todaySessions = InspectionSession::where('department_id', $session->department_id)
+            ->where('inspection_date', $session->inspection_date)
+            ->where('type', 'personnel')
+            ->pluck('id')
+            ->toArray();
+
+        $allTodayLogs = InspectionLog::whereIn('session_id', $todaySessions)
+            ->whereNotNull('employee_id')
+            ->select('employee_id', 'result', 'session_id')
+            ->get();
+
+        // 1. Logs in CURRENT session
+        $currentSessionLogs = $allTodayLogs->where('session_id', $session->id);
+        $inspectedCurrentIds = $currentSessionLogs->whereIn('result', ['pass', 'fail'])->pluck('employee_id')->unique()->toArray();
+        $absentIds = $currentSessionLogs->where('result', 'absent')->pluck('employee_id')->unique()->toArray();
+        
+        // 2. Logs in OTHER sessions today
+        $otherSessionLogs = $allTodayLogs->where('session_id', '!=', $session->id);
+        $inspectedOtherShiftIds = $otherSessionLogs->whereIn('result', ['pass', 'fail'])->pluck('employee_id')->unique()->toArray();
+
+        // Merge: treat employees inspected in ANY session today as "inspected" (non-clickable)
+        $inspectedIds = array_unique(array_merge($inspectedCurrentIds, $inspectedOtherShiftIds));
+
+        // All IDs that are either done or absent across ALL sessions today are considered "completed" for progress bar
+        $completedIds = array_unique(array_merge($inspectedIds, $absentIds));
+
+        // Fetch employees with pending Re-cleans
+        $pendingRecleanEmployeeIds = InspectionLog::where('verification_status', 'reclean')
+            ->whereDoesntHave('rechecks')
+            ->whereIn('employee_id', $allEmployeeIds)
             ->pluck('employee_id')
             ->unique()
             ->toArray();
 
-        // Group employees by location
-        $grouped = $employees->groupBy(function ($emp) {
-            return $emp->location->location_name ?? 'ไม่ได้กำหนดพื้นที่ (Unassigned)';
-        });
+        // Group employees clearly
+        $grouped = collect();
+        $currentShiftEmployees = collect();
+        $inspectedPreviousShiftEmployees = collect();
+        $otherShiftEmployees = collect();
 
-        // Search filter
-        $search = $request->input('q', '');
+        $currentShiftNames = match($session->shift) {
+            'morning' => ['morning', 'กะเช้า'],
+            'afternoon' => ['afternoon', 'กะบ่าย'],
+            'night' => ['night', 'กะดึก'],
+            default => [$session->shift]
+        };
+
+        foreach ($employees as $emp) {
+            $shiftName = optional($emp->shift)->shift_name;
+            if (in_array($shiftName, $currentShiftNames)) {
+                $currentShiftEmployees->push($emp);
+            } elseif (in_array($emp->id, $inspectedOtherShiftIds)) {
+                $inspectedPreviousShiftEmployees->push($emp);
+            } else {
+                $otherShiftEmployees->push($emp);
+            }
+        }
+
+        if ($currentShiftEmployees->isNotEmpty()) {
+            $grouped->put('เป้าหมายกะปัจจุบัน (' . ucfirst($session->shift) . ')', $currentShiftEmployees);
+        }
+        if ($inspectedPreviousShiftEmployees->isNotEmpty()) {
+            $grouped->put('ถูกตรวจแล้วในกะก่อนหน้า', $inspectedPreviousShiftEmployees);
+        }
+        if ($otherShiftEmployees->isNotEmpty()) {
+            $grouped->put('พนักงานกะอื่น (นอกกะ)', $otherShiftEmployees);
+        }
 
         // Progress stats
-        $totalEmployees = $employees->count();
-        $inspectedCount = count(array_intersect($employees->pluck('id')->toArray(), $inspectedIds));
+        $inspectedCount = count(array_intersect($allEmployeeIds, $completedIds));
         $progressPercent = $totalEmployees > 0 ? round(($inspectedCount / $totalEmployees) * 100) : 0;
 
         return view('inspections.browse', compact(
-            'session', 'grouped', 'inspectedIds', 'search',
-            'totalEmployees', 'inspectedCount', 'progressPercent', 'showAll'
+            'session', 'grouped', 'inspectedIds', 'inspectedCurrentIds', 'absentIds', 'search',
+            'totalEmployees', 'inspectedCount', 'progressPercent', 'showAll',
+            'pendingRecleanEmployeeIds', 'inspectedOtherShiftIds'
         ));
     }
 
@@ -604,6 +947,48 @@ class InspectionController extends Controller
             ->with('success', 'บันทึกจบงานสรุปยอดการตรวจเรียบร้อยแล้ว (Session Completed)');
     }
 
+    /**
+     * Bulk Pass: Mark all remaining (uninspected) employees as "pass" for all checkpoints.
+     */
+    public function bulkPassPersonnel(InspectionSession $session, Request $request)
+    {
+        $this->authorizeSessionOwner($session);
+
+        if ($session->isLocked()) {
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json(['success' => false, 'message' => 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)'], 403);
+            }
+            return redirect()->route('inspection.dashboard', $session->type)
+                ->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)');
+        }
+
+        try {
+            $count = $this->inspectionService->bulkPassRemaining($session);
+
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => "บันทึกผ่านทุกคนที่เหลือเรียบร้อย! ({$count} คน)",
+                    'count' => $count
+                ]);
+            }
+
+            if ($count === 0) {
+                return redirect()->route('inspection.dashboard', $session->type)
+                    ->with('info', 'ไม่มีพนักงานที่เหลือให้ Bulk Pass แล้ว (No remaining employees)');
+            }
+
+            return redirect()->route('inspection.dashboard', $session->type)
+                ->with('success', "✅ ผ่านทุกคนที่เหลือเรียบร้อย! ({$count} คน) - Bulk Pass Completed");
+        } catch (\Exception $e) {
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json(['success' => false, 'message' => 'เกิดข้อผิดพลาด: ' . $e->getMessage()], 500);
+            }
+            return redirect()->route('inspection.dashboard', $session->type)
+                ->with('error', 'เกิดข้อผิดพลาด: ' . $e->getMessage());
+        }
+    }
+
     public function showChecklist(InspectionSession $session, $hash, Request $request)
     {
         $this->authorizeSessionOwner($session);
@@ -639,7 +1024,7 @@ class InspectionController extends Controller
 
         // Dynamic Loading: If employee has a location, load only those checkpoints.
         // If no location (or no mappings), fall back to all active checkpoints of the correct type.
-        $checkpointQuery = Checkpoint::where('is_active', true);
+        $checkpointQuery = Checkpoint::where('is_active', true)->orderBy('sort_order')->orderBy('id');
         if ($checkpointType) {
             $checkpointQuery->where('type', $checkpointType);
         }
@@ -649,6 +1034,8 @@ class InspectionController extends Controller
             $checkpoints = $employeeLocation->checkpoints()
                 ->where('is_active', true)
                 ->when($checkpointType, fn($q) => $q->where('type', $checkpointType))
+                ->orderBy('sort_order')
+                ->orderBy('checkpoints.id')
                 ->get();
 
             // If the location has NO checkpoints mapped, fall back to global ones
@@ -715,6 +1102,30 @@ class InspectionController extends Controller
         if ($session->isLocked()) {
             return redirect()->route('inspection.dashboard', $session->type)
                 ->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)');
+        }
+
+        // Anti-Cheat (Speed Trap): Level 1
+        // Check if the same inspector has submitted another personnel inspection too quickly (< 15 seconds)
+        // Only applies if the previous inspection was for a DIFFERENT employee (prevent rapid swiping)
+        $lastLog = \App\Models\InspectionLog::whereHas('session', function($q) use ($session) {
+            $q->where('inspector_id', $session->inspector_id);
+        })
+        ->whereNotNull('employee_id')
+        ->where('employee_id', '!=', $request->employee_id)
+        ->latest('created_at')
+        ->first();
+
+        if ($lastLog && $lastLog->created_at->diffInSeconds(now()) < 3) {
+            \Illuminate\Support\Facades\Log::warning('Speed Trap Triggered (Personnel)', [
+                'inspector_id' => $session->inspector_id,
+                'session_id' => $session->id,
+                'employee_id' => $request->employee_id,
+                'time_diff' => $lastLog->created_at->diffInSeconds(now()),
+                'ip' => $request->ip()
+            ]);
+
+            return redirect()->back()
+                ->with('error', 'คุณทำรายการเร็วเกินไป กรุณารอสักครู่ (ประมาณ 3 วินาที) แล้วกดบันทึกใหม่อีกครั้ง');
         }
 
         $request->validate([
@@ -813,9 +1224,22 @@ class InspectionController extends Controller
 
         $employee = Employee::find($request->employee_id);
 
+        // Auto-update employee's master shift to match the latest inspected session's shift
+        $shiftModel = \App\Models\Shift::whereRaw('LOWER(shift_name) = ?', [strtolower($session->shift)])->first();
+        if ($shiftModel && $employee->shift_id !== $shiftModel->id) {
+            $employee->update(['shift_id' => $shiftModel->id]);
+        }
+
         if ($session->status === 'completed') {
             return redirect()->route('inspection.dashboard', $session->type)
                 ->with('success', 'บันทึกการแก้ไขเรียบร้อยแล้ว (Saved correction for ' . $employee->fullname . ')');
+        }
+
+        $queryParams = $request->query();
+        if (isset($queryParams['from']) && $queryParams['from'] === 'browse') {
+            unset($queryParams['from']);
+            return redirect()->route('inspection.browse', ['session' => $session->id] + $queryParams)
+                ->with('success', 'Saved inspection for ' . $employee->fullname);
         }
 
         return redirect()->route('inspection.scan', $session->id)
@@ -823,7 +1247,24 @@ class InspectionController extends Controller
     }
     public function verification(Request $request)
     {
-        $date = $request->input('date', date('Y-m-d'));
+        $activeTab = $request->input('tab', 'pending');
+        
+        // Date Range Logic
+        // If no date is provided, 'completed' defaults to today. Actionable tabs default to empty (All time).
+        $defaultDate = ($activeTab === 'completed') ? date('Y-m-d') : '';
+        $dateStr = $request->input('date', $defaultDate);
+        
+        // Parse Flatpickr Range "YYYY-MM-DD to YYYY-MM-DD"
+        $startDate = null;
+        $endDate = null;
+        if (!empty($dateStr)) {
+            // Support both English ' to ' and Thai ' ถึง ' from Flatpickr localization
+            $separator = str_contains($dateStr, ' ถึง ') ? ' ถึง ' : ' to ';
+            $dates = explode($separator, $dateStr);
+            $startDate = trim($dates[0]);
+            $endDate = trim($dates[1] ?? $dates[0]); // If single date selected, end = start
+        }
+
         $user = Auth::user();
 
         // --- SCOPE DEFINITION (Role Matrix Compliance) ---
@@ -834,8 +1275,28 @@ class InspectionController extends Controller
             $scopeDeptId = $user->department_id;
         }
 
-        $query = InspectionLog::with(['employee', 'checkpoint', 'employee.department', 'location', 'machine', 'session.inspector', 'verifier', 'correctiveAction']) 
-            ->whereDate('inspected_at', $date)
+        $query = InspectionLog::with(['employee', 'checkpoint', 'employee.department', 'location', 'machine', 'session.inspector', 'verifier', 'correctiveAction.approvals']) 
+            ->where(function($q) use ($startDate, $endDate, $activeTab) {
+                if ($startDate && $endDate) {
+                    // If user EXPLICITLY selected a date range, apply it to ALL items
+                    // We must fetch all statuses in this range so the tab badges calculate correctly
+                    $q->whereBetween('inspected_at', [
+                        $startDate . ' 00:00:00',
+                        $endDate . ' 23:59:59'
+                    ]);
+                } else {
+                    // No date filter (Inbox Mode Default)
+                    // Fetch all actionable items regardless of date (Pending QA, Reclean, Pending Manager Approval)
+                    $q->whereNull('verified_at')
+                      ->orWhereIn('verification_status', ['reclean', 'verified']);
+                    
+                    // For fully completed items, limit to today to prevent overloading
+                    $q->orWhere(function($subQ) {
+                        $subQ->where('verification_status', 'approved')
+                             ->whereDate('inspected_at', date('Y-m-d'));
+                    });
+                }
+            })
             ->orderBy('inspected_at', 'desc');
 
         if ($scopeDeptId) {
@@ -852,7 +1313,7 @@ class InspectionController extends Controller
 
         $groupedInspections = $logs->groupBy(function($log) {
             if ($log->employee_id) {
-                return $log->session_id . '_e_' . $log->employee_id;
+                return $log->session_id . '_personnel';
             } elseif ($log->machine_id) {
                 return $log->session_id . '_m_' . $log->machine_id;
             } else {
@@ -875,7 +1336,7 @@ class InspectionController extends Controller
                 ->pluck('fail_count', 'employee_id');
         }
 
-        $groupedInspections = $groupedInspections->map(function ($logsInGroup) use ($date, $failureCounts) {
+        $groupedInspections = $groupedInspections->map(function ($logsInGroup) use ($dateStr, $failureCounts) {
             $firstLog = $logsInGroup->first();
             $session = $firstLog->session;
             
@@ -906,16 +1367,18 @@ class InspectionController extends Controller
 
             $isPass = $outstandingFailures->isEmpty();
 
-            if ($employee) {
+            if ($firstLog->employee_id) {
                 $type = 'person';
-                $name = $employee->fullname;
-                $subtext = $employee->department->dept_name ?? '-';
-                $modalId = 'emp_' . $employee->id . '_sess_' . $firstLog->session_id;
-                $imagePath = $employee->profile_image;
+                $employeeCount = $logsInGroup->pluck('employee_id')->unique()->count();
+                $name = "ตรวจพนักงาน จำนวน {$employeeCount} คน";
+                $subtext = $firstLog->session->department->dept_name ?? '-';
+                $modalId = 'sess_personnel_' . $firstLog->session_id;
+                $imagePath = null;
+                $employee = null; // Unset so UI treats it as a group
 
-                $monthlyFailures = (int) ($failureCounts->get($employee->id, 0));
-                $hygieneScore = max(0, 100 - ($monthlyFailures * 5));
-                $trafficLight = $monthlyFailures <= 1 ? 'green' : ($monthlyFailures <= 3 ? 'yellow' : 'red');
+                $monthlyFailures = 0;
+                $hygieneScore = 100;
+                $trafficLight = 'green';
             } else {
                 // Logic above handles basic type, but refine here if needed
                 $type = $machine ? 'machine' : 'area';
@@ -982,11 +1445,24 @@ class InspectionController extends Controller
             ];
         });
 
-        // 1. Calculate Type Counts (Total items per type for this date)
+        // Filter the full list by activeTab first to calculate context-aware typeCounts
+        $activeTab = $request->input('tab', 'pending');
+        $tabFilteredInspections = $groupedInspections->filter(function($g) use ($activeTab) {
+            if ($activeTab === 'pending') {
+                return $g->verification_status === 'pending';
+            } elseif ($activeTab === 'completed') {
+                return in_array($g->verification_status, ['verified', 'approved']);
+            } elseif ($activeTab === 'reclean') {
+                return $g->verification_status === 'reclean';
+            }
+            return true;
+        });
+
+        // 1. Calculate Type Counts (Only for the current active tab status)
         $typeCounts = [
-            'person' => $groupedInspections->filter(fn($g) => $g->type === 'person')->count(),
-            'area' => $groupedInspections->filter(fn($g) => $g->type === 'area')->count(),
-            'machine' => $groupedInspections->filter(fn($g) => $g->type === 'machine')->count(),
+            'person' => $tabFilteredInspections->filter(fn($g) => $g->type === 'person')->count(),
+            'area' => $tabFilteredInspections->filter(fn($g) => $g->type === 'area')->count(),
+            'machine' => $tabFilteredInspections->filter(fn($g) => $g->type === 'machine')->count(),
         ];
 
         // 2. Type Filtering (Default to 'person')
@@ -1001,21 +1477,13 @@ class InspectionController extends Controller
         // 3. Calculate Status Counts (For the selected type)
         $counts = [
             'pending' => $groupedInspections->filter(fn($g) => $g->verification_status === 'pending')->count(),
-            'completed' => $groupedInspections->filter(fn($g) => $g->verification_status === 'verified')->count(),
+            'completed' => $groupedInspections->filter(fn($g) => in_array($g->verification_status, ['verified', 'approved']))->count(),
             'reclean' => $groupedInspections->filter(fn($g) => $g->verification_status === 'reclean')->count(),
             'total' => $groupedInspections->count(),
         ];
 
-        // 4. Status Tab Filtering
-        $activeTab = $request->input('tab', 'pending');
-        if ($activeTab === 'pending') {
-            // Strictly 'pending', NOT just unverified. Exclude 'reclean'.
-            $groupedInspections = $groupedInspections->filter(fn($g) => $g->verification_status === 'pending');
-        } elseif ($activeTab === 'completed') {
-            $groupedInspections = $groupedInspections->filter(fn($g) => in_array($g->verification_status, ['verified', 'approved']));
-        } elseif ($activeTab === 'reclean') {
-            $groupedInspections = $groupedInspections->filter(fn($g) => $g->verification_status === 'reclean');
-        }
+        // 4. Status Tab Filtering (We already did it conceptually, now apply to the actual list)
+        $groupedInspections = $tabFilteredInspections->filter(fn($g) => $g->type === $filterType);
 
         // 5. Manual Pagination (20 items per page)
         $perPage = 20;
@@ -1028,7 +1496,7 @@ class InspectionController extends Controller
 
         return view('inspections.verification', [
             'groupedInspections' => $paginatedInspections,
-            'date' => $date,
+            'date' => $dateStr,
             'activeTab' => $activeTab,
             'counts' => $counts,
             'filterType' => $filterType,
@@ -1041,16 +1509,19 @@ class InspectionController extends Controller
      */
     public function verify(Request $request)
     {
+        \Log::info('verify: started');
         if (!Auth::user()->can('verify')) {
             abort(403, 'Unauthorized. Requires Supervisor verify permission.');
         }
 
+        \Log::info('verify: auth passed');
         $request->validate([
             'ids' => 'required|array',
             'status' => 'required|string|in:verified,reclean', // BUG-011 Fix: Added validation
             'comment' => 'nullable|string'
         ]);
 
+        \Log::info('verify: validation passed');
         $ids = $request->ids;
         $status = $request->status; // 'verified' or 'reclean'
         $comment = $request->input('comment');
@@ -1060,9 +1531,12 @@ class InspectionController extends Controller
             return back()->with('error', 'ไม่พบรายการที่เลือก');
         }
 
+        \Log::info('verify: logs fetched');
         if ($logs->contains(fn ($log) => $log->session?->isLocked())) {
             return back()->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถตรวจสอบ/แก้ไขได้ (Session Locked)');
         }
+
+        \Log::info('verify: locking check passed');
 
         \Log::info('Inspection Verification (Supervisor)', [
             'ids' => $ids,
@@ -1089,6 +1563,24 @@ class InspectionController extends Controller
                     'verification_comment' => $comment
                 ]);
 
+                // Create or Update Corrective Action so it shows up in Manager's Issues dashboard
+                foreach ($failedLogs as $fLog) {
+                    \Log::info('verify: creating/updating corrective action for log ' . $fLog->id);
+                    $action = \App\Models\CorrectiveAction::updateOrCreate([
+                        'inspection_log_id' => $fLog->id,
+                    ], [
+                        'status' => 'open', // Re-open the CAR if it was resolved/verified
+                        'escalated_by' => Auth::id(),
+                        'root_cause' => $comment ?? 'สั่งแก้ไข/ทำความสะอาดใหม่',
+                    ]);
+
+                    // Generate AI Tags if missing (e.g. created by mobile app earlier)
+                    if (empty($action->ai_tags)) {
+                        $action->ai_tags = \App\Services\AIService::getTagsFromFinding($fLog->correction_action ?? $comment ?? '');
+                        $action->save();
+                    }
+                }
+
                 // Notify Department Manager (Only about the failed items)
                 try {
                     $session = $failedLogs->first()->session;
@@ -1100,12 +1592,13 @@ class InspectionController extends Controller
                                 ->get();
 
                     foreach ($managers as $manager) {
+                        $manager->notify(new \App\Notifications\NewCARNotification($action ?? new \App\Models\CorrectiveAction())); // In verify, action is created in the loop.
                         if ($manager->email) {
                             \Illuminate\Support\Facades\Mail::to($manager->email)
                                 ->send(new \App\Mail\OrderRecleanNotification($session, $failedLogs, $comment));
                         }
                     }
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     \Log::error('Failed to send Re-clean notification: ' . $e->getMessage());
                 }
             }
@@ -1125,30 +1618,33 @@ class InspectionController extends Controller
             }
 
         } else {
-            // Normal Verify: Mark Passed as Verified, but Auto-Reclean Failed items
-            $passedIds = InspectionLog::whereIn('id', $ids)->where('result', 'pass')->pluck('id')->toArray();
-            $failedLogs = InspectionLog::whereIn('id', $ids)->where('result', 'fail')->get();
+            \Log::info('verify: processing verified');
+            // Normal Verify: Mark all provided IDs as Verified
+            InspectionLog::whereIn('id', $ids)->update([
+                'verified_at' => now(),
+                'verifier_id' => Auth::id(), 
+                'verification_status' => $status,
+                'verification_comment' => $comment
+            ]);
 
-            if (!empty($passedIds)) {
-                InspectionLog::whereIn('id', $passedIds)->update([
-                    'verified_at' => now(),
-                    'verifier_id' => Auth::id(), 
-                    'verification_status' => $status,
-                    'verification_comment' => $comment
-                ]);
-            }
-
-            if ($failedLogs->isNotEmpty()) {
-                $failedIds = $failedLogs->pluck('id')->toArray();
-                InspectionLog::whereIn('id', $failedIds)->update([
-                    'verified_at' => now(),
-                    'verifier_id' => Auth::id(),
-                    'verification_status' => 'reclean',
-                    'verification_comment' => $comment ?? 'ระบบสั่งแก้ไขอัตโนมัติ เนื่องจากผลการตรวจไม่ผ่าน'
-                ]);
+            \Log::info('verify: log updated');
+            // Loop Engineering: When QA verifies, we trigger Manager Approval
+            if ($status === 'verified') {
+                $cars = \App\Models\CorrectiveAction::whereIn('inspection_log_id', $ids)
+                    ->whereIn('status', ['open', 'assigned', 'resolved'])
+                    ->get();
+                
+                \Log::info('verify: cars fetched ' . $cars->count());
+                foreach ($cars as $car) {
+                    $car->update([
+                        'status' => 'verified',
+                    ]);
+                    $car->startApprovalFlow();
+                }
             }
         }
 
+        \Log::info('verify: ready for email');
         // 3. Notify QA Manager if this was a normal verification
         if ($status !== 'reclean') {
             try {
@@ -1173,11 +1669,12 @@ class InspectionController extends Controller
                         }
                     }
                 }
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 \Log::error('Failed to send Verification email to QA Manager: ' . $e->getMessage());
             }
         }
 
+        \Log::info('verify: completed, returning back');
         $message = ($status === 'reclean') ? 'ส่งกลับแก้ไข (เฉพาะรายการที่ไม่ผ่าน) เรียบร้อย (Sent for Re-clean)' : 'ตรวจสอบเรียบร้อย (Verified)';
 
         return back()->with('success', $message);
@@ -1309,6 +1806,24 @@ class InspectionController extends Controller
             'verified_at' => now(), // Treat approval as a stamp
             'verifier_id' => Auth::id(),
         ]);
+
+        // Loop Engineering: Close the associated CorrectiveActions and approve their requests
+        $cars = \App\Models\CorrectiveAction::whereIn('inspection_log_id', $approvedLogs->pluck('id'))
+            ->whereIn('status', ['verified', 'open', 'assigned', 'resolved'])
+            ->get();
+        
+        foreach ($cars as $car) {
+            $car->update([
+                'status' => 'closed',
+                'closed_at' => now(),
+            ]);
+
+            // If there's a pending approval request, mark it as approved
+            $pendingRequest = $car->approvals()->where('status', 'pending')->first();
+            if ($pendingRequest) {
+                $pendingRequest->update(['status' => 'approved']);
+            }
+        }
 
         // Lock session only when every log in the session is approved
         $sessionIds = $approvedLogs->pluck('session_id')->unique()->filter();
