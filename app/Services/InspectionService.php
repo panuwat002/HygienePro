@@ -19,9 +19,9 @@ class InspectionService
     /**
      * Start or Retrieve an active Inspection Session.
      */
-    public function startSession(User $user, int $departmentId, string $type, bool $forceNew = false): InspectionSession
+    public function startSession(User $user, int $departmentId, string $type, bool $forceNew = false, string $manualShift = null): InspectionSession
     {
-        $shift = \App\Models\Shift::detectCurrent();
+        $shift = $manualShift ?? \App\Models\Shift::detectCurrent();
         $today = now()->toDateString();
 
         $session = DB::transaction(function () use ($user, $departmentId, $type, $today, $shift, $forceNew) {
@@ -81,6 +81,103 @@ class InspectionService
         $this->notifySupervisorsFinished($session);
     }
 
+    /**
+     * Auto-close inspection sessions left open past their shift end + grace period.
+     * Idempotent and fail-safe. Returns the number of sessions closed.
+     */
+    public function autoCloseStaleSessions(): int
+    {
+        if (! config('inspection.auto_close.enabled', true)) {
+            return 0;
+        }
+
+        $sessions = InspectionSession::whereIn('status', ['in_progress', 'paused'])
+            ->where('is_locked', false)
+            ->get();
+
+        $closed = 0;
+        foreach ($sessions as $session) {
+            if (! $this->isStale($session)) {
+                continue;
+            }
+
+            $this->finishSession($session);
+
+            \App\Models\ActivityLog::create([
+                'user_id'     => null, // system actor
+                'action'      => 'auto_close',
+                'model_type'  => InspectionSession::class,
+                'model_id'    => $session->id,
+                'description' => 'ปิดรอบอัตโนมัติโดยระบบ (เลยกะ ' . $session->shift . ' + '
+                    . config('inspection.auto_close.grace_hours', 2) . ' ชม. และไม่มีการตรวจใน '
+                    . config('inspection.auto_close.idle_minutes', 30) . ' นาที)',
+            ]);
+
+            $closed++;
+        }
+
+        return $closed;
+    }
+
+    public function isStale(InspectionSession $session): bool
+    {
+        if ($session->isLocked() || ! in_array($session->status, ['in_progress', 'paused'], true)) {
+            return false;
+        }
+
+        $shiftEnd = $this->shiftEndAt($session);
+        if ($shiftEnd === null) {
+            return false; // fail-safe: unknown shift end -> never auto-close
+        }
+
+        $graceHours = (float) config('inspection.auto_close.grace_hours', 2);
+        if (now()->lt($shiftEnd->copy()->addHours($graceHours))) {
+            return false; // still within shift + grace
+        }
+
+        $idleMinutes = (int) config('inspection.auto_close.idle_minutes', 30);
+        if ($this->lastActivityAt($session)->gt(now()->copy()->subMinutes($idleMinutes))) {
+            return false; // recent activity -> defer close
+        }
+
+        return true;
+    }
+
+    public function shiftEndAt(InspectionSession $session): ?\Illuminate\Support\Carbon
+    {
+        $names = match (strtolower((string) $session->shift)) {
+            'morning'   => ['morning', 'กะเช้า'],
+            'afternoon' => ['afternoon', 'กะบ่าย'],
+            'night'     => ['night', 'กะดึก'],
+            default     => [(string) $session->shift],
+        };
+
+        $shift = \App\Models\Shift::whereIn('shift_name', $names)->first();
+        if (! $shift || empty($shift->end_time)) {
+            return null;
+        }
+
+        $date = \Illuminate\Support\Carbon::parse($session->inspection_date)->toDateString();
+        $end  = \Illuminate\Support\Carbon::parse($date . ' ' . $shift->end_time);
+
+        // Shift wraps past midnight (e.g. night 22:00-06:00): end lands on the next day
+        if (! empty($shift->start_time) && $shift->end_time <= $shift->start_time) {
+            $end->addDay();
+        }
+
+        return $end;
+    }
+
+    public function lastActivityAt(InspectionSession $session): \Illuminate\Support\Carbon
+    {
+        $lastLog = InspectionLog::where('session_id', $session->id)->max('created_at');
+        if ($lastLog) {
+            return \Illuminate\Support\Carbon::parse($lastLog);
+        }
+
+        return \Illuminate\Support\Carbon::parse($session->updated_at ?? $session->created_at ?? now());
+    }
+
     protected function notifySupervisorsStarted(InspectionSession $session): void
     {
         try {
@@ -92,6 +189,7 @@ class InspectionService
                 ->filter(fn($u) => $u->isQA());
 
             foreach ($supervisors as $supervisor) {
+                $supervisor->notify(new \App\Notifications\InspectionStartedNotification($session));
                 if ($supervisor->email) {
                     Mail::to($supervisor->email)->send(new InspectionSessionStarted($session));
                 }
@@ -119,6 +217,7 @@ class InspectionService
             ];
 
             foreach ($supervisors as $supervisor) {
+                $supervisor->notify(new \App\Notifications\PendingVerificationNotification($session));
                 if ($supervisor->email) {
                     Mail::to($supervisor->email)->send(new InspectionSessionFinished($session, $stats));
                 }
@@ -212,6 +311,11 @@ class InspectionService
                 $logData['photo_path'] = $photoPath;
             }
 
+            // Loop Engineering: Auto-CAR triggers when fail
+            if ($logData['result'] === 'fail') {
+                $logData['verification_status'] = 'reclean';
+            }
+
             $pendingLog = InspectionLog::where('employee_id', $employeeId)
                 ->where('checkpoint_id', $checkpointId)
                 ->where('verification_status', 'reclean')
@@ -234,7 +338,7 @@ class InspectionService
                 }
             }
 
-            return InspectionLog::updateOrCreate(
+            $log = InspectionLog::updateOrCreate(
                 [
                     'session_id' => $session->id,
                     'employee_id' => $employeeId,
@@ -242,6 +346,129 @@ class InspectionService
                 ],
                 $logData
             );
+
+            // Loop Engineering: Auto-CAR creation
+            if ($log->result === 'fail') {
+                $action = \App\Models\CorrectiveAction::firstOrCreate([
+                    'inspection_log_id' => $log->id,
+                ], [
+                    'status' => 'open',
+                    'escalated_by' => $session->inspector_id,
+                    'root_cause' => $log->correction_action ?? 'ระบบสั่งแก้ไขอัตโนมัติ เนื่องจากผลการตรวจไม่ผ่าน',
+                    'due_date' => now()->addHours(24),
+                ]);
+
+                if ($action->wasRecentlyCreated) {
+                    $managers = \App\Models\User::where('department_id', $session->department_id)
+                                ->where('level', '>=', 5)
+                                ->get();
+                    foreach ($managers as $manager) {
+                        $manager->notify(new \App\Notifications\NewCARNotification($action));
+                    }
+                }
+            }
+
+            return $log;
+        });
+    }
+
+    /**
+     * Bulk Pass: Create "pass" logs for all remaining (uninspected) employees in a session.
+     * Only targets employees whose shift matches the session's shift.
+     *
+     * @return int Number of employees bulk-passed
+     */
+    public function bulkPassRemaining(InspectionSession $session): int
+    {
+        if ($session->is_locked) {
+            throw ValidationException::withMessages(['session' => 'Session is Locked.']);
+        }
+
+        if (!in_array($session->status, ['in_progress', 'paused'], true)) {
+            throw ValidationException::withMessages(['session' => 'Session must be in-progress or paused.']);
+        }
+
+        if ($session->type !== 'personnel') {
+            throw ValidationException::withMessages(['session' => 'Bulk Pass is only available for personnel inspections.']);
+        }
+
+        return DB::transaction(function () use ($session) {
+            // 1. Get all active personnel checkpoints
+            $checkpoints = Checkpoint::where('type', 'person')
+                ->where('is_active', true)
+                ->pluck('id')
+                ->toArray();
+
+            if (empty($checkpoints)) {
+                return 0;
+            }
+
+            // 2. Get employees in this department + matching shift (Shift Filtering)
+            $shiftNames = match($session->shift) {
+                'morning' => ['morning', 'กะเช้า'],
+                'afternoon' => ['afternoon', 'กะบ่าย'],
+                'night' => ['night', 'กะดึก'],
+                default => [$session->shift]
+            };
+            $targetEmployeeIds = \App\Models\Employee::where('department_id', $session->department_id)
+                ->where('is_active', true)
+                ->whereHas('shift', function ($q) use ($shiftNames) {
+                    $q->whereIn('shift_name', $shiftNames);
+                })
+                ->pluck('id')
+                ->toArray();
+
+            if (empty($targetEmployeeIds)) {
+                return 0;
+            }
+
+            // 3. Get already-inspected employee IDs in this session
+            $inspectedIds = InspectionLog::where('session_id', $session->id)
+                ->whereIn('employee_id', $targetEmployeeIds)
+                ->pluck('employee_id')
+                ->unique()
+                ->toArray();
+
+            // 4. Find remaining (uninspected) employees
+            $remainingIds = array_diff($targetEmployeeIds, $inspectedIds);
+
+            if (empty($remainingIds)) {
+                return 0;
+            }
+
+            // 5. Build bulk insert data
+            $now = now();
+            $deptSnapshot = $session->department->dept_name ?? 'N/A';
+            $bulkData = [];
+
+            foreach ($remainingIds as $employeeId) {
+                foreach ($checkpoints as $checkpointId) {
+                    $bulkData[] = [
+                        'session_id' => $session->id,
+                        'employee_id' => $employeeId,
+                        'checkpoint_id' => $checkpointId,
+                        'result' => 'pass',
+                        'inspected_at' => $now,
+                        'dept_snapshot' => $deptSnapshot,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
+            }
+
+            // 6. Bulk insert in chunks of 500 to avoid memory issues
+            foreach (array_chunk($bulkData, 500) as $chunk) {
+                InspectionLog::insert($chunk);
+            }
+
+            \Log::info('Bulk Pass executed', [
+                'session_id' => $session->id,
+                'inspector_id' => $session->inspector_id,
+                'employees_passed' => count($remainingIds),
+                'logs_created' => count($bulkData),
+            ]);
+
+            return count($remainingIds);
         });
     }
 }
