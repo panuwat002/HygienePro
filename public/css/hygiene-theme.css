@@ -218,7 +218,6 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
     background-color: var(--sidebar-active-bg) !important;
     color: var(--sidebar-text-active) !important;
     font-weight: 600;
-    border-left: 4px solid var(--hygiene-primary) !important;
 }
 
 /* Sidebar Toggle Buttons for Dark Sidebar */
@@ -251,7 +250,11 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
     color: var(--hygiene-text-muted);
     font-weight: 600;
     padding: 0.6rem 1.5rem;
+    white-space: nowrap;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@media (max-width: 575.98px) {
+    .nav-pills-modern .nav-link { padding: 0.5rem 0.75rem; font-size: 0.875rem; }
 }
 .nav-pills-modern .nav-link:hover {
     color: var(--hygiene-primary);
@@ -295,6 +298,63 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
 .card:hover, .stat-card:hover, .info-card:hover {
     transform: translateY(-4px);
     box-shadow: var(--shadow-float) !important;
+}
+
+/* Premium Glassmorphism & Generative UI Effects */
+.glass-card {
+    background: rgba(255, 255, 255, 0.85) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Summary Stat Cards (Dashboard) - Upgraded */
+.summary-stat-card {
+    background: rgba(255, 255, 255, 0.8) !important;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.5) !important;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03), inset 0 0 0 1px rgba(255, 255, 255, 1) !important;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+    overflow: hidden;
+}
+
+.summary-stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 50%; height: 100%;
+    background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0) 100%);
+    transform: skewX(-25deg);
+    transition: all 0.7s ease;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.summary-stat-card:hover {
+    transform: translateY(-8px) !important;
+    box-shadow: 0 15px 30px rgba(0,0,0,0.08), 0 5px 10px rgba(0,0,0,0.04), inset 0 0 0 1px rgba(255, 255, 255, 1) !important;
+    border-color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.summary-stat-card:hover::before {
+    left: 150%;
+    opacity: 1;
+}
+
+.summary-stat-card:hover .rounded-3 {
+    transform: scale(1.15) rotate(5deg);
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.summary-stat-card .rounded-3 {
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* 1.5 Ripple Effect for Audit Alert */
+@keyframes ripple {
+    0% { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(1.8); opacity: 0; }
 }
 
 /* 2. Button Pulse & Lift */

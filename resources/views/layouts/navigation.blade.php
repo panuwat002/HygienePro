@@ -24,9 +24,7 @@
                     <x-nav-link :href="route('employees.index')" :active="request()->routeIs('employees.*')">
                         {{ __('พนักงาน') }}
                     </x-nav-link>
-                    <x-nav-link :href="route('approvals.pending')" :active="request()->routeIs('approvals.*')">
-                        {{ __('การอนุมัติ (Approvals)') }}
-                    </x-nav-link>
+
                     <x-nav-link :href="route('corrective.index')" :active="request()->routeIs('corrective.*')">
                         {{ __('สิ่งที่ต้องแก้ไข (CAR)') }}
                     </x-nav-link>
@@ -48,10 +46,13 @@
                 <x-dropdown align="right" width="80">
                     <x-slot name="trigger">
                         <button class="relative inline-flex items-center p-2 border border-transparent text-sm leading-4 font-medium rounded-md text-gray-500 bg-white hover:text-gray-700 focus:outline-none transition ease-in-out duration-150 me-2">
-                            <i class="bi bi-bell text-lg"></i>
+                            <i class="bi bi-bell text-xl"></i>
                             @if(Auth::user()->unreadNotifications->count() > 0)
-                                <span class="absolute top-0 right-0 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold leading-none text-red-100 transform translate-x-1/4 -translate-y-1/4 bg-red-600 rounded-full">
-                                    {{ Auth::user()->unreadNotifications->count() }}
+                                <span class="absolute top-0 right-0 flex h-5 w-5 transform translate-x-1/3 -translate-y-1/3">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-5 w-5 bg-red-600 text-[11px] font-bold text-white items-center justify-center border-2 border-white shadow-sm">
+                                        {{ Auth::user()->unreadNotifications->count() > 99 ? '99+' : Auth::user()->unreadNotifications->count() }}
+                                    </span>
                                 </span>
                             @endif
                         </button>
