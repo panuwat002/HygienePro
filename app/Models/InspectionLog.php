@@ -82,6 +82,24 @@ class InspectionLog extends Model
         return $this->hasOne(CorrectiveAction::class);
     }
 
+    /**
+     * Check if this failed inspection log has been resolved.
+     *
+     * @return bool
+     */
+    public function isResolved(): bool
+    {
+        if ($this->result !== 'fail') {
+            return false;
+        }
+
+        if (!$this->correctiveAction) {
+            return false;
+        }
+
+        return in_array($this->correctiveAction->status, ['resolved', 'closed', 'verified']);
+    }
+
     // Gap 3: Acknowledgement relationship
     public function acknowledgedBy()
     {

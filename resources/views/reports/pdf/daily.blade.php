@@ -25,18 +25,20 @@
         }
         table {
             width: 100%;
-            border-collapse: collapse;
-            font-size: 9px; /* Reduced to 9px */
+            border-collapse: separate;
+            border-spacing: 0;
+            border-top: 1px solid #000;
+            border-left: 1px solid #000;
+            font-size: 9px;
             margin-bottom: 2px;
             page-break-inside: auto;
         }
         th, td {
-            border: 1px solid #000;
-            padding: 0px 2px; /* Zero vertical padding */
+            border-bottom: 1px solid #000;
+            border-right: 1px solid #000;
+            padding: 2px;
             text-align: center;
             vertical-align: middle;
-            height: 14px; /* Reduced to 14px */
-            overflow: hidden; /* visual fix */
         }
         tr {
             page-break-inside: avoid;
@@ -51,7 +53,6 @@
         th {
             background-color: #f0f0f0;
             font-weight: bold;
-            height: 18px; /* Reduced header height */
             padding: 2px;
         }
         .header {
@@ -128,7 +129,7 @@
         $minRows = 25;
     @endphp
 
-    @if(empty($employeeChunks) && empty($machineChunks) && empty($areaChunks))
+    @if(empty($employeeChunks) && empty($areaMachineChunks))
         @include('reports.pdf._header')
         <div style="text-align: center; padding: 20px;">
             ไม่พบข้อมูลการตรวจสอบสำหรับเงื่อนไขที่เลือก
@@ -182,7 +183,7 @@
                                 <td>
                                     @if(isset($data['results'][$checkpoint->id]))
                                         @php $log = $data['results'][$checkpoint->id]; @endphp
-                                        @if($log->result === 'pass')
+                                        @if($log->result === 'pass' || ($log->result === 'fail' && $log->isResolved()))
                                             <span class="text-success">/</span>
                                         @elseif($log->result === 'fail')
                                             <span class="text-danger">X</span>
@@ -216,141 +217,73 @@
                     {{-- Fill Rows for LAST chunk if needed, or if user wants always full pages? 
                          User said "List to end at 25". This means < 25 is fine, but > 25 needs break.
                          The previous code filled rows. I'll include filling rows logic ONLY if it's strictly required for layout consistency.
-                         But usually simple list is fine. I'll skip filling rows to simplify, unless visually requested.
-                         Original had fill rows. I'll add them if it's the last page? 
-                         Let's keep it simple first.
                     --}}
                 </tbody>
             </table>
 
             @include('reports.pdf._signatures')
 
-            @if(!($loop->last && empty($machineChunks) && empty($areaChunks)))
+            @if(!($loop->last && empty($areaMachineChunks)))
                 <div style="page-break-after: always;"></div>
             @endif
         @endforeach
 
-        {{-- MACHINES --}}
-        @if(count($machineChunks) > 0)
+        {{-- AREA AND MACHINES (UNIFIED) --}}
+        @if(count($areaMachineChunks) > 0)
             <div class="footer">
                 <div class="footer-text">FM-QA-22 Rev.01 Effective 1 Sep.2025</div>
             </div>
         @endif
         
-        @foreach($machineChunks as $chunkIndex => $chunk)
+        @foreach($areaMachineChunks as $chunkIndex => $chunk)
             @include('reports.pdf._header')
             
-            <div class="section-title">2. รายงานการทวนสอบการทำความสะอาดประจำวันของเครื่องมือ เครื่องจักร อุปกรณ์ในไลน์ผลิต/ Daily Visual check cleaning equipment verification</div>
+            <div class="section-title">2. รายงานการทวนสอบการทำความสะอาดประจำวันของพื้นที่และเครื่องจักร (Area & Equipment Verification)</div>
             <table>
                 <thead>
                     <tr>
                         <th rowspan="2" style="width: 5%">ลำดับ</th>
-                        <th rowspan="2" style="width: 40%">เครื่องจักร</th>
+                        <th rowspan="2" style="width: 40%">พื้นที่ / เครื่องจักร (Location/Machine)</th>
                         <th rowspan="2" style="width: 8%">แผนก</th>
-                        <th colspan="{{ count($machineCheckpoints) }}">รายการตรวจ (Checkpoints)</th>
-                        <th rowspan="2" style="width: 10%">การแก้ไข</th>
-                        <th rowspan="2" style="width: 10%">ผลการแก้ไข</th>
-                        <th rowspan="2" style="width: 10%">หมายเหตุ</th>
+                        <th colspan="{{ count($areaMachineCheckpoints) }}">รายการตรวจ (Checkpoints)</th>
+                        <th rowspan="2" style="width: 18%">ผลการแก้ไข</th>
+                        <th rowspan="2" style="width: 12%">หมายเหตุ</th>
                     </tr>
                     <tr>
-                        @foreach($machineCheckpoints as $checkpoint)
-                            <th>{{ $checkpoint->title }}</th>
+                        @php $cleanCount = 0; @endphp
+                        @foreach($areaMachineCheckpoints as $checkpoint)
+                            @php 
+                                $displayTitle = $checkpoint->title;
+                                $catName = $checkpoint->category ? $checkpoint->category->name : '';
+                                if ($catName) {
+                                    $displayTitle .= '<br><span style="font-size: 9px; color: #0056b3;">(' . htmlspecialchars($catName) . ')</span>';
+                                }
+                                if ($checkpoint->description) {
+                                    $displayTitle .= '<br><span style="font-size: 8px; color: #666;">(' . htmlspecialchars($checkpoint->description) . ')</span>';
+                                }
+                            @endphp
+                            <th>{!! $displayTitle !!}</th>
                         @endforeach
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach($chunk as $machineId => $data)
-                        <tr>
-                            <td>{{ $j++ }}</td>
-                            <td class="text-left">{{ $data['info']->name }}</td>
-                            <td>{{ $data['session']->department->dept_name ?? '-' }}</td>
-                            
-                            @foreach($machineCheckpoints as $checkpoint)
-                                <td>
-                                    @if(isset($data['results'][$checkpoint->id]))
-                                        @php $log = $data['results'][$checkpoint->id]; @endphp
-                                        @if($log->result === 'pass')
-                                            <span class="text-success">/</span>
-                                        @elseif($log->result === 'fail')
-                                            <span class="text-danger">X</span>
-                                        @else
-                                            -
-                                        @endif
-                                    @else
-                                        <span style="color: #eee;">-</span>
-                                    @endif
-                                </td>
-                            @endforeach
-
-                            <td>-</td>
-                            <td>-</td>
-                            <td class="text-left">
-                                @php
-                                    $issues = [];
-                                    foreach($data['results'] as $log) {
-                                        if($log->result === 'fail' && $log->note) {
-                                            $issues[] = $log->checkpoint->title . ': ' . $log->note;
-                                        }
-                                    }
-                                @endphp
-                                @if(count($issues) > 0)
-                                    <small>{{ implode(', ', $issues) }}</small>
+                    @foreach($chunk as $data)
+                        <tr style="{{ $data['type'] === 'area_header' || $data['type'] === 'area' ? 'background-color: #f9fafb; font-weight: bold;' : '' }}">
+                            <td>{{ $data['type'] === 'machine' ? '' : $j++ }}</td>
+                            <td class="text-left" style="padding-left: {{ $data['type'] === 'machine' ? '15px' : '2px' }}">
+                                @if($data['type'] === 'machine')
+                                    - {{ $data['info']->name }}
                                 @else
-                                    -
+                                    {{ $data['info']->location_name }}
                                 @endif
                             </td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
-
-            @include('reports.pdf._signatures')
-            
-            @if(!($loop->last && empty($areaChunks)))
-                <div style="page-break-after: always;"></div>
-            @endif
-        @endforeach
-
-        {{-- AREAS --}}
-        @if(count($areaChunks) > 0)
-            <div class="footer">
-                <div class="footer-text">FM-QA-22 Rev.01 Effective 1 Sep.2025</div>
-            </div>
-        @endif
-        
-        @foreach($areaChunks as $chunkIndex => $chunk)
-            @include('reports.pdf._header')
-            
-            <div class="section-title">3. สุขลักษณะพื้นที่ทั่วไป (General Area Hygiene)</div>
-            <table>
-                <thead>
-                    <tr>
-                        <th rowspan="2" style="width: 5%">ลำดับ</th>
-                        <th rowspan="2" style="width: 40%">พื้นที่ (Location)</th>
-                        <th rowspan="2" style="width: 8%">แผนก</th>
-                        <th colspan="{{ count($areaCheckpoints) }}">รายการตรวจ (Checkpoints)</th>
-                        <th rowspan="2" style="width: 10%">การแก้ไข</th>
-                        <th rowspan="2" style="width: 10%">ผลการแก้ไข</th>
-                        <th rowspan="2" style="width: 10%">หมายเหตุ</th>
-                    </tr>
-                    <tr>
-                        @foreach($areaCheckpoints as $checkpoint)
-                            <th>{{ $checkpoint->title }}</th>
-                        @endforeach
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach($chunk as $locationId => $data)
-                        <tr>
-                            <td>{{ $m++ }}</td>
-                            <td class="text-left">{{ $data['info']->location_name }}</td>
                             <td>{{ $data['session']->department->dept_name ?? '-' }}</td>
                             
-                            @foreach($areaCheckpoints as $checkpoint)
+                            @foreach($areaMachineCheckpoints as $checkpoint)
                                 <td>
                                     @if(isset($data['results'][$checkpoint->id]))
                                         @php $log = $data['results'][$checkpoint->id]; @endphp
-                                        @if($log->result === 'pass')
+                                        @if($log->result === 'pass' || ($log->result === 'fail' && $log->isResolved()))
                                             <span class="text-success">/</span>
                                         @elseif($log->result === 'fail')
                                             <span class="text-danger">X</span>
@@ -358,26 +291,55 @@
                                             -
                                         @endif
                                     @else
-                                        <span style="color: #eee;">-</span>
+                                        <span style="color: #ccc;">-</span>
                                     @endif
                                 </td>
                             @endforeach
 
-                            <td>-</td>
-                            <td>-</td>
-                            <td class="text-left">
-                                @php
-                                    $issues = [];
-                                    foreach($data['results'] as $log) {
-                                        if($log->result === 'fail' && $log->note) {
-                                            $issues[] = $log->checkpoint->title . ': ' . $log->note;
-                                        }
+                            @php
+                                $corrections = [];
+                                $issues = [];
+                                foreach($data['results'] as $log) {
+                                    $cpTitle = $log->checkpoint->title ?? ($log->checkpoint_title_snapshot ?? 'ไม่ระบุ');
+                                    // Shorten title for display in notes
+                                    if(str_contains($cpTitle, 'สมบูรณ์')) $cpTitle = 'ความสมบูรณ์';
+                                    if(str_contains($cpTitle, 'สะอาด')) $cpTitle = 'ความสะอาด';
+                                    
+                                    if($log->result === 'fail' || $log->note) {
+                                        $issues[] = $cpTitle . ': ' . ($log->note ?: 'ไม่ผ่าน');
                                     }
-                                @endphp
-                                @if(count($issues) > 0)
-                                    <small>{{ implode(', ', $issues) }}</small>
+                                    
+                                    // ✅ ใช้ correctiveAction relationship (ตาราง corrective_actions)
+                                    if($log->correctiveAction) {
+                                        $ca = $log->correctiveAction;
+                                        $statusLabel = match($ca->status) {
+                                            'resolved', 'closed', 'verified' => 'แก้ไขแล้ว',
+                                            'in_progress' => 'กำลังแก้ไข',
+                                            default => ucfirst($ca->status)
+                                        };
+                                        $corrText = $cpTitle . ': ';
+                                        if($ca->action_taken) $corrText .= $ca->action_taken;
+                                        $corrText .= ' (' . $statusLabel . ')';
+                                        $corrections[] = $corrText;
+                                    } elseif($log->correction_action) {
+                                        // fallback: field เก่าในตาราง inspection_logs
+                                        $corrections[] = $cpTitle . ': ' . $log->correction_action . ' (แก้ไขเรียบร้อย)';
+                                    }
+                                }
+                            @endphp
+                            
+                            <td class="text-left" style="font-size: 8px;">
+                                @if(count($corrections) > 0)
+                                    {!! implode('<br>', $corrections) !!}
                                 @else
-                                    -
+                                    <span style="color: #ccc;">-</span>
+                                @endif
+                            </td>
+                            <td class="text-left" style="font-size: 8px;">
+                                @if(count($issues) > 0)
+                                    {!! implode('<br>', $issues) !!}
+                                @else
+                                    <span style="color: #ccc;">-</span>
                                 @endif
                             </td>
                         </tr>
