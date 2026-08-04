@@ -47,17 +47,18 @@ class CorrectiveActionController extends Controller
         $actions = $query->get();
 
         $openActions = $actions->whereIn('status', ['open', 'assigned', 'resolved']);
-        $completedActions = $actions->whereIn('status', ['closed']);
+        $completedActions = $actions->whereIn('status', ['closed', 'verified']);
         
-        // Prepare Assignable Users (Same Department)
-        $assignableUsers = collect();
-        if ($user->department_id) {
-            $assignableUsers = \App\Models\User::where('department_id', $user->department_id)->get();
-        } else {
-            // Admin sees all? Or maybe just limit to empty if no dept
-            $assignableUsers = \App\Models\User::all();
-        }
-
+        // Prepare Assignable Users: เฉพาะแผนกผลิต (Production) ที่มีสิทธิ์ระดับ Supervisor หรือ Manager ขึ้นไป
+        $assignableUsers = \App\Models\User::whereHas('department', function($q) {
+            $q->where('dept_name', 'like', '%Production%')
+              ->orWhere('dept_name', 'like', '%ผลิต%');
+        })
+        ->where(function($q) {
+            $q->whereIn('role', ['supervisor', 'manager'])
+              ->orWhere('level', '>=', 4);
+        })
+        ->get();
         return view('corrective.index', compact('openActions', 'completedActions', 'assignableUsers'));
     }
 
@@ -65,7 +66,7 @@ class CorrectiveActionController extends Controller
     {
         $request->validate([
             'action_id' => 'required|exists:corrective_actions,id',
-            'user_id' => 'required|exists:users,id',
+            'assigned_to' => 'required|exists:users,id',
             'due_date' => 'nullable|date|after_or_equal:today'
         ]);
 
@@ -74,7 +75,7 @@ class CorrectiveActionController extends Controller
         $oldAssignee = $action->assigned_to;
         
         $action->update([
-            'assigned_to' => $request->user_id,
+            'assigned_to' => $request->assigned_to,
             'assigned_at' => now(),
             'status' => 'assigned',
             'due_date' => $request->due_date ?? $action->due_date
@@ -87,7 +88,7 @@ class CorrectiveActionController extends Controller
             'model_type' => \App\Models\CorrectiveAction::class,
             'model_id' => $action->id,
             'old_values' => ['assigned_to' => $oldAssignee],
-            'new_values' => ['assigned_to' => $request->user_id],
+            'new_values' => ['assigned_to' => $request->assigned_to],
             'description' => 'Changed assignee for CAR #' . $action->id,
             'ip_address' => request()->ip(),
             'user_agent' => request()->userAgent(),
@@ -95,7 +96,7 @@ class CorrectiveActionController extends Controller
 
         // Email Notification
         try {
-            $recipient = \App\Models\User::find($request->user_id);
+            $recipient = \App\Models\User::find($request->assigned_to);
             if ($recipient && $recipient->email) {
                 \Illuminate\Support\Facades\Mail::to($recipient->email)->send(new \App\Mail\NewCAREscalated($action));
             }
@@ -130,25 +131,38 @@ class CorrectiveActionController extends Controller
             'assigned_to' => $assigneeId,
             'assigned_at' => $assigneeId ? now() : null,
             'due_date' => $dueDate,
+            'ai_tags' => \App\Services\AIService::getTagsFromFinding($request->note ?? ''),
         ]);
 
         // Email Notification
         try {
             $deptId = $log->session->department_id;
             
-            // Determine Recipient
-            $recipient = null;
+            // Determine Recipients
+            $recipients = collect();
             if ($assigneeId) {
-                $recipient = \App\Models\User::find($assigneeId);
+                $user = \App\Models\User::find($assigneeId);
+                if ($user) $recipients->push($user);
             } else {
-                // Auto-route to Manager
-                $recipient = \App\Models\User::where('department_id', $deptId)
-                            ->where('level', '>=', 5)
-                            ->first();
+                // Auto-route to Managers and Supervisors
+                $recipients = \App\Models\User::where('department_id', $deptId)
+                            ->where(function($q) {
+                                $q->whereIn('role', ['supervisor', 'manager'])
+                                  ->orWhere('level', '>=', 4);
+                            })
+                            ->get();
             }
             
-             if ($recipient && $recipient->email) {
-                \Illuminate\Support\Facades\Mail::to($recipient->email)->send(new \App\Mail\NewCAREscalated($action));
+            $emails = [];
+            foreach ($recipients as $recipient) {
+                $recipient->notify(new \App\Notifications\NewCARNotification($action));
+                if ($recipient->email) {
+                    $emails[] = $recipient->email;
+                }
+            }
+
+            if (count($emails) > 0) {
+                \Illuminate\Support\Facades\Mail::to($emails)->send(new \App\Mail\NewCAREscalated($action));
             }
         } catch (\Exception $e) {
             \Log::error('Failed to send CAR email: ' . $e->getMessage());
@@ -162,6 +176,7 @@ class CorrectiveActionController extends Controller
         $request->validate([
             'action_id' => 'required|exists:corrective_actions,id',
             'action_taken' => 'required|string',
+            'preventive_action' => 'required|string',
             'proof_image' => 'required|image|max:10240' // 10MB
         ]);
 
@@ -177,19 +192,58 @@ class CorrectiveActionController extends Controller
         $action->update([
             'status' => 'resolved',
             'action_taken' => $request->action_taken,
+            'preventive_action' => $request->preventive_action,
             'proof_image' => $path,
             'resolved_at' => now(),
             'assigned_to' => auth()->id() // Auto-claim by resolver
         ]);
 
-        // Start approval flow for the resolved CAR
-        $flow = $action->startApprovalFlow();
+        // Loop Engineering: Work is resolved, goes back to QA via Verify page.
+        // Removed startApprovalFlow() to break the linear cycle.
 
-        if ($flow) {
-            return back()->with('success', 'Corrective action resolved and sent for approval.');
+        // Notify the person who escalated it
+        if ($action->escalator) {
+            $action->escalator->notify(new \App\Notifications\CARResolvedNotification($action));
+        } elseif ($action->log && $action->log->session) {
+            // Notify the inspector if escalator relation doesn't exist
+            $inspector = \App\Models\User::find($action->log->session->inspector_id);
+            if ($inspector) {
+                $inspector->notify(new \App\Notifications\CARResolvedNotification($action));
+            }
         }
 
         return back()->with('success', 'Corrective action resolved successfully.');
+    }
+
+    public function delegate(Request $request)
+    {
+        $request->validate([
+            'action_id' => 'required|exists:corrective_actions,id',
+            'assigned_to' => 'required|exists:users,id'
+        ]);
+
+        $action = \App\Models\CorrectiveAction::findOrFail($request->action_id);
+        
+        $user = auth()->user();
+        $targetDeptId = $action->log?->session?->department_id;
+
+        // Only Manager of the Target Department, Admin, or QA can delegate
+        if ($user->department_id !== $targetDeptId && !$user->isAdmin() && !$user->isQA()) {
+            return back()->with('error', 'คุณไม่มีสิทธิ์มอบหมายงานในแผนกนี้ (Only Manager of the target department can delegate)');
+        }
+
+        // Only Managers (level >= 5) or QA/Admin can delegate
+        if ($user->level < 5 && !$user->isAdmin() && !$user->isQA()) {
+            return back()->with('error', 'คุณต้องมีสิทธิ์ระดับ Manager ขึ้นไปเพื่อมอบหมายงาน (Manager level required)');
+        }
+
+        $action->update([
+            'assigned_to' => $request->assigned_to,
+            'assigned_at' => now(),
+            'status' => 'open' // Still open, just assigned
+        ]);
+
+        return back()->with('success', 'มอบหมายงานเรียบร้อยแล้ว (Work delegated successfully.)');
     }
 
     public function close(Request $request)
@@ -209,6 +263,15 @@ class CorrectiveActionController extends Controller
             'status' => 'closed',
             'closed_at' => now()
         ]);
+
+        // Email Notification: Send Email to Assignee when QA closes the ticket
+        if ($action->assignee) {
+            try {
+                $action->assignee->notify(new \App\Notifications\CARClosedNotification($action));
+            } catch (\Exception $e) {
+                \Log::error('Failed to send CARClosedNotification: ' . $e->getMessage());
+            }
+        }
 
         // --- AUTO-APPROVE INSPECTION LOG AND RELATED GROUP LOGS ---
         if ($action->inspection_log_id) {
