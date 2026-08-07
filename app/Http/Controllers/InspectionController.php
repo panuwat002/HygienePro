@@ -482,19 +482,19 @@ class InspectionController extends Controller
                             continue;
                         }
 
-                        // Fallback: If DB doesn't have shift assignments, use total department employees
+                        // Fallback: If DB doesn't have shift assignments, use total department employees.
+                        // In fallback mode the same person appears in every shift's total, so we must deduct
+                        // people already inspected in other shifts to avoid double-counting. When shifts ARE
+                        // assigned each employee belongs to exactly one shift and no deduction is needed —
+                        // deducting there wrongly zeros out shifts that other shifts have already inspected.
+                        $inspectedInThisShiftIds = isset($inspectedByShift[$shiftKey]) ? $inspectedByShift[$shiftKey]->toArray() : [];
                         if ($empCount === 0) {
                             $empCount = $totalDeptEmployees;
-                        }
-
-                        // Deduct people who were already inspected in OTHER shifts today
-                        // (because they are locked and cannot be inspected in this shift)
-                        $inspectedInThisShiftIds = isset($inspectedByShift[$shiftKey]) ? $inspectedByShift[$shiftKey]->toArray() : [];
-                        $inspectedInOtherShiftsIds = array_diff($allInspectedIds, $inspectedInThisShiftIds);
-                        $empCount -= count($inspectedInOtherShiftsIds);
-                        
-                        if ($empCount < 0) {
-                            $empCount = 0;
+                            $inspectedInOtherShiftsIds = array_diff($allInspectedIds, $inspectedInThisShiftIds);
+                            $empCount -= count($inspectedInOtherShiftsIds);
+                            if ($empCount < 0) {
+                                $empCount = 0;
+                            }
                         }
 
                         // Also count employees from THIS shift that were inspected in ANY session

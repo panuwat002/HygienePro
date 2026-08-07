@@ -260,3 +260,66 @@ test('escalated corrective action closing automatically approves corresponding l
     expect($car->status)->toBe('closed');
     expect($log->verification_status)->toBe('approved');
 });
+
+test('shift card count is not zeroed out when other shift has been fully inspected', function () {
+    $morningShift = \App\Models\Shift::create([
+        'shift_name' => 'กะเช้า',
+        'start_time' => '06:00:00',
+        'end_time' => '18:00:00',
+    ]);
+    $nightShift = \App\Models\Shift::create([
+        'shift_name' => 'กะดึก',
+        'start_time' => '18:00:00',
+        'end_time' => '06:00:00',
+    ]);
+
+    $morning1 = Employee::create([
+        'employee_id' => 'M001', 'fullname' => 'Morning One',
+        'department_id' => $this->deptPd->id, 'qr_code_hash' => 'hash_m1',
+        'is_active' => true, 'shift_id' => $morningShift->id,
+    ]);
+    $morning2 = Employee::create([
+        'employee_id' => 'M002', 'fullname' => 'Morning Two',
+        'department_id' => $this->deptPd->id, 'qr_code_hash' => 'hash_m2',
+        'is_active' => true, 'shift_id' => $morningShift->id,
+    ]);
+    $night1 = Employee::create([
+        'employee_id' => 'N001', 'fullname' => 'Night One',
+        'department_id' => $this->deptPd->id, 'qr_code_hash' => 'hash_n1',
+        'is_active' => true, 'shift_id' => $nightShift->id,
+    ]);
+
+    $session = InspectionSession::create([
+        'department_id' => $this->deptPd->id,
+        'inspection_date' => now()->toDateString(),
+        'shift' => 'morning',
+        'inspector_id' => $this->staff->id,
+        'status' => 'completed',
+        'type' => 'personnel',
+        'round' => 1,
+    ]);
+    foreach ([$morning1, $morning2] as $emp) {
+        InspectionLog::create([
+            'session_id' => $session->id,
+            'checkpoint_id' => $this->checkpoint1->id,
+            'employee_id' => $emp->id,
+            'result' => 'pass',
+            'inspected_at' => now(),
+        ]);
+    }
+
+    $this->actingAs($this->staff);
+    $response = $this->getJson(
+        route('inspection.stats', ['type' => 'personnel', 'department' => $this->deptPd->id]) . '?shift=night'
+    );
+
+    $response->assertStatus(200);
+    $cards = collect($response->json('locations'));
+
+    $nightCard = $cards->firstWhere('id', 'shift_night');
+    expect($nightCard)->not->toBeNull();
+    // Regression: night must report its real population even when morning was fully inspected.
+    // Previously this returned 0 because the controller subtracted "inspected in other shifts"
+    // from every shift unconditionally.
+    expect($nightCard['employees_count'])->toBe(1);
+});
