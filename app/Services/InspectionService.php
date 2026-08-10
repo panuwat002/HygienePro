@@ -93,9 +93,11 @@ class InspectionService
      */
     public function notifyManagersOfSessionCars(InspectionSession $session): void
     {
+        // Fix #10: Eager-load the log's machine and location so the mapper below
+        // doesn't fire a query per CAR just to build a place label.
         $cars = \App\Models\CorrectiveAction::whereHas('log', function ($q) use ($session) {
             $q->where('session_id', $session->id);
-        })->with('log')->get();
+        })->with(['log.machine', 'log.location'])->get();
 
         if ($cars->isEmpty()) {
             return;

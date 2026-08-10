@@ -214,15 +214,19 @@ class AreaInspectionController extends Controller
         // endpoints are legitimate one-tap actions and are not throttled here.
         // The threshold is tunable via INSPECTION_SPEED_TRAP_SECONDS so QA can
         // relax it if inspectors report false positives from realistic pacing.
+        //
+        // Fix #9: Scope the trap to THIS session's logs. The prior query used
+        // whereHas('session', ...) which turned every area/machine save into a
+        // subquery across every log the inspector had ever created. Rapid
+        // tap-through only makes sense inside a single active session, so the
+        // narrower query is both cheaper and semantically closer to the intent.
         $minSeconds = (int) env('INSPECTION_SPEED_TRAP_SECONDS', 5);
-        $lastLog = \App\Models\InspectionLog::whereHas('session', function($q) use ($session) {
-            $q->where('inspector_id', $session->inspector_id);
-        })
-        ->where(function($q) {
-            $q->whereNotNull('location_id')->orWhereNotNull('machine_id');
-        })
-        ->latest('created_at')
-        ->first();
+        $lastLog = \App\Models\InspectionLog::where('session_id', $session->id)
+            ->where(function ($q) {
+                $q->whereNotNull('location_id')->orWhereNotNull('machine_id');
+            })
+            ->latest('created_at')
+            ->first();
 
         if ($lastLog && $lastLog->created_at->diffInSeconds(now()) < $minSeconds) {
             \Illuminate\Support\Facades\Log::warning('Speed Trap Triggered (Area/Machine)', [
@@ -306,6 +310,31 @@ class AreaInspectionController extends Controller
         array &$pendingCarNotifications,
         array &$oldPhotosToDelete
     ): void {
+        // Fix #11: Pre-fetch every reclean-pending log that could match any
+        // (location, machine, checkpoint) combo we're about to write. The
+        // per-checkpoint loop used to hit InspectionLog twice per iteration —
+        // once for the reclean-mode guard and once for parent-log linking —
+        // and each query included a whereDoesntHave subquery. Batching drops
+        // that to a single query indexed by "loc|mac|cp" for O(1) lookup below.
+        $allCheckpointIds = collect($targetResults)
+            ->flatMap(fn ($r) => array_keys($r))
+            ->unique()
+            ->all();
+        $pendingRecleanIndex = collect();
+        if (!empty($allCheckpointIds)) {
+            $pendingRecleanIndex = InspectionLog::whereIn('checkpoint_id', $allCheckpointIds)
+                ->where('verification_status', 'reclean')
+                ->whereDoesntHave('rechecks')
+                ->orderBy('inspected_at', 'desc')
+                ->get()
+                ->keyBy(fn ($log) => sprintf(
+                    '%s|%s|%s',
+                    $log->location_id ?? 'null',
+                    $log->machine_id ?? 'null',
+                    $log->checkpoint_id
+                ));
+        }
+
         foreach ($targetResults as $targetKey => $results) {
             $parts = explode(':', $targetKey);
             $type = $parts[0];
@@ -326,15 +355,11 @@ class AreaInspectionController extends Controller
             foreach ($results as $checkpointId => $result) {
                 if (!$result) continue;
 
-                if ($recleanFixMode) {
-                    $pendingReclean = InspectionLog::where('location_id', $locationId)
-                        ->when($machineId, fn($q) => $q->where('machine_id', $machineId), fn($q) => $q->whereNull('machine_id'))
-                        ->where('checkpoint_id', $checkpointId)
-                        ->where('verification_status', 'reclean')
-                        ->whereDoesntHave('rechecks')
-                        ->exists();
+                $recleanKey = sprintf('%s|%s|%s', $locationId ?? 'null', $machineId ?? 'null', $checkpointId);
+                $pendingLogRow = $pendingRecleanIndex->get($recleanKey);
 
-                    if (!$pendingReclean) {
+                if ($recleanFixMode) {
+                    if (!$pendingLogRow) {
                         throw new BulkValidationException('รายการนี้ไม่ได้อยู่ในสถานะ Re-clean ไม่สามารถบันทึกได้');
                     }
                 }
@@ -407,14 +432,8 @@ class AreaInspectionController extends Controller
                     }
                 }
 
-                // Parent Log (Re-clean logic)
-                $pendingLog = InspectionLog::where('location_id', $locationId)
-                    ->where('machine_id', $machineId)
-                    ->where('checkpoint_id', $checkpointId)
-                    ->where('verification_status', 'reclean')
-                    ->whereDoesntHave('rechecks')
-                    ->orderBy('inspected_at', 'desc')
-                    ->first();
+                // Parent Log (Re-clean logic) — reuse the pre-fetched index from Fix #11.
+                $pendingLog = $pendingLogRow;
 
                 if ($pendingLog) {
                     $isSameSessionRow = $pendingLog->session_id === $session->id

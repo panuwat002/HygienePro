@@ -553,6 +553,40 @@ test('storeBulkNoProductionRemainingMachines is blocked in reclean-fix mode', fu
         ->where('machine_id', $m->id)->count())->toBe(0);
 });
 
+test('storeBulk batches the reclean-pending lookup across all checkpoints', function () {
+    $location = \App\Models\Location::create(['location_name' => 'Batch Test']);
+    $cps = collect();
+    for ($i = 0; $i < 5; $i++) {
+        $cp = Checkpoint::create(['title' => "cp{$i}", 'description' => '', 'is_active' => true, 'type' => 'area']);
+        $location->checkpoints()->attach($cp->id);
+        $cps->push($cp);
+    }
+
+    $session = makeAreaSession($this->staff->id, $this->deptPd->id);
+    $this->actingAs($this->staff);
+
+    $payload = [
+        'results' => ['targets' => [
+            "loc:{$location->id}" => $cps->mapWithKeys(fn ($cp) => [$cp->id => 'pass'])->all(),
+        ]],
+    ];
+
+    // Count queries whose SQL mentions "reclean" — before Fix #11 this was
+    // 1 per checkpoint (the reclean-mode guard skipped because $recleanFixMode
+    // is false, but the parent-log lookup fired every iteration). After the
+    // fix the pre-fetch fires once, regardless of how many checkpoints we
+    // submit.
+    \Illuminate\Support\Facades\DB::enableQueryLog();
+    $this->post(
+        route('inspection.area.store', ['session' => $session->id, 'location' => $location->id]),
+        $payload
+    );
+    $queries = collect(\Illuminate\Support\Facades\DB::getQueryLog());
+    $recleanQueries = $queries->filter(fn ($q) => str_contains($q['query'], 'reclean'));
+
+    expect($recleanQueries->count())->toBeLessThanOrEqual(1);
+});
+
 test('finishSession sends one SessionCarsSummaryNotification per manager, not one per CAR', function () {
     \Illuminate\Support\Facades\Notification::fake();
 
