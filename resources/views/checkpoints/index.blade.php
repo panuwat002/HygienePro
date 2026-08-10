@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'จัดการจุดตรวจ (Checkpoints)')
+    @section('header', 'จัดการจุดตรวจ')
 
     <div class="row">
         <div class="col-12">
@@ -88,6 +88,7 @@
         </div>
     </div>
 
+    @push('modals')
     {{-- Import Modal --}}
     <div class="modal fade" id="importModal" tabindex="-1" aria-labelledby="importModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -128,5 +129,6 @@
             </div>
         </div>
     </div>
+    @endpush
 </x-app-layout>
 

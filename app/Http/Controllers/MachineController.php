@@ -8,13 +8,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\MachinesExport;
-use App\Imports\MachinesImport;
+
 
 class MachineController extends Controller
 {
     public function index()
     {
-        $machines = Machine::with('location')->orderBy('location_id')->get();
+        $machines = Machine::with('location')->orderBy('location_id')->paginate(15);
         return view('machines.index', compact('machines'));
     }
 
@@ -78,7 +78,19 @@ class MachineController extends Controller
     public function destroy(Machine $machine)
     {
         $machine->delete();
-        return redirect()->route('machines.index')->with('success', 'Machine deleted successfully.');
+        return redirect()->route('machines.index')->with('success', 'ลบข้อมูลเครื่องจักรเรียบร้อยแล้ว');
+    }
+
+    public function destroyBulk(Request $request)
+    {
+        $request->validate([
+            'machine_ids' => 'required|array',
+            'machine_ids.*' => 'exists:machines,id',
+        ]);
+
+        Machine::whereIn('id', $request->machine_ids)->delete();
+
+        return redirect()->route('machines.index')->with('success', 'ลบข้อมูลเครื่องจักรที่เลือกเรียบร้อยแล้ว');
     }
 
     public function showMapping(Machine $machine)
@@ -131,9 +143,95 @@ class MachineController extends Controller
             'file' => 'required|mimes:xlsx,xls,csv',
         ]);
 
-        Excel::import(new MachinesImport, $request->file('file'));
+        $file = $request->file('file');
+        
+        // Get real path of the uploaded temp file (e.g., C:\Windows\Temp\php1234.tmp)
+        $fullPath = $file->getRealPath();
+        
+        // Normalize directory separators for Windows
+        $fullPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $fullPath);
+        
+        if (!file_exists($fullPath)) {
+            return redirect()->route('machines.index')->with('error', 'PHP Error: File does not exist at ' . $fullPath);
+        }
+        
+        // Execute python script using specified Python executable or default
+        $scriptPath = base_path('scripts/python/smart_machine_import.py');
+        $pythonExecutable = env('PYTHON_PATH', 'python');
+        $command = escapeshellarg($pythonExecutable) . " " . escapeshellarg($scriptPath) . " " . escapeshellarg($fullPath) . " 2>&1";
+        $output = shell_exec($command);
+        
+        if (!$output) {
+            return redirect()->route('machines.index')->with('error', 'ไม่สามารถประมวลผลไฟล์ได้ (ไม่มีการตอบกลับจาก Python)');
+        }
+        
+        // Extract JSON part in case there are warnings printed before it
+        $jsonStart = strpos($output, '{');
+        if ($jsonStart === false) {
+            // Output is likely an error message
+            return redirect()->route('machines.index')->with('error', 'Python Error: ' . $output);
+        }
+        
+        $output = substr($output, $jsonStart);
+        
+        $result = json_decode($output, true);
+        
+        if (!$result || isset($result['error'])) {
+            $errorMsg = $result['error'] ?? 'เกิดข้อผิดพลาดในการประมวลผลไฟล์ด้วย Python';
+            return redirect()->route('machines.index')->with('error', $errorMsg);
+        }
+        
+        $machinesData = $result['data'] ?? [];
+        
+        foreach ($machinesData as $data) {
+            $id = $data['id'] ?? '';
+            $code = $data['code'] ?? '';
+            $name = $data['name'] ?? '';
+            $locationName = $data['location_name'] ?? '';
+            $description = $data['description'] ?? '';
+            $status = $data['status'] ?? 'ใช้งาน';
+            
+            if (!$code) {
+                $code = 'M-' . \Illuminate\Support\Str::random(6);
+            }
+            
+            if (!$locationName) {
+                $locationName = 'ส่วนกลาง';
+            }
+            
+            $location = Location::firstOrCreate(
+                ['location_name' => $locationName],
+                ['description' => 'Imported via Excel']
+            );
+            
+            $isActive = !in_array(strtolower($status), ['ไม่ใช้งาน', 'inactive', '0', 'no', 'false']);
+            
+            $machineData = [
+                'code'        => $code,
+                'name'        => $name,
+                'location_id' => $location->id,
+                'description' => $description,
+                'is_active'   => $isActive,
+            ];
+            
+            if ($id) {
+                $machine = Machine::find($id);
+                if ($machine) {
+                    $machine->update($machineData);
+                    continue;
+                }
+            }
+            
+            $machine = Machine::where('code', $code)->first();
+            if ($machine) {
+                $machine->update($machineData);
+                continue;
+            }
+            
+            Machine::create($machineData);
+        }
 
-        return redirect()->route('machines.index')->with('success', 'นำเข้าข้อมูลเครื่องจักรเรียบร้อยแล้ว');
+        return redirect()->route('machines.index')->with('success', 'นำเข้าข้อมูลเครื่องจักรเรียบร้อยแล้ว (Powered by Python)');
     }
 
     public function showBulkMapping()
@@ -181,5 +279,18 @@ class MachineController extends Controller
         $modeText = $mode === 'replace' ? 'แทนที่' : 'เพิ่ม';
         return redirect()->route('machines.index')
             ->with('success', "{$modeText}จุดตรวจ " . count($checkpointIds) . " รายการ ให้เครื่องจักร {$count} รายการ เรียบร้อยแล้ว");
+    }
+
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'machine_ids' => 'required|array|min:1',
+            'machine_ids.*' => 'exists:machines,id',
+        ]);
+
+        $count = Machine::whereIn('id', $request->machine_ids)->delete();
+
+        return redirect()->route('machines.index')
+            ->with('success', "ลบข้อมูลเครื่องจักร {$count} รายการ เรียบร้อยแล้ว");
     }
 }

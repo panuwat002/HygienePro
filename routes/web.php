@@ -16,6 +16,18 @@ Route::get('/', function () {
 Route::get('/dashboard', [InspectionController::class, 'home'])->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
+    // Debug Route
+    Route::get('/debug-logs', function() {
+        $logs = \App\Models\InspectionLog::with('checkpoint')
+            ->whereNotNull('location_id')
+            ->whereNull('machine_id')
+            ->whereNull('employee_id')
+            ->orderBy('id', 'desc')
+            ->take(10)
+            ->get();
+        return response()->json($logs);
+    });
+
     // Notification Routes
     Route::post('/notifications/{id}/read', [App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.read');
     Route::post('/notifications/read-all', [App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.readAll');
@@ -32,17 +44,21 @@ Route::middleware('auth')->group(function () {
     // Inspection Routes
     Route::middleware(['auth'])->group(function () {
         Route::middleware(['can:inspect'])->group(function () {
-            Route::get('/inspection/{type}', [InspectionController::class, 'dashboard'])->name('inspection.dashboard')->whereIn('type', ['personnel', 'area', 'machine']);
-            Route::get('/inspection/summary/{type}/{department}', [InspectionController::class, 'getDepartmentStats'])->name('inspection.stats')->whereIn('type', ['personnel', 'area', 'machine']);
-            Route::post('/inspection/start/{type}', [InspectionController::class, 'startSession'])->name('inspection.start')->whereIn('type', ['personnel', 'area', 'machine']);
+            Route::get('/inspection/{type}', [InspectionController::class, 'dashboard'])->name('inspection.dashboard')->whereIn('type', ['personnel', 'machine']);
+            Route::get('/inspection/summary/{type}/{department}', [InspectionController::class, 'getDepartmentStats'])->name('inspection.stats')->whereIn('type', ['personnel', 'machine']);
+            Route::post('/inspection/start/{type}', [InspectionController::class, 'startSession'])->name('inspection.start')->whereIn('type', ['personnel', 'machine']);
             
             // Area Inspection Routes
             Route::get('/inspection/area/bulk/{department}', [App\Http\Controllers\AreaInspectionController::class, 'showBulkChecklist'])->name('inspection.area.bulk');
             Route::get('/inspection/area/{department}/{location}', [App\Http\Controllers\AreaInspectionController::class, 'showChecklist'])->name('inspection.area.checklist');
             Route::post('/inspection/area/{session}/{location}', [App\Http\Controllers\AreaInspectionController::class, 'store'])->name('inspection.area.store');
+            Route::post('/inspection/area/{session}/{location}/bulk-no-production', [App\Http\Controllers\AreaInspectionController::class, 'storeBulkNoProduction'])->name('inspection.area.bulk-no-production');
+            Route::post('/inspection/area/{session}/{location}/bulk-pass', [App\Http\Controllers\AreaInspectionController::class, 'storeBulkPass'])->name('inspection.area.bulk-pass');
 
             Route::get('/inspection/session/{session}/scan', [InspectionController::class, 'scan'])->name('inspection.scan');
+            Route::post('/inspection/session/{session}/bulk-pass', [InspectionController::class, 'bulkPassPersonnel'])->name('inspection.bulk-pass');
             Route::get('/inspection/session/{session}/browse', [InspectionController::class, 'browseEmployees'])->name('inspection.browse');
+            Route::post('/inspection/session/{session}/employee/{employee}/mark-absent', [InspectionController::class, 'markAbsent'])->name('inspection.mark-absent');
             Route::get('/inspection/session/{session}/verify/{hash}', [InspectionController::class, 'showChecklist'])->name('inspection.checklist');
             Route::post('/inspection/session/{session}/verify-with-photo/{hash}', [InspectionController::class, 'showChecklist'])->name('inspection.checklist.photo');
             Route::post('/inspection/session/{session}/store', [InspectionController::class, 'storeLog'])->name('inspection.log.store');
@@ -78,6 +94,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/reports/offenders', 'offenders')->name('reports.offenders');
             Route::get('/reports/export/pdf', [App\Http\Controllers\ReportController::class, 'exportDailyPdf'])->name('reports.export.pdf');
             Route::get('/reports/export/fm-qa-22', [App\Http\Controllers\ReportController::class, 'exportFmQa22'])->name('reports.export.fm-qa-22');
+            Route::get('/reports/export/monthly', [App\Http\Controllers\ReportController::class, 'exportMonthlyPdf'])->name('reports.monthly.pdf');
         });
 
         // ==========================================================
@@ -93,6 +110,11 @@ Route::middleware('auth')->group(function () {
             Route::get('/admin/approvals/setup', [App\Http\Controllers\Admin\ApprovalFlowController::class, 'setup'])->name('admin.approvals.setup');
             Route::post('/admin/approvals/{flow}/steps', [App\Http\Controllers\Admin\ApprovalFlowController::class, 'storeStep'])->name('admin.approvals.steps.store');
             Route::delete('/admin/approvals/steps/{step}', [App\Http\Controllers\Admin\ApprovalFlowController::class, 'destroyStep'])->name('admin.approvals.steps.destroy');
+            
+            // Email Settings
+            Route::get('/admin/settings/email', [App\Http\Controllers\Admin\SystemSettingController::class, 'editEmail'])->name('admin.settings.email');
+            Route::post('/admin/settings/email/update', [App\Http\Controllers\Admin\SystemSettingController::class, 'updateEmail'])->name('admin.settings.email.update');
+            Route::post('/admin/settings/email/test', [App\Http\Controllers\Admin\SystemSettingController::class, 'testEmail'])->name('admin.settings.email.test');
         });
 
         // Group 1.5: Master Data Management
@@ -100,6 +122,7 @@ Route::middleware('auth')->group(function () {
             Route::resource('departments', App\Http\Controllers\DepartmentController::class);
             Route::get('departments-export', [App\Http\Controllers\DepartmentController::class, 'export'])->name('departments.export');
             Route::post('departments-import', [App\Http\Controllers\DepartmentController::class, 'import'])->name('departments.import');
+            Route::post('locations-bulk-delete', [LocationController::class, 'bulkDelete'])->name('locations.bulk-delete');
             Route::resource('locations', LocationController::class);
             Route::get('locations-export', [LocationController::class, 'export'])->name('locations.export');
             Route::post('locations-import', [LocationController::class, 'import'])->name('locations.import');
@@ -107,6 +130,7 @@ Route::middleware('auth')->group(function () {
             Route::post('locations/{location}/map', [LocationController::class, 'saveMapping'])->name('locations.map.save');
             Route::get('locations-bulk-map', [LocationController::class, 'showBulkMapping'])->name('locations.bulk-map');
             Route::post('locations-bulk-map', [LocationController::class, 'saveBulkMapping'])->name('locations.bulk-map.save');
+            Route::post('machines-bulk-delete', [App\Http\Controllers\MachineController::class, 'bulkDelete'])->name('machines.bulk-delete');
             Route::resource('machines', App\Http\Controllers\MachineController::class);
             Route::get('machines-export', [App\Http\Controllers\MachineController::class, 'export'])->name('machines.export');
             Route::post('machines-import', [App\Http\Controllers\MachineController::class, 'import'])->name('machines.import');
@@ -116,6 +140,7 @@ Route::middleware('auth')->group(function () {
             Route::post('machines-bulk-map', [App\Http\Controllers\MachineController::class, 'saveBulkMapping'])->name('machines.bulk-map.save');
             Route::resource('checkpoint-categories', CheckpointCategoryController::class);
             Route::post('checkpoints/quick-store', [CheckpointController::class, 'quickStore'])->name('checkpoints.quick-store');
+            Route::post('checkpoints/reorder', [CheckpointController::class, 'reorder'])->name('checkpoints.reorder');
             Route::resource('checkpoints', CheckpointController::class);
             Route::get('checkpoints-export', [CheckpointController::class, 'export'])->name('checkpoints.export');
             Route::post('checkpoints-import', [CheckpointController::class, 'import'])->name('checkpoints.import');
@@ -127,6 +152,8 @@ Route::middleware('auth')->group(function () {
         Route::middleware(['can:manage-employees'])->group(function () {
             Route::get('employees/export', [EmployeeController::class, 'export'])->name('employees.export');
             Route::post('employees/import', [EmployeeController::class, 'import'])->name('employees.import');
+            Route::post('employees/import-schedules', [EmployeeController::class, 'importSchedules'])->name('employees.import_schedules');
+            Route::get('employees/download-schedules-template', [EmployeeController::class, 'downloadSchedulesTemplate'])->name('employees.download_schedules_template');
             Route::get('employees/print-selected', [EmployeeController::class, 'printSelected'])->name('employees.print_selected');
             Route::get('employees/{employee}/print-card', [EmployeeController::class, 'printCard'])->name('employees.print_card');
             Route::get('employees-bulk-location', [EmployeeController::class, 'showBulkLocation'])->name('employees.bulk-location');
@@ -137,10 +164,27 @@ Route::middleware('auth')->group(function () {
             // Bulk Shift Assignment
             Route::get('employees-bulk-shift', [EmployeeController::class, 'showBulkShift'])->name('employees.bulk-shift');
             Route::post('employees-bulk-shift', [EmployeeController::class, 'saveBulkShift'])->name('employees.bulk-shift.save');
+            Route::post('employees-bulk-department', [EmployeeController::class, 'saveBulkDepartment'])->name('employees.bulk-department.save');
+            Route::post('employees-bulk-delete', [EmployeeController::class, 'bulkDelete'])->name('employees.bulk-delete');
             Route::resource('employees', EmployeeController::class);
             Route::resource('shifts', ShiftController::class);
         });
     });
+
+    // AI Mockup Test Route
+    Route::get('/ai-test', function () {
+        return view('ai_test');
+    })->name('ai.test');
+    
+    Route::post('/ai-test/analyze', function (\Illuminate\Http\Request $request) {
+        $request->validate(['image' => 'required|image']);
+        $path = $request->file('image')->store('ai_test', 'public');
+        
+        $result = \App\Services\AIService::verifyImage(storage_path('app/public/' . $path));
+        
+        return back()->with('result', $result)->with('image_path', $path);
+    })->name('ai.analyze');
+
 });
 
 require __DIR__.'/auth.php';

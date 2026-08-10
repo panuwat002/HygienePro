@@ -57,9 +57,13 @@ class InspectionRejectedNotification extends Notification
      */
     public function toArray(object $notifiable): array
     {
+        $deptName = $this->session->department ? $this->session->department->dept_name : 'ไม่ระบุแผนก';
+        $shiftMap = ['morning' => 'เช้า', 'afternoon' => 'บ่าย', 'night' => 'ดึก'];
+        $shift = $shiftMap[$this->session->shift] ?? ucfirst($this->session->shift);
+
         return [
             'title' => 'งานถูกตีกลับ (Rejected)',
-            'message' => 'รอบตรวจสอบของคุณถูก Reject: ' . $this->reason,
+            'message' => "รอบกะ{$shift} ถูกตีกลับ: " . $this->reason,
             'link' => route('inspection.scan', $this->session->id),
             'icon' => 'bi-x-circle-fill text-danger',
             'session_id' => $this->session->id

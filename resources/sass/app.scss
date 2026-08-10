@@ -692,13 +692,18 @@ body.sb-collapsed #sidebar-wrapper .sidebar-footer .rounded-circle {
 .table-modern {
     background: #fff;
     border-radius: var(--radius-lg);
-    overflow: hidden;
     box-shadow: var(--shadow-sm);
     border: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .table-modern thead {
     background: var(--slate-50);
+}
+.table-modern thead th:first-child {
+    border-top-left-radius: var(--radius-lg);
+}
+.table-modern thead th:last-child {
+    border-top-right-radius: var(--radius-lg);
 }
 
 .table-modern th {

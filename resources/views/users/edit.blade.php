@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'แก้ไขผู้ใช้งาน (Edit User)')
+    @section('header', 'แก้ไขผู้ใช้งาน')
 
     <div class="row justify-content-center">
         <div class="col-md-8">

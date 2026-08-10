@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'จัดการผู้ใช้งาน (User Management)')
+    @section('header', 'จัดการผู้ใช้งาน')
 
     <div class="row">
         <div class="col-12 mb-4">
@@ -9,9 +9,9 @@
                         <h5 class="mb-1 fw-bold" style="color: var(--slate-800);">รายชื่อผู้ใช้งานระบบ</h5>
                         <p class="text-muted mb-0 small">จัดการสิทธิ์การเข้าถึงและบทบาทของผู้ใช้งาน</p>
                     </div>
-                    <a href="{{ route('users.create') }}" class="btn btn-primary-custom">
+                    <button type="button" class="btn btn-primary-custom" data-bs-toggle="modal" data-bs-target="#createUserModal">
                         <i class="bi bi-person-plus-fill me-2"></i>สร้างผู้ใช้งานใหม่
-                    </a>
+                    </button>
                 </div>
             </div>
         </div>
@@ -109,4 +109,95 @@
             </div>
         </div>
     </div>
+
+    @push('modals')
+    <!-- Create User Modal -->
+    <div class="modal fade" id="createUserModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content border-0 rounded-4">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">สร้างผู้ใช้งานใหม่ (Quick Add)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <form action="{{ route('users.store') }}" method="POST">
+                        @csrf
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">ชื่อ-นามสกุล (Full Name)</label>
+                                <input type="text" name="name" class="form-control @error('name') is-invalid @enderror" value="{{ old('name') }}" required>
+                                @error('name') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">รหัสพนักงาน (Employee Code)</label>
+                                <input type="text" name="employee_code" class="form-control @error('employee_code') is-invalid @enderror" value="{{ old('employee_code') }}">
+                                @error('employee_code') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                <div class="form-text text-muted small">ตัวเลือก: สามารถใช้ login เข้าสู่ระบบแทนอีเมลได้</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">อีเมล (Email)</label>
+                                <input type="email" name="email" class="form-control @error('email') is-invalid @enderror" value="{{ old('email') }}">
+                                @error('email') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">สังกัดแผนก (Department)</label>
+                                <select name="department_id" class="form-select @error('department_id') is-invalid @enderror">
+                                    <option value="">-- ไม่ระบุ / ส่วนกลาง --</option>
+                                    @foreach($departments as $dept)
+                                        <option value="{{ $dept->id }}" {{ old('department_id') == $dept->id ? 'selected' : '' }}>
+                                            {{ $dept->dept_name }} ({{ $dept->dept_code }})
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('department_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label fw-bold">สิทธิ์การใช้งาน (Role)</label>
+                                <select name="role" class="form-select @error('role') is-invalid @enderror" required>
+                                    <option value="">-- เลือกสิทธิ์ --</option>
+                                    <option value="admin" {{ old('role') == 'admin' ? 'selected' : '' }}>Admin (ผู้ดูแลระบบ)</option>
+                                    <option value="manager" {{ old('role') == 'manager' ? 'selected' : '' }}>Manager (ผู้จัดการ)</option>
+                                    <option value="supervisor" {{ old('role') == 'supervisor' ? 'selected' : '' }}>Supervisor (หัวหน้างาน)</option>
+                                    <option value="staff" {{ old('role') == 'staff' ? 'selected' : '' }}>Staff (พนักงานทั่วไป)</option>
+                                </select>
+                                @error('role') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">รหัสผ่าน (Password)</label>
+                                <input type="password" name="password" class="form-control @error('password') is-invalid @enderror" required>
+                                @error('password') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">ยืนยันรหัสผ่าน (Confirm Password)</label>
+                                <input type="password" name="password_confirmation" class="form-control" required>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-light" data-bs-dismiss="modal">ยกเลิก</button>
+                            <button type="submit" class="btn btn-primary-custom px-4">บันทึกข้อมูล</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endpush
+
+    @if($errors->any())
+        @push('scripts')
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                var modal = new bootstrap.Modal(document.getElementById('createUserModal'));
+                modal.show();
+            });
+        </script>
+        @endpush
+    @endif
+
 </x-app-layout>

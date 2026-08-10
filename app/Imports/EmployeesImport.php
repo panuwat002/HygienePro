@@ -26,19 +26,22 @@ class EmployeesImport implements ToModel, WithStartRow
         }
 
         // Mapping based on EmployeesExport structure:
-        // 0: employee_id (รหัสพนักงาน)
-        // 1: prefix (คำนำหน้า)
-        // 2: fname (ชื่อจริง)
-        // 3: lname (นามสกุล)
-        // 4: department names (แผนก)
-        // 5: level (ระดับ)
+        // 0: ID (ห้ามแก้ไข)
+        // 1: employee_id (รหัสพนักงาน)
+        // 2: prefix (คำนำหน้า)
+        // 3: fname (ชื่อจริง)
+        // 4: lname (นามสกุล)
+        // 5: department names (แผนก)
+        // 6: level (ระดับ)
 
-        $employeeId = trim($row[0] ?? '');
-        $prefix = trim($row[1] ?? 'คุณ');
-        $fname = trim($row[2] ?? '');
-        $lname = trim($row[3] ?? '');
-        $deptName = trim($row[4] ?? '');
-        $level = trim($row[5] ?? '');
+        $id = trim($row[0] ?? '');
+        $employeeId = trim($row[1] ?? '');
+        $prefix = trim($row[2] ?? 'คุณ');
+        $fname = trim($row[3] ?? '');
+        $lname = trim($row[4] ?? '');
+        $deptName = trim($row[5] ?? '');
+        $level = trim($row[6] ?? '');
+        $shiftName = trim($row[7] ?? '');
 
         // Fallback for "Name Surname" in single column if user uses old template (Column A = Name) represents legacy logic?
         // Let's stick to the Export format as the standard.
@@ -66,18 +69,59 @@ class EmployeesImport implements ToModel, WithStartRow
             ]
         );
 
-        return Employee::updateOrCreate(
-            ['employee_id' => $employeeId],
-            [
-                'prefix'        => $prefix,
-                'fname'         => $fname,
-                'lname'         => $lname,
-                'fullname'      => $prefix . ' ' . $fname . ' ' . $lname,
-                'department_id' => $department->id,
-                'level'         => $level,
-                'qr_code_hash'  => Str::uuid(),
-                'is_active'     => true,
-            ]
-        );
+        $shiftId = null;
+        if ($shiftName && $shiftName !== '-') {
+            $shift = \App\Models\Shift::firstOrCreate(
+                ['shift_name' => $shiftName],
+                [
+                    'shift_code' => Str::slug($shiftName, '_') . '_' . time(),
+                    'description' => 'Imported via Excel',
+                    'start_time' => '08:00:00',
+                    'end_time' => '17:00:00'
+                ]
+            );
+            $shiftId = $shift->id;
+        }
+
+        $data = [
+            'employee_id'   => $employeeId,
+            'prefix'        => $prefix,
+            'fname'         => $fname,
+            'lname'         => $lname,
+            'fullname'      => $prefix . ' ' . $fname . ' ' . $lname,
+            'department_id' => $department->id,
+            'level'         => $level,
+            'qr_code_hash'  => Str::uuid(),
+            'is_active'     => true,
+        ];
+
+        if ($shiftId) {
+            $data['shift_id'] = $shiftId;
+        }
+
+        if ($id) {
+            $employee = Employee::withTrashed()->find($id);
+            if ($employee) {
+                if ($employee->trashed()) {
+                    $employee->restore();
+                }
+                unset($data['qr_code_hash']); // Don't overwrite existing QR hash
+                $employee->update($data);
+                return $employee;
+            }
+        }
+        
+        // If no ID or ID not found, check by employee_id just in case, or create new
+        $employee = Employee::withTrashed()->where('employee_id', $employeeId)->first();
+        if ($employee) {
+            if ($employee->trashed()) {
+                $employee->restore();
+            }
+            unset($data['qr_code_hash']);
+            $employee->update($data);
+            return $employee;
+        }
+
+        return Employee::create($data);
     }
 }

@@ -12,6 +12,7 @@ class CorrectiveAction extends Model
     protected $fillable = [
         'inspection_log_id',
         'status',
+        'ai_tags',
         'approval_status',
         'escalated_by',
         'assigned_to',
@@ -31,6 +32,7 @@ class CorrectiveAction extends Model
         'resolved_at' => 'datetime',
         'closed_at' => 'datetime',
         'due_date' => 'datetime',
+        'ai_tags' => 'array',
     ];
 
     public function log()
@@ -50,6 +52,20 @@ class CorrectiveAction extends Model
 
     public function getApprovalDetails()
     {
+        $log = $this->log;
+        if ($log) {
+            $target = '';
+            if ($log->employee) {
+                $target = "พนักงาน: " . $log->employee->fullname;
+            } elseif ($log->machine) {
+                $target = "เครื่องจักร: " . $log->machine->name;
+            } elseif ($log->location) {
+                $target = "พื้นที่: " . $log->location->location_name;
+            }
+            
+            $checkpoint = $log->checkpoint ? $log->checkpoint->title : $log->checkpoint_title_snapshot;
+            return "เป้าหมาย (Target): {$target}\nหัวข้อที่ตก (Issue): {$checkpoint}\nสาเหตุ (Root Cause): {$this->root_cause}\nการแก้ไข (Action): {$this->action_taken}";
+        }
         return "CAR for Log ID: {$this->inspection_log_id}\nRoot Cause: {$this->root_cause}\nAction Taken: {$this->action_taken}";
     }
 
@@ -70,5 +86,10 @@ class CorrectiveAction extends Model
     public function getApprovalDepartmentId()
     {
         return $this->log?->session?->department_id;
+    }
+
+    public function getApprovalRequesterId()
+    {
+        return $this->escalated_by;
     }
 }

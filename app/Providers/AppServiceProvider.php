@@ -29,9 +29,9 @@ class AppServiceProvider extends ServiceProvider
         // --- Role Matrix Gate Definitions (PRD Compliance) ---
 
         /**
-         * Can Inspect: QA Staff only
+         * Can Inspect: QA Staff, Supervisor, and Manager
          * - Must be from QA department
-         * - Role = staff OR Level <= 3
+         * - Role = staff, supervisor, manager OR Level <= 3
          */
         Gate::define('inspect', function (User $user) {
             return $user->canInspect() || $user->isAdmin();

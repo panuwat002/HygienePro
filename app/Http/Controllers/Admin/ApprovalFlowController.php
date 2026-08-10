@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use App\Models\ApprovalFlow;
 use App\Models\ApprovalFlowStep;
 use App\Models\User;
+use App\Models\Department;
 
 class ApprovalFlowController extends Controller
 {
@@ -25,6 +26,7 @@ class ApprovalFlowController extends Controller
 
         $roles = ['staff', 'supervisor', 'manager', 'admin', 'executive'];
         $users = User::orderBy('name')->get();
+        $departments = Department::orderBy('dept_name')->get();
 
         // Group users by role for the UI helper
         $usersByRole = [];
@@ -32,7 +34,7 @@ class ApprovalFlowController extends Controller
             $usersByRole[$r] = $users->filter(fn($u) => $u->role === $r)->values();
         }
 
-        return view('admin.approvals.setup', compact('flow', 'roles', 'users', 'usersByRole'));
+        return view('admin.approvals.setup', compact('flow', 'roles', 'users', 'usersByRole', 'departments'));
     }
 
     public function storeStep(Request $request, ApprovalFlow $flow)
@@ -40,6 +42,7 @@ class ApprovalFlowController extends Controller
         $request->validate([
             'step_order' => 'required|integer|min:1',
             'role' => 'nullable|string',
+            'department_id' => 'nullable|exists:departments,id',
             'user_id' => 'nullable|exists:users,id',
         ]);
 
@@ -51,6 +54,7 @@ class ApprovalFlowController extends Controller
             'approval_flow_id' => $flow->id,
             'step_order' => $request->step_order,
             'role' => $request->role,
+            'department_id' => $request->department_id,
             'user_id' => $request->user_id,
         ]);
 

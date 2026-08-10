@@ -17,6 +17,7 @@ class LocationsExport implements FromCollection, WithHeadings, WithMapping
     public function headings(): array
     {
         return [
+            'ID (ห้ามแก้ไข)',
             'ชื่อจุดประจำการ',
             'คำอธิบาย',
         ];
@@ -25,6 +26,7 @@ class LocationsExport implements FromCollection, WithHeadings, WithMapping
     public function map($location): array
     {
         return [
+            $location->id,
             $location->location_name,
             $location->description ?? '',
         ];

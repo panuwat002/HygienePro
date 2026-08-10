@@ -13,7 +13,7 @@ class CheckpointController extends Controller
 {
     public function index()
     {
-        $checkpoints = Checkpoint::with('category')->get();
+        $checkpoints = Checkpoint::with('category')->orderBy('sort_order')->orderBy('id')->get();
         return view('checkpoints.index', compact('checkpoints'));
     }
 
@@ -92,6 +92,20 @@ class CheckpointController extends Controller
         return redirect()->route('checkpoints.index')->with('success', 'Checkpoint deleted successfully.');
     }
 
+    public function reorder(Request $request)
+    {
+        $request->validate([
+            'order' => 'required|array',
+            'order.*' => 'exists:checkpoints,id',
+        ]);
+
+        foreach ($request->order as $index => $id) {
+            Checkpoint::where('id', $id)->update(['sort_order' => $index]);
+        }
+
+        return response()->json(['success' => true]);
+    }
+
     public function export()
     {
         return Excel::download(new CheckpointsExport, 'checkpoints.xlsx');
@@ -163,4 +177,5 @@ class CheckpointController extends Controller
             ]
         ]);
     }
+
 }

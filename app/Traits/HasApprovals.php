@@ -28,6 +28,7 @@ trait HasApprovals
             }
 
             $departmentId = method_exists($this, 'getApprovalDepartmentId') ? $this->getApprovalDepartmentId() : ($this->department_id ?? null);
+            $requesterId = method_exists($this, 'getApprovalRequesterId') ? $this->getApprovalRequesterId() : (auth()->id() ?? null);
 
             return ApprovalRequest::updateOrCreate(
                 [
@@ -37,6 +38,7 @@ trait HasApprovals
                 [
                     'approval_flow_id' => $flow->id,
                     'department_id' => $departmentId,
+                    'requester_id' => $requesterId,
                     'current_step_order' => 1,
                     'status' => 'pending',
                 ]

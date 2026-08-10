@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'เลือกพนักงาน (Browse Employees)')
+    @section('header', 'เลือกพนักงาน')
 
     <div class="row justify-content-center">
         <div class="col-md-8 col-lg-7">
@@ -43,10 +43,13 @@
 
             <!-- Search -->
             <div class="mb-3 animate-in animate-in-delay-2">
-                <div class="input-group input-group-lg">
-                    <span class="input-group-text bg-white border-end-0" style="border-radius: var(--radius-md) 0 0 var(--radius-md);"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" id="employee-search" class="form-control border-start-0 ps-0" placeholder="ค้นหาชื่อ, รหัสพนักงาน..." style="border-radius: 0 var(--radius-md) var(--radius-md) 0;" autofocus value="{{ $search }}">
-                </div>
+                <form action="{{ route('inspection.browse', $session->id) }}" method="GET" id="search-form">
+                    <input type="hidden" name="show_all" value="{{ $showAll ? '1' : '0' }}" id="show_all_input">
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text bg-white border-end-0" style="border-radius: var(--radius-md) 0 0 var(--radius-md);"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" name="q" id="employee-search" class="form-control border-start-0 ps-0" placeholder="ค้นหาชื่อ, รหัสพนักงาน... (กด Enter)" style="border-radius: 0 var(--radius-md) var(--radius-md) 0;" autofocus value="{{ $search }}">
+                    </div>
+                </form>
                 <div class="form-check form-switch mt-2 ps-5 ms-1">
                     <input class="form-check-input" type="checkbox" id="toggleShowAll" {{ $showAll ? 'checked' : '' }} style="cursor: pointer; transform: scale(1.1);">
                     <label class="form-check-label text-muted small fw-bold" for="toggleShowAll" style="cursor: pointer;">
@@ -80,82 +83,129 @@
                 @foreach($grouped as $locationName => $employees)
                 <div class="location-group mb-3 animate-in" style="animation-delay: {{ $loop->index * 80 }}ms;">
                     <div class="d-flex align-items-center mb-2 px-1">
+                        @if($locationName === 'รายชื่อพนักงานทั้งหมด')
+                        <i class="bi bi-people-fill text-primary me-2"></i>
+                        @else
                         <i class="bi bi-geo-alt-fill text-primary me-2"></i>
+                        @endif
                         <h6 class="fw-bold mb-0 text-dark" style="font-size: 0.85rem;">{{ $locationName }}</h6>
                         <span class="badge bg-light text-muted ms-2" style="font-size: 0.7rem;">{{ $employees->count() }} คน</span>
                     </div>
                     <div class="card border-0 shadow-sm" style="border-radius: var(--radius-lg); overflow: hidden;">
                         @foreach($employees as $emp)
-                        @php $isInspected = in_array($emp->id, $inspectedIds); @endphp
-                        @if($isInspected)
-                        {{-- Already inspected: non-clickable --}}
-                        <div class="employee-item d-flex align-items-center p-3 text-decoration-none border-bottom employee-done"
+                        @php 
+                            $isInspected = in_array($emp->id, $inspectedIds); 
+                            $isAbsent = in_array($emp->id, $absentIds ?? []);
+                        @endphp
+                        @if($isInspected || $isAbsent)
+                        {{-- Already inspected or absent: non-clickable --}}
+                        <div class="employee-item d-flex align-items-center p-3 border-bottom employee-done"
                            data-name="{{ mb_strtolower($emp->fullname) }}"
                            data-id="{{ mb_strtolower($emp->employee_id) }}"
-                           data-status="done">
-                            
-                            <div class="me-3 position-relative" style="min-width: 44px;">
-                                @if($emp->profile_image)
-                                    <img src="{{ $emp->profile_image }}" class="rounded-circle" width="44" height="44" style="object-fit: cover;">
-                                @else
-                                    <div class="rounded-circle bg-light d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-                                        <i class="bi bi-person-fill text-secondary"></i>
+                           data-status="done"
+                           style="transition: all 0.2s ease; opacity: 0.85;">
+                           
+                            <a href="{{ route('inspection.checklist', ['session' => $session->id, 'hash' => $emp->employee_id, 'from' => 'browse'] + request()->query()) }}" class="d-flex flex-grow-1 align-items-center text-decoration-none" style="cursor: pointer;">
+                                <div class="me-3 position-relative" style="min-width: 44px;">
+                                    @if($emp->profile_image)
+                                        <img src="{{ $emp->profile_image }}" alt="รูปโปรไฟล์ของ {{ $emp->fullname }}" class="rounded-circle" width="44" height="44" style="object-fit: cover; opacity: 0.7;">
+                                    @else
+                                        <div class="rounded-circle bg-light d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
+                                            <i class="bi bi-person-fill text-secondary"></i>
+                                        </div>
+                                    @endif
+                                    <span class="position-absolute" style="bottom: -2px; right: -2px; font-size: 1rem;">
+                                        @if($isAbsent)
+                                        <i class="bi bi-dash-circle-fill text-secondary"></i>
+                                        @else
+                                        <i class="bi bi-check-circle-fill text-success"></i>
+                                        @endif
+                                    </span>
+                                </div>
+                                
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold text-muted" style="font-size: 0.9rem;">
+                                        {{ $emp->fullname }}
+                                        @if($showAll && optional($emp->shift)->shift_name !== $session->shift)
+                                            <span class="badge bg-warning text-dark ms-1" style="font-size: 0.65rem;">นอกกะ</span>
+                                        @endif
                                     </div>
-                                @endif
-                                <span class="position-absolute" style="bottom: -2px; right: -2px; font-size: 1rem;">
-                                    <i class="bi bi-check-circle-fill text-success"></i>
-                                </span>
-                            </div>
-                            
-                            <div class="flex-grow-1">
-                                <div class="fw-bold text-muted" style="font-size: 0.9rem;">
-                                    {{ $emp->fullname }}
-                                    @if($showAll && optional($emp->shift)->shift_name !== $session->shift)
-                                        <span class="badge bg-warning text-dark ms-1" style="font-size: 0.65rem;">นอกกะ</span>
+                                    <small class="text-muted">{{ $emp->employee_id }}</small>
+                                </div>
+                                
+                                <div>
+                                    @if($isAbsent)
+                                    <span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill px-3 py-1 small me-2">
+                                        <i class="bi bi-person-dash-fill me-1"></i>ลางาน
+                                    </span>
+                                    @elseif(in_array($emp->id, $inspectedOtherShiftIds ?? []) && !in_array($emp->id, $inspectedCurrentIds ?? []))
+                                    <span class="badge bg-info bg-opacity-10 text-info rounded-pill px-3 py-1 small me-2">
+                                        <i class="bi bi-check-circle-fill me-1"></i>ตรวจแล้ว (รอบก่อน)
+                                    </span>
+                                    @else
+                                    <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 py-1 small me-2">
+                                        <i class="bi bi-lock-fill me-1"></i>ตรวจแล้ว
+                                    </span>
                                     @endif
                                 </div>
-                                <small class="text-muted">{{ $emp->employee_id }}</small>
-                            </div>
-                            
-                            <div>
-                                <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 py-1 small">
-                                    <i class="bi bi-lock-fill me-1"></i>ตรวจแล้ว
-                                </span>
-                            </div>
+                                
+                                <div class="pe-2">
+                                    <i class="bi bi-pencil-square text-muted opacity-50"></i>
+                                </div>
+                            </a>
                         </div>
                         @else
-                        {{-- Pending: clickable link --}}
-                        <a href="{{ route('inspection.checklist', ['session' => $session->id, 'hash' => $emp->employee_id]) }}" 
-                           class="employee-item d-flex align-items-center p-3 text-decoration-none border-bottom employee-pending"
+                        {{-- Pending: clickable link and absent button --}}
+                        <div class="employee-item d-flex align-items-center p-3 border-bottom employee-pending"
                            data-name="{{ mb_strtolower($emp->fullname) }}"
                            data-id="{{ mb_strtolower($emp->employee_id) }}"
                            data-status="pending"
                            style="transition: all 0.2s ease;">
                             
-                            <div class="me-3 position-relative" style="min-width: 44px;">
-                                @if($emp->profile_image)
-                                    <img src="{{ $emp->profile_image }}" class="rounded-circle" width="44" height="44" style="object-fit: cover;">
-                                @else
-                                    <div class="rounded-circle bg-light d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-                                        <i class="bi bi-person-fill text-secondary"></i>
-                                    </div>
-                                @endif
-                            </div>
-                            
-                            <div class="flex-grow-1">
-                                <div class="fw-bold text-dark" style="font-size: 0.9rem;">
-                                    {{ $emp->fullname }}
-                                    @if($showAll && optional($emp->shift)->shift_name !== $session->shift)
-                                        <span class="badge bg-warning text-dark ms-1" style="font-size: 0.65rem;">นอกกะ</span>
+                            <a href="{{ route('inspection.checklist', ['session' => $session->id, 'hash' => $emp->employee_id, 'from' => 'browse'] + request()->query()) }}" class="d-flex flex-grow-1 align-items-center text-decoration-none" style="cursor: pointer;">
+                                <div class="me-3 position-relative" style="min-width: 44px;">
+                                    @if($emp->profile_image)
+                                        <img src="{{ $emp->profile_image }}" alt="รูปโปรไฟล์ของ {{ $emp->fullname }}" class="rounded-circle" width="44" height="44" style="object-fit: cover;">
+                                    @else
+                                        <div class="rounded-circle bg-light d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
+                                            <i class="bi bi-person-fill text-secondary"></i>
+                                        </div>
                                     @endif
                                 </div>
-                                <small class="text-muted">{{ $emp->employee_id }}</small>
+                                
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold text-dark" style="font-size: 0.9rem;">
+                                        {{ $emp->fullname }}
+                                        @if(in_array($emp->id, $pendingRecleanEmployeeIds))
+                                            <span class="badge bg-danger text-white ms-1 shadow-sm" style="font-size: 0.65rem;" title="มีรายการต้องแก้ไข (Re-clean) จากรอบก่อนหน้า">
+                                                <i class="bi bi-tools me-1"></i> มีงานแก้เก่า
+                                            </span>
+                                        @endif
+                                        @if(in_array($emp->id, $inspectedOtherShiftIds ?? []))
+                                            <span class="badge bg-success text-white ms-1" style="font-size: 0.65rem;">
+                                                <i class="bi bi-check-circle me-1"></i>ตรวจแล้ว (กะอื่น)
+                                            </span>
+                                        @elseif($showAll && optional($emp->shift)->shift_name !== $session->shift)
+                                            <span class="badge bg-secondary text-white ms-1" style="font-size: 0.65rem;">นอกกะ</span>
+                                        @endif
+                                    </div>
+                                    <small class="text-muted">{{ $emp->employee_id }}</small>
+                                </div>
+                                
+                                <div class="me-2 pe-3 border-end">
+                                    <i class="bi bi-chevron-right text-muted"></i>
+                                </div>
+                            </a>
+
+                            <div class="ms-2">
+                                <form action="{{ route('inspection.mark-absent', ['session' => $session->id, 'employee' => $emp->id]) }}" method="POST" class="d-inline mark-absent-form">
+                                    @csrf
+                                    <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-2 py-1 shadow-sm" onclick="confirmMarkAbsent(this, '{{ $emp->fullname }}')" style="font-size: 0.75rem;">
+                                        <i class="bi bi-person-dash me-1"></i>ลา/ขาด
+                                    </button>
+                                </form>
                             </div>
-                            
-                            <div>
-                                <i class="bi bi-chevron-right text-muted"></i>
-                            </div>
-                        </a>
+                        </div>
                         @endif
                         @endforeach
                     </div>
@@ -163,23 +213,127 @@
                 @endforeach
             </div>
 
+            <div class="mb-4">
+                <!-- Pagination removed for grouping view -->
+            </div>
+
+            {{-- Bulk Pass Button (Strictly Current Shift Only) --}}
+            @php
+                // Count employees strictly in the current shift that haven't been inspected
+                $shiftRemainingCount = 0;
+                $currentShiftGroupName = 'เป้าหมายกะปัจจุบัน (' . ucfirst($session->shift) . ')';
+                
+                if ($grouped->has($currentShiftGroupName)) {
+                    foreach($grouped[$currentShiftGroupName] as $emp) {
+                        if (!in_array($emp->id, $inspectedIds) && !in_array($emp->id, $absentIds ?? [])) {
+                            $shiftRemainingCount++;
+                        }
+                    }
+                }
+            @endphp
+            
+            @php
+                $totalRemainingCount = $totalEmployees - $inspectedCount;
+            @endphp
+            
+            @if($totalRemainingCount > 0)
+                @php
+                    $hasAnyInCurrentShift = $grouped->has($currentShiftGroupName);
+                @endphp
+                <div class="card border-0 shadow-sm mb-4 animate-in animate-in-delay-3" style="background: {{ $shiftRemainingCount > 0 ? 'var(--success-soft)' : '#f8f9fa' }}; border-radius: var(--radius-lg); border-left: 4px solid {{ $shiftRemainingCount > 0 ? 'var(--success)' : '#ced4da' }} !important;">
+                    <div class="card-body p-3 d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="fw-bold mb-0" style="color: {{ $shiftRemainingCount > 0 ? 'var(--success)' : '#6c757d' }};">ตรวจพนักงานกะ{{ $session->shift === 'morning' ? 'เช้า' : ($session->shift === 'afternoon' ? 'บ่าย' : 'ดึก') }}ครบแล้วใช่ไหม?</h6>
+                            <small class="text-muted">
+                                @if($shiftRemainingCount > 0)
+                                    ระบบจะให้ "ผ่าน" เฉพาะพนักงานในกะปัจจุบันเท่านั้น
+                                @elseif(!$hasAnyInCurrentShift)
+                                    แผนกนี้ไม่มีพนักงานที่ทำงานในกะปัจจุบัน
+                                @else
+                                    คุณได้ตรวจสอบพนักงานกะปัจจุบันครบทุกคนแล้ว
+                                @endif
+                            </small>
+                        </div>
+                        @if($shiftRemainingCount > 0)
+                            <button type="button" class="btn btn-success rounded-pill fw-bold shadow-sm px-4" data-bs-toggle="modal" data-bs-target="#bulkPassModal">
+                                <i class="bi bi-check-all me-1"></i> ผ่านทุกคนที่เหลือ ({{ $shiftRemainingCount }})
+                            </button>
+                        @elseif(!$hasAnyInCurrentShift)
+                            <button type="button" class="btn btn-secondary rounded-pill fw-bold shadow-sm px-4" disabled>
+                                <i class="bi bi-dash-circle me-1"></i> ไม่มีพนักงานในกะนี้
+                            </button>
+                        @else
+                            <button type="button" class="btn btn-secondary rounded-pill fw-bold shadow-sm px-4" disabled>
+                                <i class="bi bi-check-all me-1"></i> กะปัจจุบันครบแล้ว
+                            </button>
+                        @endif
+                    </div>
+                </div>
+            @endif
+
             <!-- Action Buttons -->
-            <div class="d-flex gap-2 mt-4 pb-5 animate-in animate-in-delay-3">
+            <div class="d-flex gap-2 mt-2 pb-5 animate-in animate-in-delay-3">
                 <form action="{{ route('inspection.pause', $session->id) }}" method="POST" class="flex-fill">
                     @csrf
-                    <button type="submit" class="btn btn-lg w-100 py-3 fw-bold" style="background: var(--warning-soft); color: var(--warning); border-radius: var(--radius-md);">
+                    <button type="submit" class="btn btn-lg w-100 py-3 fw-bold border-0 shadow-sm" style="background: white; color: var(--warning); border-radius: var(--radius-md);">
                         <i class="bi bi-pause-circle me-2"></i> พักการตรวจ
                     </button>
                 </form>
                 <form action="{{ route('inspection.finish', $session->id) }}" method="POST" id="finish-session-form" class="flex-fill">
                     @csrf
-                    <button type="button" class="btn btn-lg w-100 py-3 fw-bold" style="background: var(--success-soft); color: var(--success); border-radius: var(--radius-md);" onclick="confirmFinishSession(this)">
+                    <button type="button" class="btn btn-lg w-100 py-3 fw-bold shadow-sm" style="background: var(--slate-800); color: white; border-radius: var(--radius-md);" onclick="confirmFinishSession(this)">
                         <i class="bi bi-check2-circle me-2"></i> จบงาน
                     </button>
                 </form>
             </div>
         </div>
     </div>
+
+    @if($shiftRemainingCount > 0)
+        {{-- Bulk Pass Confirmation Modal --}}
+        <div class="modal fade" id="bulkPassModal" tabindex="-1" aria-labelledby="bulkPassModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+                    <div class="modal-header bg-success text-white border-0 py-3">
+                        <h5 class="modal-title fw-bold" id="bulkPassModalLabel">
+                            <i class="bi bi-shield-check me-2"></i>ยืนยัน Bulk Pass (เฉพาะกะปัจจุบัน)
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="text-center mb-3">
+                            <div class="bg-success bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+                                <i class="bi bi-people-fill text-success" style="font-size: 2.5rem;"></i>
+                            </div>
+                            <h5 class="fw-bold text-dark">คุณกำลังจะให้ผ่านทั้งหมด</h5>
+                            <p class="text-muted mb-0">
+                                พนักงานที่เหลืออีก <strong class="text-success fs-4">{{ $shiftRemainingCount }}</strong> คน
+                                <strong class="text-danger border-bottom border-danger">เฉพาะในกะ{{ $session->shift === 'morning' ? 'เช้า' : ($session->shift === 'afternoon' ? 'บ่าย' : 'ดึก') }}</strong><br>
+                                จะถูกบันทึกว่า <strong class="text-success">"ผ่าน"</strong> ทุกหัวข้อตรวจโดยอัตโนมัติ
+                            </p>
+                        </div>
+                        <div class="alert alert-warning d-flex align-items-start rounded-3 mb-0" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-2 mt-1 flex-shrink-0"></i>
+                            <div class="small">
+                                <strong>พนักงานกะอื่นจะไม่ได้รับผลกระทบ:</strong> การดำเนินการนี้จะเปลี่ยนสถานะเฉพาะพนักงานที่มีรอบทำงานตรงกับกะของ Session นี้เท่านั้น (พนักงานกะอื่นจะยังคงสถานะเดิม)
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 p-3 pt-0 gap-2">
+                        <button type="button" class="btn btn-light rounded-pill flex-grow-1 fw-bold" data-bs-dismiss="modal">
+                            <i class="bi bi-x-lg me-1"></i> ยกเลิก
+                        </button>
+                        <form action="{{ route('inspection.bulk-pass', $session->id) }}" method="POST" class="flex-grow-1 m-0">
+                            @csrf
+                            <button type="submit" class="btn btn-success w-100 rounded-pill fw-bold shadow-sm">
+                                <i class="bi bi-check-all me-1"></i> ยืนยัน ผ่านทุกคน ({{ $shiftRemainingCount }} คน)
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
 
     @push('scripts')
     <script>
@@ -193,10 +347,7 @@
             // Apply default filter on page load
             applyFilters();
 
-            // Search functionality
-            searchInput.addEventListener('input', function() {
-                applyFilters();
-            });
+            // Search functionality is now server-side on Enter
 
             // Filter buttons
             filterBtns.forEach(btn => {
@@ -260,6 +411,27 @@
                 });
             }
 
+            // Mark Absent Confirmation
+            window.confirmMarkAbsent = function(btn, employeeName) {
+                Swal.fire({
+                    title: 'ยืนยันการลางาน/ขาด?',
+                    html: `ต้องการบันทึกว่า <strong>${employeeName}</strong> ลางานหรือขาดงาน ใช่หรือไม่?<br><small class="text-muted">ระบบจะข้ามการตรวจพนักงานคนนี้และเพิ่มความก้าวหน้าทันที</small>`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#64748b',
+                    cancelButtonColor: '#e2e8f0',
+                    confirmButtonText: 'ใช่, บันทึกการลา',
+                    cancelButtonText: '<span class="text-dark">ยกเลิก</span>',
+                    reverseButtons: true
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        btn.disabled = true;
+                        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+                        btn.closest('form').submit();
+                    }
+                });
+            }
+
             // Toggle Show All Employees
             const toggleShowAll = document.getElementById('toggleShowAll');
             if (toggleShowAll) {
@@ -270,6 +442,8 @@
                     } else {
                         url.searchParams.set('show_all', '0');
                     }
+                    
+                    url.searchParams.delete('page');
 
                     // Preserve current search query
                     const currentSearch = searchInput.value.trim();

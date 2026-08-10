@@ -67,13 +67,25 @@
                                         <td data-label="Role">
                                             @if($step->role)
                                                 <span class="badge bg-info text-dark px-3 py-2 rounded-3 mb-1"><i class="bi bi-shield-lock me-1"></i> {{ ucfirst($step->role) }}</span>
+                                                @if($step->department_id)
+                                                    <span class="badge bg-secondary px-2 py-1 ms-1"><i class="bi bi-building"></i> {{ $step->department->dept_name ?? 'แผนก' }}</span>
+                                                @else
+                                                    <span class="badge bg-secondary px-2 py-1 ms-1"><i class="bi bi-building"></i> ตามแผนกของผู้ขอ</span>
+                                                @endif
                                                 @php
                                                     $roleUsers = $usersByRole[$step->role] ?? collect();
+                                                    if ($step->department_id) {
+                                                        $roleUsers = $roleUsers->filter(fn($u) => $u->department_id == $step->department_id);
+                                                    }
                                                 @endphp
                                                 <div class="small text-muted mt-1">
-                                                    <i class="bi bi-people"></i> มีผู้ใช้งาน {{ $roleUsers->count() }} คน
-                                                    @if($roleUsers->count() > 0)
-                                                        <br><span style="font-size: 0.75rem;">(เช่น {{ $roleUsers->take(3)->pluck('name')->join(', ') }}{{ $roleUsers->count() > 3 ? '...' : '' }})</span>
+                                                    @if($step->department_id)
+                                                        <i class="bi bi-people"></i> มีผู้ใช้งาน {{ $roleUsers->count() }} คน
+                                                        @if($roleUsers->count() > 0)
+                                                            <br><span style="font-size: 0.75rem;">(เช่น {{ $roleUsers->take(3)->pluck('name')->join(', ') }}{{ $roleUsers->count() > 3 ? '...' : '' }})</span>
+                                                        @endif
+                                                    @else
+                                                        <i class="bi bi-lightning-fill text-warning"></i> ดึงผู้ใช้จากแผนกผู้ขออัตโนมัติ
                                                     @endif
                                                 </div>
                                             @else
@@ -120,34 +132,43 @@
                     
                     <form action="{{ route('admin.approvals.steps.store', $flow->id) }}" method="POST">
                         @csrf
-                        <div class="row g-3 align-items-end">
-                            <div class="col-md-2">
-                                <label class="form-label fw-semibold small text-muted">ลำดับที่ (Step Order)</label>
+                        <div class="row g-3 align-items-start">
+                            <div class="col-md-1">
+                                <label class="form-label fw-semibold small text-muted">ลำดับ</label>
                                 <input type="number" name="step_order" class="form-control" value="{{ $flow->steps->count() + 1 }}" required min="1">
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label fw-semibold small text-muted">กำหนดตามบทบาท (Role)</label>
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold small text-muted">แผนก (Department)</label>
+                                <select name="department_id" id="departmentSelect" class="form-select">
+                                    <option value="">-- ตามแผนกของผู้ขอ (Dynamic) --</option>
+                                    @foreach($departments as $dept)
+                                        <option value="{{ $dept->id }}">{{ $dept->dept_name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold small text-muted">บทบาท (Role)</label>
                                 <select name="role" id="roleSelect" class="form-select">
-                                    <option value="">-- ไม่ระบุบทบาท (ใช้ผู้ใช้เฉพาะเจาะจง) --</option>
+                                    <option value="">-- ไม่ระบุ (เฉพาะเจาะจง) --</option>
                                     @foreach($roles as $role)
                                         <option value="{{ $role }}">{{ ucfirst($role) }}</option>
                                     @endforeach
                                 </select>
                                 <div id="roleHelperText" class="mt-2 small d-none p-2 bg-white border rounded shadow-sm">
-                                    <div class="fw-bold text-primary mb-1" style="font-size: 0.8rem;"><i class="bi bi-people-fill me-1"></i> พบพนักงาน <span id="roleCount">0</span> คน ใน Role นี้</div>
+                                    <div class="fw-bold text-primary mb-1" style="font-size: 0.8rem;"><i class="bi bi-people-fill me-1"></i> พบ <span id="roleCount">0</span> คน</div>
                                     <div id="roleNames" class="text-muted" style="font-size: 0.75rem; word-break: break-word; line-height: 1.4;"></div>
                                 </div>
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label fw-semibold small text-muted">กำหนดตามผู้ใช้งาน (Specific User)</label>
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold small text-muted">ผู้ใช้งาน (Specific User)</label>
                                 <select name="user_id" class="form-select">
-                                    <option value="">-- ไม่ระบุผู้ใช้ (ใช้ตามบทบาท) --</option>
+                                    <option value="">-- ไม่ระบุ (ใช้ตามบทบาท) --</option>
                                     @foreach($users as $user)
                                         <option value="{{ $user->id }}">{{ $user->name }} ({{ ucfirst($user->role ?? 'No Role') }})</option>
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="col-md-2">
+                            <div class="col-md-2" style="margin-top: 1.8rem;">
                                 <button type="submit" class="btn btn-primary-custom w-100">
                                     <i class="bi bi-plus-lg me-1"></i> เพิ่ม
                                 </button>
@@ -168,16 +189,28 @@
     document.addEventListener('DOMContentLoaded', function() {
         const usersByRole = @json($usersByRole);
         const roleSelect = document.getElementById('roleSelect');
+        const deptSelect = document.getElementById('departmentSelect');
         const helper = document.getElementById('roleHelperText');
         
-        if (roleSelect) {
-            roleSelect.addEventListener('change', function() {
-                const role = this.value;
+        function updateHelper() {
+            const role = roleSelect ? roleSelect.value : null;
+            const dept = deptSelect ? deptSelect.value : null;
+            
+            if (role && usersByRole[role]) {
+                let users = usersByRole[role];
+                if (dept) {
+                    users = users.filter(u => u.department_id == dept);
+                }
                 
-                if (role && usersByRole[role]) {
-                    const users = usersByRole[role];
+                if (!dept) {
+                     // Dynamic
+                     document.getElementById('roleCount').innerText = '?';
+                     const roleNamesDiv = document.getElementById('roleNames');
+                     roleNamesDiv.innerText = 'ระบบจะดึงผู้ใช้งานจากแผนกเดียวกับผู้ขออัตโนมัติ';
+                     roleNamesDiv.classList.remove('text-danger');
+                     roleNamesDiv.classList.add('text-muted');
+                } else {
                     document.getElementById('roleCount').innerText = users.length;
-                    
                     const roleNamesDiv = document.getElementById('roleNames');
                     if (users.length > 0) {
                         const names = users.map(u => u.name).join(', ');
@@ -185,17 +218,19 @@
                         roleNamesDiv.classList.remove('text-danger');
                         roleNamesDiv.classList.add('text-muted');
                     } else {
-                        roleNamesDiv.innerText = '⚠️ ยังไม่มีพนักงานถูกกำหนดให้อยู่ใน Role นี้เลย (เมื่อกดส่ง จะไม่มีใครเห็นคำขอนี้)';
+                        roleNamesDiv.innerText = '⚠️ ไม่มีพนักงานใน Role/แผนกนี้ (ไม่มีคนเห็นคำขอ)';
                         roleNamesDiv.classList.remove('text-muted');
                         roleNamesDiv.classList.add('text-danger');
                     }
-                    
-                    helper.classList.remove('d-none');
-                } else {
-                    helper.classList.add('d-none');
                 }
-            });
+                helper.classList.remove('d-none');
+            } else {
+                helper.classList.add('d-none');
+            }
         }
+
+        if (roleSelect) roleSelect.addEventListener('change', updateHelper);
+        if (deptSelect) deptSelect.addEventListener('change', updateHelper);
     });
 </script>
 @endpush

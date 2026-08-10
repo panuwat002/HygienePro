@@ -45,6 +45,11 @@ class Employee extends Model
         return $this->belongsTo(Shift::class);
     }
 
+    public function schedules()
+    {
+        return $this->hasMany(EmployeeSchedule::class);
+    }
+
     public function location()
     {
         return $this->belongsTo(Location::class);
@@ -81,5 +86,17 @@ class Employee extends Model
         if ($failures <= 1) return 'green';
         if ($failures <= 3) return 'yellow';
         return 'red';
+    }
+
+    public function getTodayScheduleAttribute()
+    {
+        $schedule = $this->schedules()->where('date', now()->format('Y-m-d'))->first();
+        if ($schedule) {
+            if ($schedule->is_day_off) return 'OFF';
+            if ($schedule->start_time && $schedule->end_time) {
+                return substr($schedule->start_time, 0, 5) . ' - ' . substr($schedule->end_time, 0, 5);
+            }
+        }
+        return null;
     }
 }

@@ -9,7 +9,7 @@ class ShiftController extends Controller
 {
     public function index()
     {
-        $shifts = Shift::all();
+        $shifts = Shift::withCount('employees')->get();
         return view('shifts.index', compact('shifts'));
     }
 

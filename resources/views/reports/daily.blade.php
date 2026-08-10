@@ -17,7 +17,11 @@
                     <a href="{{ route('reports.index') }}" class="btn btn-outline-secondary">
                         <i class="bi bi-arrow-left me-1"></i> ย้อนกลับ
                     </a>
-                    <a href="{{ route('reports.export.pdf', array_merge(['date' => $date, 'department_id' => $departmentId, 'shift' => $shift], request()->only(['report_type', 'machine_id', 'orientation']))) }}" target="_blank" class="btn btn-danger">
+                    <a href="{{ route('reports.export.pdf', array_merge(['date' => $date, 'department_id' => $departmentId, 'shift' => $shift], request()->only(['report_type', 'machine_id', 'orientation']))) }}" 
+                       id="exportPdfBtn" 
+                       data-base-url="{{ route('reports.export.pdf', array_merge(['date' => $date, 'department_id' => $departmentId, 'shift' => $shift], request()->only(['report_type', 'machine_id', 'orientation']))) }}"
+                       target="_blank" 
+                       class="btn btn-danger">
                         <i class="bi bi-file-pdf me-1"></i> Export PDF
                     </a>
                 </div>
@@ -34,7 +38,12 @@
                         <table class="table table-hover align-middle mb-0">
                             <thead class="table-light">
                                 <tr>
-                                    <th class="px-4 py-3">ข้อมูลการตรวจ</th>
+                                    <th class="px-4 py-3" style="width: 50px;">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="selectAllSessions">
+                                        </div>
+                                    </th>
+                                    <th class="py-3">ข้อมูลการตรวจ</th>
                                     <th class="py-3">ผู้ตรวจสอบ</th>
                                     <th class="py-3 text-center">สถานะ</th>
                                     <th class="py-3">ปัญหาที่พบ (Fail)</th>
@@ -44,6 +53,11 @@
                                 @foreach($sessions as $session)
                                     <tr>
                                         <td class="px-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input session-checkbox" type="checkbox" value="{{ $session->id }}" id="session-{{ $session->id }}">
+                                            </div>
+                                        </td>
+                                        <td>
                                             <div class="fw-bold">{{ $session->department->dept_name ?? 'N/A' }}</div>
                                             <div class="small text-muted">
                                                 <i class="bi bi-clock"></i> กะ: {{ ucfirst($session->shift) }}
@@ -80,6 +94,7 @@
                                         <td>
                                             @php
                                                 $failedLogs = $session->logs->where('result', 'fail');
+                                                $fixedLogs = $session->logs->whereNotNull('parent_id');
                                                 $passCount = $session->logs->where('result', 'pass')->count();
                                                 $totalCount = $session->logs->count();
                                             @endphp
@@ -89,8 +104,11 @@
                                                 </div>
                                                 <ul class="mb-0 ps-3 text-danger small">
                                                     @foreach($failedLogs->take(3) as $log)
-                                                        <li>
-                                                            <strong>{{ $log->checkpoint->title ?? 'Unknown' }}</strong>
+                                                        <li class="small mb-1">
+                                                            <span class="text-danger">&bull;</span> {{ $log->checkpoint_title_snapshot ?? ($log->checkpoint->title ?? 'ไม่ระบุ') }}
+                                                            @if($log->checkpoint && $log->checkpoint->category)
+                                                                <span class="text-muted" style="font-size: 0.7rem;">({{ $log->checkpoint->category->name }})</span>
+                                                            @endif
                                                             @if($log->note) <br><span class="text-muted fst-italic">- {{ $log->note }}</span> @endif
                                                         </li>
                                                     @endforeach
@@ -98,16 +116,35 @@
                                                         <li class="list-unstyled fst-italic text-muted">+ อีก {{ $failedLogs->count() - 3 }} รายการ (กดดูรายละเอียด)</li>
                                                     @endif
                                                 </ul>
-                                            @else
+                                            @endif
+                                            
+                                            @if($fixedLogs->count() > 0)
+                                                <div class="text-success small fw-bold mt-2 mb-1">
+                                                    <i class="bi bi-tools me-1"></i> ดำเนินการแก้ไขแล้ว {{ $fixedLogs->count() }} รายการ
+                                                </div>
+                                                <ul class="mb-0 ps-3 text-success small">
+                                                    @foreach($fixedLogs->take(3) as $log)
+                                                        <li class="small mb-1">
+                                                            <span class="text-success">&bull;</span> {{ $log->checkpoint_title_snapshot ?? ($log->checkpoint->title ?? 'ไม่ระบุ') }}
+                                                            @if($log->correction_action) <br><span class="text-muted fst-italic text-success">- แก้ไข: {{ $log->correction_action }}</span> @endif
+                                                        </li>
+                                                    @endforeach
+                                                    @if($fixedLogs->count() > 3)
+                                                        <li class="list-unstyled fst-italic text-muted">+ อีก {{ $fixedLogs->count() - 3 }} รายการ</li>
+                                                    @endif
+                                                </ul>
+                                            @endif
+                                            
+                                            @if($failedLogs->count() == 0 && $fixedLogs->count() == 0)
                                                 <div class="text-success small fw-bold">
                                                     <i class="bi bi-check-circle-fill me-1"></i> ผ่านทั้งหมด ({{ $totalCount }} รายการ)
                                                 </div>
                                             @endif
                                         </td>
                                     </tr>
-                                    <!-- Detailed Rows (Collapsible) -->
+                                     <!-- Detailed Rows (Collapsible) -->
                                     <tr class="collapse bg-light" id="details-{{ $session->id }}">
-                                        <td colspan="4" class="p-3">
+                                        <td colspan="5" class="p-3">
                                             <div class="card border-0 shadow-sm">
                                                 <div class="card-body p-0">
                                                     @php
@@ -161,4 +198,48 @@
             </div>
         </div>
     </div>
+    @push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const selectAllCheckbox = document.getElementById('selectAllSessions');
+            const sessionCheckboxes = document.querySelectorAll('.session-checkbox');
+            const exportPdfBtn = document.getElementById('exportPdfBtn');
+            const baseUrl = exportPdfBtn.getAttribute('data-base-url');
+
+            function updateExportLink() {
+                const selectedIds = Array.from(sessionCheckboxes)
+                    .filter(cb => cb.checked)
+                    .map(cb => cb.value);
+
+                if (selectedIds.length > 0) {
+                    const separator = baseUrl.includes('?') ? '&' : '?';
+                    exportPdfBtn.href = baseUrl + separator + 'session_ids=' + selectedIds.join(',');
+                } else {
+                    exportPdfBtn.href = baseUrl;
+                }
+            }
+
+            if (selectAllCheckbox) {
+                selectAllCheckbox.addEventListener('change', function() {
+                    sessionCheckboxes.forEach(cb => {
+                        cb.checked = this.checked;
+                    });
+                    updateExportLink();
+                });
+            }
+
+            sessionCheckboxes.forEach(cb => {
+                cb.addEventListener('change', function() {
+                    if (!this.checked && selectAllCheckbox) {
+                        selectAllCheckbox.checked = false;
+                    } else if (selectAllCheckbox) {
+                        const allChecked = Array.from(sessionCheckboxes).every(c => c.checked);
+                        selectAllCheckbox.checked = allChecked;
+                    }
+                    updateExportLink();
+                });
+            });
+        });
+    </script>
+    @endpush
 </x-app-layout>

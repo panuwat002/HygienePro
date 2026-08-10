@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'หมวดหมู่จุดตรวจ (Checkpoint Categories)')
+    @section('header', 'หมวดหมู่จุดตรวจ')
 
     <div class="row">
         <div class="col-12">

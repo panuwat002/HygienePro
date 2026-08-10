@@ -21,19 +21,45 @@ class LocationsImport implements ToModel, WithStartRow
         }
 
         // Mapping based on LocationsExport structure:
-        // 0: location_name (ชื่อจุดประจำการ)
-        // 1: description (คำอธิบาย)
+        // 0: ID (ห้ามแก้ไข)
+        // 1: location_name (ชื่อจุดประจำการ)
+        // 2: description (คำอธิบาย)
 
-        $locationName = trim($row[0] ?? '');
-        $description  = trim($row[1] ?? '');
+        $id = trim($row[0] ?? '');
+        $locationName = trim($row[1] ?? '');
+        $description  = trim($row[2] ?? '');
 
         if (!$locationName) {
             return null;
         }
 
-        return Location::updateOrCreate(
-            ['location_name' => $locationName],
-            ['description'   => $description ?: null]
-        );
+        $data = [
+            'location_name' => $locationName,
+            'description'   => $description ?: null
+        ];
+
+        if ($id) {
+            $location = Location::find($id);
+            if ($location) {
+                $location->update($data);
+                return $location;
+            }
+        }
+
+        $normalizeLoc = function ($str) {
+            return mb_strtolower(preg_replace('/^ห้อง\s*/u', '', str_replace(' ', '', $str)));
+        };
+        $normalizedSearch = $normalizeLoc($locationName);
+
+        $location = Location::all()->first(function ($loc) use ($normalizeLoc, $normalizedSearch) {
+            return $normalizeLoc($loc->location_name) === $normalizedSearch;
+        });
+
+        if ($location) {
+            $location->update($data);
+            return $location;
+        }
+
+        return Location::create($data);
     }
 }

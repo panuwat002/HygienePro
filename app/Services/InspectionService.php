@@ -74,11 +74,110 @@ class InspectionService
             return; // Already done
         }
 
+        // Apply Random Verification Logic before completing
+        $this->applyRandomVerification($session);
+
         $session->update([
             'status' => 'completed',
         ]);
 
         $this->notifySupervisorsFinished($session);
+    }
+
+    /**
+     * Apply Automated Random Verification.
+     * Auto-verify 90% of passed targets, leaving 10% (and all failed targets) for manual verification.
+     */
+    protected function applyRandomVerification(InspectionSession $session): void
+    {
+        $logs = \App\Models\InspectionLog::where('session_id', $session->id)
+                    ->whereNull('verification_status')
+                    ->get();
+        
+        if ($logs->isEmpty()) return;
+
+        // Group logs by target (employee, machine, or location)
+        $targets = $logs->groupBy(function($log) {
+            if ($log->employee_id) return 'e_' . $log->employee_id;
+            if ($log->machine_id) return 'm_' . $log->machine_id;
+            return 'l_' . ($log->location_id ?? 0);
+        });
+
+        $passedTargets = [];
+
+        foreach ($targets as $targetKey => $targetLogs) {
+            // If the target has ANY failed log, we skip auto-verification (MUST be manually verified)
+            $hasFail = $targetLogs->contains('result', 'fail');
+            if (!$hasFail) {
+                $passedTargets[] = $targetKey;
+            }
+        }
+
+        $totalPassed = count($passedTargets);
+        if ($totalPassed > 0) {
+            // Smart Auto-Verification (Risk-Based Sampling)
+            $highRiskTargets = [];
+            $lowRiskTargets = [];
+
+            // Query failures in the last 30 days for these targets
+            $thirtyDaysAgo = now()->subDays(30);
+            
+            foreach ($passedTargets as $tKey) {
+                $type = substr($tKey, 0, 1);
+                $id = substr($tKey, 2);
+
+                $query = \App\Models\InspectionLog::where('result', 'fail')
+                    ->where('inspected_at', '>=', $thirtyDaysAgo);
+
+                if ($type === 'e') {
+                    $query->where('employee_id', $id);
+                } elseif ($type === 'm') {
+                    $query->where('machine_id', $id);
+                } else {
+                    $query->where('location_id', $id);
+                }
+
+                if ($query->exists()) {
+                    $highRiskTargets[] = $tKey;
+                } else {
+                    $lowRiskTargets[] = $tKey;
+                }
+            }
+
+            // High risk targets are NEVER auto-verified.
+            // Low risk targets get 90% auto-verified (10% manual verification).
+            $targetsToAutoVerify = [];
+            $verifyCount = 0;
+            
+            $totalLowRisk = count($lowRiskTargets);
+            if ($totalLowRisk > 0) {
+                $verifyCount = (int) ceil($totalLowRisk * 0.10);
+                shuffle($lowRiskTargets);
+                
+                // The ones beyond the $verifyCount will be Auto-Verified
+                $targetsToAutoVerify = array_slice($lowRiskTargets, $verifyCount);
+            }
+            
+            if (count($targetsToAutoVerify) > 0) {
+                $logIdsToAutoVerify = [];
+                foreach ($targetsToAutoVerify as $tKey) {
+                    $logIdsToAutoVerify = array_merge($logIdsToAutoVerify, $targets[$tKey]->pluck('id')->toArray());
+                }
+
+                \App\Models\InspectionLog::whereIn('id', $logIdsToAutoVerify)->update([
+                    'verification_status' => 'auto_verified',
+                    'verified_at' => now(),
+                    'verification_comment' => 'สุ่มทวนสอบ: ผ่านการอนุมัติอัตโนมัติ (Smart Auto-verified)',
+                ]);
+
+                // Notify Inspector
+                if ($session->inspector) {
+                    $session->inspector->notify(new \App\Notifications\SmartAutoVerifiedNotification(count($logIdsToAutoVerify)));
+                }
+
+                \Illuminate\Support\Facades\Log::info("Smart Auto-verified " . count($targetsToAutoVerify) . " low-risk targets for session {$session->id}. High risk: " . count($highRiskTargets) . ". Kept {$verifyCount} low-risk targets for manual verification.");
+            }
+        }
     }
 
     /**
@@ -188,11 +287,18 @@ class InspectionService
                 ->get()
                 ->filter(fn($u) => $u->isQA());
 
+            $emails = [];
             foreach ($supervisors as $supervisor) {
+                // Send in-app database notification individually
                 $supervisor->notify(new \App\Notifications\InspectionStartedNotification($session));
                 if ($supervisor->email) {
-                    Mail::to($supervisor->email)->send(new InspectionSessionStarted($session));
+                    $emails[] = $supervisor->email;
                 }
+            }
+
+            // Send ONE grouped email to all supervisors
+            if (count($emails) > 0) {
+                \Illuminate\Support\Facades\Mail::to($emails)->send(new \App\Mail\InspectionSessionStarted($session));
             }
         } catch (\Exception $e) {
             \Log::error('Failed to send Inspection Started email: ' . $e->getMessage());
@@ -209,21 +315,28 @@ class InspectionService
                 ->get()
                 ->filter(fn($u) => $u->isQA());
 
-            $logs = InspectionLog::where('session_id', $session->id)->get();
-            $stats = [
-                'total' => $logs->count(),
-                'pass' => $logs->where('result', 'pass')->count(),
-                'fail' => $logs->where('result', 'fail')->count(),
-            ];
-
+            $emails = [];
             foreach ($supervisors as $supervisor) {
-                $supervisor->notify(new \App\Notifications\PendingVerificationNotification($session));
+                // Send in-app database notification individually if needed
+                // $supervisor->notify(new \App\Notifications\InspectionFinishedNotification($session));
                 if ($supervisor->email) {
-                    Mail::to($supervisor->email)->send(new InspectionSessionFinished($session, $stats));
+                    $emails[] = $supervisor->email;
                 }
             }
+
+            // Send ONE grouped email to all supervisors
+            if (count($emails) > 0) {
+                $stats = [
+                    'total' => $session->logs()->count(),
+                    'pass' => $session->logs()->where('status', 'pass')->count(),
+                    'fail' => $session->logs()->whereIn('status', ['fail', 'reclean'])->count(),
+                ];
+                \Illuminate\Support\Facades\Mail::to($emails)->send(new \App\Mail\InspectionSessionFinished($session, $stats));
+            }
+            
+            \Log::info("Session {$session->id} finished emails sent to QA Supervisors.");
         } catch (\Exception $e) {
-            \Log::error('Failed to send Inspection Finished email: ' . $e->getMessage());
+            \Log::error('Failed to process Inspection Finished event: ' . $e->getMessage());
         }
     }
 

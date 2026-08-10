@@ -13,6 +13,7 @@ class ApprovalFlowStep extends Model
         'approval_flow_id',
         'step_order',
         'role',
+        'department_id',
         'user_id',
     ];
 
@@ -24,5 +25,10 @@ class ApprovalFlowStep extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function department()
+    {
+        return $this->belongsTo(Department::class);
     }
 }

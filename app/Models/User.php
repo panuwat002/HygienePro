@@ -25,7 +25,9 @@ class User extends Authenticatable
         'department_id',
         'level',
         'role',
+        'manager_id',
         'line_token',
+        'signature_path',
     ];
 
     /**
@@ -55,6 +57,16 @@ class User extends Authenticatable
     public function department()
     {
         return $this->belongsTo(Department::class);
+    }
+
+    public function manager()
+    {
+        return $this->belongsTo(User::class, 'manager_id');
+    }
+
+    public function subordinates()
+    {
+        return $this->hasMany(User::class, 'manager_id');
     }
 
     public function inspectionSessions()
@@ -169,7 +181,11 @@ class User extends Authenticatable
      */
     public function canInspect(): bool
     {
-        return $this->isQA() && ($this->role === 'staff' || $this->level <= 3);
+        return $this->isQA() && (
+            $this->role === 'staff' || $this->level <= 3 || 
+            $this->isSupervisor() || 
+            $this->isManager()
+        );
     }
 
     /**

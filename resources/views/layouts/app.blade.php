@@ -50,7 +50,19 @@
             .table-modern td[colspan]::before { display: none !important; }
             .table-modern td[colspan] i { font-size: 3rem; margin-bottom: 1rem; color: var(--hygiene-border); }
         }
+        /* Fix Dropdown stacking in tables */
+        .table-responsive, .table-modern { overflow: visible !important; }
+        .table-modern thead th:first-child { border-top-left-radius: var(--radius-lg); }
+        .table-modern thead th:last-child { border-top-right-radius: var(--radius-lg); }
+        .table-modern .dropdown { position: static !important; }
+        .table-modern .dropdown-menu { z-index: 1050; }
+        
+        /* Sidebar Collapse Fixes */
+        body.sb-collapsed .brand-wrapper { display: none !important; }
+        body.sb-collapsed .sidebar-heading { justify-content: center !important; }
+        body:not(.sb-collapsed) #sidebar-toggle-desktop { margin-right: 0.5rem !important; margin-left: auto !important; }
     </style>
+    @stack('styles')
 </head>
 <body>
     <div class="d-flex" id="wrapper">
@@ -60,7 +72,7 @@
         <!-- Sidebar -->
         <div class="d-flex flex-column h-100" id="sidebar-wrapper">
             <div class="sidebar-heading d-flex justify-content-between align-items-center flex-shrink-0">
-                <div class="d-flex align-items-center gap-2">
+                <div class="d-flex align-items-center gap-2 brand-wrapper">
                     <div class="logo-icon">
                         <i class="bi bi-shield-check"></i>
                     </div>
@@ -75,7 +87,7 @@
                 </button>
                 
                 <!-- Desktop Toggle (Collapse) -->
-                <button class="btn btn-link text-white d-none d-lg-block p-0 me-2" id="sidebar-toggle-desktop" onclick="toggleDesktopSidebar()">
+                <button class="btn btn-link text-white d-none d-lg-block p-0 mx-auto" id="sidebar-toggle-desktop" onclick="toggleDesktopSidebar()">
                     <i class="bi bi-list" style="font-size: 1.5rem;"></i>
                 </button>
             </div>
@@ -134,10 +146,7 @@
                                     <i class="bi bi-exclamation-triangle me-2"></i> <span>ติดตามการแก้ไข (Issues)</span>
                                 </a>
 
-                                <a href="{{ route('approvals.pending') }}" class="list-group-item list-group-item-action border-0 mb-1 rounded-3 py-2 {{ request()->routeIs('approvals.*') ? 'active' : '' }}">
-                                    <i class="bi bi-check2-square me-2"></i> <span>การอนุมัติ (Approvals)</span>
-                                </a>
-                                
+
                                 @if($isManagerPlus || $isAdmin || $isQASupervisor)
                                 <a href="{{ route('reports.index') }}" class="list-group-item list-group-item-action border-0 mb-1 rounded-3 py-2 {{ request()->routeIs('reports.*') ? 'active' : '' }}">
                                     <i class="bi bi-file-earmark-bar-graph me-2"></i> <span>รายงานสรุปผล (Reports)</span>
@@ -202,7 +211,7 @@
                     {{-- GROUP 4: SYSTEM (Settings) --}}
                     @if($isAdmin)
                     @php
-                        $isActiveSystem = request()->routeIs('users.*') || request()->routeIs('admin.approvals.*');
+                        $isActiveSystem = request()->routeIs('users.*') || request()->routeIs('admin.approvals.*') || request()->routeIs('admin.settings.*');
                     @endphp
                     <div class="mt-2">
                         <a class="d-flex align-items-center justify-content-between text-secondary fw-bold px-3 py-2 text-decoration-none w-100" 
@@ -227,6 +236,9 @@
                                 <a href="{{ route('activity-logs.index') }}" class="list-group-item list-group-item-action border-0 mb-1 rounded-3 {{ request()->routeIs('activity-logs.*') ? 'active' : '' }}">
                                     <i class="bi bi-activity me-2"></i> <span>ประวัติการใช้งาน (Audit Logs)</span>
                                 </a>
+                                <a href="{{ route('admin.settings.email') }}" class="list-group-item list-group-item-action border-0 mb-1 rounded-3 {{ request()->routeIs('admin.settings.email') ? 'active' : '' }}">
+                                    <i class="bi bi-envelope-paper me-2"></i> <span>ตั้งค่าระบบอีเมล (Email)</span>
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -238,7 +250,7 @@
             <div class="sidebar-footer mb-3 flex-shrink-0 px-2">
                 <div class="border-0" style="border-radius: 12px; background-color: rgba(255, 255, 255, 0.05); padding: 12px;">
                     <div class="d-flex align-items-center justify-content-between">
-                        <div class="d-flex align-items-center">
+                        <a href="{{ route('profile.edit') }}" class="text-decoration-none d-flex align-items-center flex-grow-1">
                             <div class="rounded-circle d-flex justify-content-center align-items-center me-3 text-white shadow-sm" style="width: 38px; height: 38px; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); font-size: 0.85rem;">
                                 <span class="fw-bold">{{ substr(Auth::user()->name, 0, 1) }}</span>
                             </div>
@@ -246,7 +258,7 @@
                                 <h6 class="mb-0 text-white fw-bold" style="font-size: 0.9rem;">{{ Auth::user()->name }}</h6>
                                 <small class="text-white-50" style="font-size: 0.75rem;">{{ Auth::user()->role }}</small>
                             </div>
-                        </div>
+                        </a>
                         
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
@@ -262,13 +274,13 @@
         <!-- Page Content -->
         <div id="page-content-wrapper">
             <!-- Top Navigation (Mobile Toggle & Context) -->
-            <nav class="navbar navbar-expand-lg navbar-light glass-nav py-3 px-4">
+            <nav class="navbar navbar-expand-lg navbar-light glass-nav py-2 py-md-3 px-3 px-md-4">
                 <div class="d-flex align-items-center w-100 justify-content-between">
                     <div class="d-flex align-items-center gap-3">
                 <button class="btn btn-light d-lg-none rounded-circle p-2 shadow-sm border" id="menu-toggle" onclick="toggleSidebar()" style="cursor: pointer; z-index: 9999;">
                             <i class="bi bi-list fs-4"></i>
                         </button>
-                        <h2 class="fs-4 fw-bold mb-0 text-dark">@yield('header')</h2>
+                        <h2 class="fw-bold mb-0 text-dark" style="font-size:clamp(1rem, 4vw, 1.5rem); line-height:1.3;">@yield('header')</h2>
                     </div>
                     
                     <div class="d-flex align-items-center gap-3">
@@ -415,17 +427,27 @@
             // 1. Loading State for Forms
             const forms = document.querySelectorAll('form:not(.no-loading)');
             forms.forEach(form => {
-                form.addEventListener('submit', function() {
+                form.addEventListener('submit', function(e) {
                     const btn = this.querySelector('button[type="submit"]');
                     if (btn && !btn.classList.contains('no-loading')) {
-                        const originalText = btn.innerHTML;
-                        btn.disabled = true;
-                        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> กำลังประมวลผล...';
+                        // Create or show global loading overlay
+                        let overlay = document.getElementById('global-submit-overlay');
+                        if (!overlay) {
+                            overlay = document.createElement('div');
+                            overlay.id = 'global-submit-overlay';
+                            overlay.innerHTML = `
+                                <div class="spinner-border text-primary shadow" style="width: 3.5rem; height: 3.5rem; border-width: 0.35em;" role="status"></div>
+                                <div class="mt-3 fw-bold fs-5 text-dark bg-white px-4 py-2 rounded-pill shadow-sm">กำลังประมวลผล...</div>
+                            `;
+                            overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(255,255,255,0.7); backdrop-filter: blur(4px); z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.2s;';
+                            document.body.appendChild(overlay);
+                        } else {
+                            overlay.style.display = 'flex';
+                        }
                         
                         // Restore after 10s (failsafe)
                         setTimeout(() => {
-                            btn.disabled = false;
-                            btn.innerHTML = originalText;
+                            if (overlay) overlay.style.display = 'none';
                         }, 10000);
                     }
                 });
@@ -471,6 +493,31 @@
             }
         });
     </script>
+    <!-- Fix Table Dropdown Stacking Context (Append to Body) -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // Monitor dropdown show/hide events globally
+            document.addEventListener('show.bs.dropdown', function (e) {
+                if (e.target.closest('.table-modern')) {
+                    var menu = e.target.nextElementSibling;
+                    if (menu && menu.classList.contains('dropdown-menu')) {
+                        document.body.appendChild(menu);
+                        e.target.dataset.appendedMenu = 'true';
+                    }
+                }
+            });
+            document.addEventListener('hide.bs.dropdown', function (e) {
+                if (e.target.dataset.appendedMenu === 'true') {
+                    var menu = document.querySelector('body > .dropdown-menu.show');
+                    if (menu) {
+                        e.target.parentElement.appendChild(menu);
+                    }
+                    e.target.dataset.appendedMenu = 'false';
+                }
+            });
+        });
+    </script>
+    @stack('modals')
     @stack('scripts')
 </body>
 </html>

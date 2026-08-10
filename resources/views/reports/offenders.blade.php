@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'Top Offenders Report (รายงานผู้ที่มีประวัติผิดระเบียบสูงสุด)')
+    @section('header', 'รายงานผู้ผิดระเบียบสูงสุด')
 
     <div class="container-fluid py-4">
         <div class="row mb-4">

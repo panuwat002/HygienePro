@@ -23,6 +23,7 @@ class InspectionSession extends Model
         'approved_by',
         'approved_at',
         'is_locked', // Gap 2: Lock flag after final approval
+        'is_audit', // Bulk Pass: Flag for audit sessions
     ];
 
     protected $casts = [
@@ -31,6 +32,7 @@ class InspectionSession extends Model
         'verified_at' => 'datetime',
         'approved_at' => 'datetime',
         'is_locked' => 'boolean', // Gap 2: Lock flag
+        'is_audit' => 'boolean', // Bulk Pass: Audit flag
     ];
 
     public function inspector()

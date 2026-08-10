@@ -57,9 +57,9 @@
                                             <h6 class="text-uppercase text-muted fw-bold mb-3 border-bottom pb-2" style="font-size: 0.8rem; letter-spacing: 1px;">
                                                 <i class="bi bi-folder me-1"></i>{{ $categoryName ?: 'ไม่มีหมวดหมู่' }}
                                             </h6>
-                                            <div class="row g-3">
+                                            <div class="row g-3 sortable-list">
                                                 @foreach($checkpoints as $cp)
-                                                <div class="col-md-6">
+                                                <div class="col-md-6 sortable-item" data-id="{{ $cp->id }}">
                                                     <div class="position-relative p-3 rounded-3 border h-100 hover-border {{ in_array($cp->id, $selectedCheckpoints) ? 'bg-primary-subtle border-primary' : 'bg-light border-transparent' }}">
                                                         <div class="position-absolute top-0 end-0 p-2 d-flex gap-1" style="z-index: 10;">
                                                             <button type="button" class="btn btn-sm bg-white border text-muted shadow-sm rounded-circle p-0 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;" 
@@ -105,9 +105,9 @@
                                             <h6 class="text-uppercase text-muted fw-bold mb-3 border-bottom pb-2" style="font-size: 0.8rem; letter-spacing: 1px;">
                                                 <i class="bi bi-folder me-1"></i>{{ $categoryName ?: 'ไม่มีหมวดหมู่' }}
                                             </h6>
-                                            <div class="row g-3">
+                                            <div class="row g-3 sortable-list">
                                                 @foreach($checkpoints as $cp)
-                                                <div class="col-md-6">
+                                                <div class="col-md-6 sortable-item" data-id="{{ $cp->id }}">
                                                     <div class="position-relative p-3 rounded-3 border h-100 hover-border {{ in_array($cp->id, $selectedCheckpoints) ? 'bg-dark bg-opacity-10 border-dark' : 'bg-light border-transparent' }}">
                                                         <div class="position-absolute top-0 end-0 p-2 d-flex gap-1" style="z-index: 10;">
                                                             <button type="button" class="btn btn-sm bg-white border text-muted shadow-sm rounded-circle p-0 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;" 
@@ -122,7 +122,7 @@
                                                         <div class="form-check">
                                                             <input class="form-check-input ms-0 me-2" type="checkbox" name="checkpoint_ids[]" value="{{ $cp->id }}" id="cp_{{ $cp->id }}" @checked(in_array($cp->id, $selectedCheckpoints))>
                                                             <label class="form-check-label d-block cursor-pointer pe-4" for="cp_{{ $cp->id }}">
-                                                                <span class="badge bg-dark me-2 rounded-pill px-2 py-1" style="font-size: 0.65rem;">Area</span>
+                                                                <span class="badge bg-dark me-2 rounded-pill px-2 py-1" style="font-size: 0.65rem;">{{ $categoryName ?: 'Area' }}</span>
                                                                 <span class="fw-bold d-block text-break mt-1">{{ $cp->title }}</span>
                                                                 <small class="text-muted d-block text-break">{{ Str::limit($cp->description, 50) }}</small>
                                                             </label>
@@ -161,6 +161,7 @@
         </div>
     </div>
 
+    @push('modals')
     <!-- Quick Create Modal -->
     <div class="modal fade" id="quickCreateModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -293,9 +294,47 @@
             </div>
         </div>
     </div>
+    @endpush
 
     @push('scripts')
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Sortable on all lists
+        document.querySelectorAll('.sortable-list').forEach(function(el) {
+            new Sortable(el, {
+                animation: 150,
+                ghostClass: 'bg-light',
+                onEnd: function(evt) {
+                    const itemEl = evt.item;
+                    const list = evt.to;
+                    const items = list.querySelectorAll('.sortable-item');
+                    let order = [];
+                    items.forEach(function(item) {
+                        order.push(item.getAttribute('data-id'));
+                    });
+
+                    // Send ajax request to save new order
+                    fetch('{{ route("checkpoints.reorder") }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({ order: order })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.success) {
+                            console.error('Failed to save order');
+                        }
+                    })
+                    .catch(err => console.error('Connection error', err));
+                }
+            });
+        });
+    });
     // Global functions need to be on window
     window.openEditModal = function(id, title, description, categoryId, event) {
         event.preventDefault();
@@ -434,11 +473,18 @@
             fetch('{{ route("checkpoints.quick-store") }}', {
                 method: 'POST',
                 headers: {
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json'
                 },
                 body: formData
             })
-            .then(response => response.json())
+            .then(async response => {
+                if (!response.ok) {
+                    const err = await response.json().catch(() => null);
+                    throw err || { message: 'เกิดข้อผิดพลาดในการเชื่อมต่อ (HTTP ' + response.status + ')' };
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.success) {
                     const modal = bootstrap.Modal.getInstance(document.getElementById('quickCreateModal'));
@@ -451,7 +497,17 @@
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+                if (error.errors) {
+                    let msg = '';
+                    for (let key in error.errors) {
+                        msg += error.errors[key].join('\n') + '\n';
+                    }
+                    alert('ไม่สามารถบันทึกได้:\n' + msg);
+                } else if (error.message) {
+                    alert('ข้อผิดพลาด: ' + error.message);
+                } else {
+                    alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+                }
             })
             .finally(() => {
                 btn.innerHTML = originalText;
@@ -468,6 +524,12 @@
         }
         .cursor-pointer {
             cursor: pointer;
+        }
+        .sortable-item {
+            cursor: grab;
+        }
+        .sortable-item:active {
+            cursor: grabbing;
         }
         .last-child-mb-0:last-child {
             margin-bottom: 0 !important;

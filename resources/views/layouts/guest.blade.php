@@ -269,6 +269,21 @@
                     toggleIcon.classList.add('bi-eye');
                 }
             }
+            
+            // Loading State for Login Form
+            document.addEventListener('DOMContentLoaded', function() {
+                const forms = document.querySelectorAll('form:not(.no-loading)');
+                forms.forEach(form => {
+                    form.addEventListener('submit', function() {
+                        const btn = this.querySelector('button[type="submit"]');
+                        if (btn && !btn.classList.contains('no-loading')) {
+                            const originalText = btn.innerHTML;
+                            btn.disabled = true;
+                            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> กำลังเข้าสู่ระบบ...';
+                        }
+                    });
+                });
+            });
         </script>
     </body>
 </html>

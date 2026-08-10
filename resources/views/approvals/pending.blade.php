@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'รายการรออนุมัติ (Pending Approvals)')
+    @section('header', 'รายการรออนุมัติ')
 
     <div class="row">
         @if(session('success'))
@@ -26,7 +26,6 @@
                         <table class="table table-hover align-middle mb-0">
                             <thead class="bg-light">
                                 <tr>
-                                    <th class="ps-4">ชื่อสายการอนุมัติ (Flow Name)</th>
                                     <th>ประเภทคำขอ (Request Type)</th>
                                     <th>รายละเอียด (Details)</th>
                                     <th>ขั้นตอนที่ (Step)</th>
@@ -36,19 +35,14 @@
                             <tbody>
                                 @forelse($requests as $req)
                                     <tr>
-                                        <td class="ps-4">
-                                            <div class="d-flex align-items-center">
-                                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle p-2 me-3">
-                                                    <i class="bi bi-file-earmark-check"></i>
-                                                </div>
-                                                <span class="fw-bold">{{ $req->flow->name }}</span>
-                                            </div>
-                                        </td>
-                                        <td data-label="ประเภทคำขอ">
-                                            <span class="badge bg-secondary">{{ class_basename($req->approvable_type) }}</span>
+                                        <td class="ps-4" data-label="ประเภทคำขอ">
+                                            @if(class_basename($req->approvable_type) === 'CorrectiveAction')
+                                                <span class="badge bg-secondary">แจ้งซ่อม/สั่งแก้ไข (CAR)</span>
+                                            @else
+                                                <span class="badge bg-secondary">{{ class_basename($req->approvable_type) }}</span>
+                                            @endif
                                         </td>
                                         <td data-label="รายละเอียด">
-                                            <span class="fw-bold text-dark d-block">ID: {{ $req->approvable_id }}</span>
                                             @if(method_exists($req->approvable, 'getApprovalDetails'))
                                                 <div class="small text-muted mt-1">{!! nl2br(e($req->approvable->getApprovalDetails())) !!}</div>
                                             @endif
@@ -74,7 +68,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="5" class="text-center py-5">
+                                        <td colspan="4" class="text-center py-5">
                                             <div class="text-success opacity-50 mb-3"><i class="bi bi-check2-all" style="font-size: 4rem;"></i></div>
                                             <h5 class="fw-bold text-dark">เรียบร้อย! ไม่มีรายการรออนุมัติ</h5>
                                             <p class="text-muted mb-0">คุณได้ดำเนินการอนุมัติทุกรายการเรียบร้อยแล้วในขณะนี้</p>

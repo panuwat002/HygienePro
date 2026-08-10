@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'แก้ไขแผนก (Edit Department)')
+    @section('header', 'แก้ไขแผนก')
 
     <div class="row justify-content-center">
         <div class="col-md-8">
@@ -32,6 +32,22 @@
                                 <option value="global" {{ old('visibility_type', $department->visibility_type) == 'global' ? 'selected' : '' }}>Global (ส่วนกลาง - เห็น/เข้าถึงได้ทั่วทั้งระบบ)</option>
                             </select>
                             @error('visibility_type')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="mb-5">
+                            <label class="form-label fw-bold">หัวหน้าแผนก (Department Manager)</label>
+                            <select name="manager_id" class="form-select form-select-lg @error('manager_id') is-invalid @enderror">
+                                <option value="">-- ไม่ระบุ (None) --</option>
+                                @foreach($users as $user)
+                                    <option value="{{ $user->id }}" {{ (old('manager_id', $department->manager?->id) == $user->id) ? 'selected' : '' }}>
+                                        {{ $user->name }} {{ $user->department_id ? '('.($user->department->dept_name ?? 'ไม่มีแผนก').')' : '' }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <div class="form-text text-muted"><i class="bi bi-info-circle me-1"></i>พนักงานที่ถูกเลือกจะถูกปรับตำแหน่งเป็น Manager (ระดับ 5) ในแผนกนี้ทันที และหัวหน้าคนเดิมจะถูกปรับลงเป็น Staff</div>
+                            @error('manager_id')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>

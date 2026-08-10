@@ -11,30 +11,34 @@ class EmployeesExport implements FromCollection, WithHeadings, WithMapping
 {
     public function collection()
     {
-        return Employee::with('department')->get();
+        return Employee::with(['department', 'shift'])->get();
     }
 
     public function headings(): array
     {
         return [
+            'ID (ห้ามแก้ไข)',
             'รหัสพนักงาน',
             'คำนำหน้า',
             'ชื่อจริง',
             'นามสกุล',
             'แผนก',
             'ระดับ',
+            'กะ',
         ];
     }
 
     public function map($employee): array
     {
         return [
+            $employee->id,
             $employee->employee_id,
             $employee->prefix,
             $employee->fname,
             $employee->lname,
             $employee->department->dept_name ?? '-',
             $employee->level,
+            $employee->shift->shift_name ?? '-',
         ];
     }
 }

@@ -12,6 +12,7 @@ class ApprovalRequest extends Model
     protected $fillable = [
         'approval_flow_id',
         'department_id',
+        'requester_id',
         'approvable_id',
         'approvable_type',
         'current_step_order',
@@ -27,5 +28,10 @@ class ApprovalRequest extends Model
     public function approvable()
     {
         return $this->morphTo();
+    }
+
+    public function requester()
+    {
+        return $this->belongsTo(User::class, 'requester_id');
     }
 }

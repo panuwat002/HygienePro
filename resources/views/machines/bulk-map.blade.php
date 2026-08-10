@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'กำหนดจุดตรวจหลายเครื่องพร้อมกัน (Bulk Assign)')
+    @section('header', 'กำหนดจุดตรวจหลายเครื่อง')
 
     <div class="row">
         <div class="col-12">

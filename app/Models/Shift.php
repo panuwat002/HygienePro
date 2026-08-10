@@ -18,9 +18,16 @@ class Shift extends Model
         return $this->hasMany(Employee::class);
     }
 
-    public static function detectCurrent(): string
+    public static function detectCurrent(string $lastShift = null, string $lastTime = null): string
     {
         $time = now()->format('H:i:s');
+        $hour = now()->hour;
+
+        // Try AI Smart Detection first
+        $aiResult = \App\Services\AIService::detectShift($time, $hour, $lastShift, $lastTime);
+        if ($aiResult && isset($aiResult['shift']) && $aiResult['is_smart_detected']) {
+            return $aiResult['shift'];
+        }
 
         $dbShift = static::where(function ($q) use ($time) {
             $q->where('start_time', '<=', $time)->where('end_time', '>=', $time);
@@ -32,8 +39,12 @@ class Shift extends Model
               });
         })->first();
 
-        if ($dbShift && in_array(strtolower($dbShift->shift_name), ['morning', 'afternoon', 'night'])) {
-            return strtolower($dbShift->shift_name);
+        if ($dbShift) {
+            $name = mb_strtolower($dbShift->shift_name);
+            if (in_array($name, ['morning', 'กะเช้า'])) return 'morning';
+            if (in_array($name, ['afternoon', 'กะบ่าย'])) return 'afternoon';
+            if (in_array($name, ['night', 'กะดึก'])) return 'night';
+            return $name; // Fallback to whatever name they put
         }
 
         $hour = now()->hour;

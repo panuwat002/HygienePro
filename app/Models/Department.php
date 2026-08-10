@@ -21,6 +21,13 @@ class Department extends Model
         return $this->hasMany(User::class);
     }
 
+    public function manager()
+    {
+        return $this->hasOne(User::class)->where(function ($q) {
+            $q->where('role', 'manager')->orWhere('level', '>=', 5);
+        });
+    }
+
     public function employees()
     {
         return $this->hasMany(Employee::class);

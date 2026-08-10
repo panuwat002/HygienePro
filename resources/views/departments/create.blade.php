@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'สร้างแผนกใหม่ (New Department)')
+    @section('header', 'สร้างแผนกใหม่')
 
     <div class="row justify-content-center">
         <div class="col-md-8">

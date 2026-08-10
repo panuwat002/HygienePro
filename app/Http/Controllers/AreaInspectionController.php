@@ -82,13 +82,22 @@ class AreaInspectionController extends Controller
             if ($type === 'loc') {
                 $location = Location::find($id);
                 if (!$location) continue;
-                $targetName = $location->location_name;
-                $targetSubtext = "General Area";
+                
+                // Skip empty locations
+                if ($location->checkpoints()->count() == 0 && 
+                    $location->machines()->count() == 0) {
+                    continue;
+                }
+
+                $targetName = "การจัดการพื้นที่ (Area)";
+                $targetSubtext = "จุดตรวจความสะอาดและพื้นที่ของ " . $location->location_name;
                 $targetType = "loc";
                 
                 $checkpoints = $location->checkpoints()
                     ->where('type', 'area')
                     ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('checkpoints.id')
                     ->with('category')
                     ->get()
                     ->groupBy('category.name');
@@ -103,6 +112,8 @@ class AreaInspectionController extends Controller
 
                 $checkpoints = $machine->checkpoints()
                     ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('checkpoints.id')
                     ->with('category')
                     ->get()
                     ->groupBy('category.name');
@@ -183,6 +194,34 @@ class AreaInspectionController extends Controller
                 ->with('error', 'เซสชันนี้จบงานไปแล้ว ไม่สามารถบันทึกเพิ่มได้');
         }
 
+        // Anti-Cheat (Speed Trap): Level 1
+        // Check if the same inspector has submitted another area/machine inspection too quickly (< 15 seconds)
+        // Prevent walking past multiple machines and swiping pass rapidly
+        $lastLog = \App\Models\InspectionLog::whereHas('session', function($q) use ($session) {
+            $q->where('inspector_id', $session->inspector_id);
+        })
+        ->where(function($q) {
+            $q->whereNotNull('location_id')->orWhereNotNull('machine_id');
+        })
+        ->latest('created_at')
+        ->first();
+
+        if ($lastLog && $lastLog->created_at->diffInSeconds(now()) < 3) {
+            \Illuminate\Support\Facades\Log::warning('Speed Trap Triggered (Area/Machine)', [
+                'inspector_id' => $session->inspector_id,
+                'session_id' => $session->id,
+                'time_diff' => $lastLog->created_at->diffInSeconds(now()),
+                'ip' => $request->ip()
+            ]);
+
+            if ($request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => 'คุณทำรายการเร็วเกินไป กรุณารอสักครู่ (ประมาณ 3 วินาที) แล้วกดบันทึกใหม่อีกครั้ง'], 429);
+            }
+
+            return redirect()->back()
+                ->with('error', 'คุณทำรายการเร็วเกินไป กรุณารอสักครู่ (ประมาณ 3 วินาที) แล้วกดบันทึกใหม่อีกครั้ง');
+        }
+
         // Structure: results[targets][loc:1][cp_id] = pass/fail
         // Structure: notes[loc:1][cp_id] = text
         // Structure: photos[loc:1][cp_id] = file
@@ -227,6 +266,7 @@ class AreaInspectionController extends Controller
                         ->exists();
 
                     if (!$pendingReclean) {
+                        if ($request->wantsJson()) return response()->json(['success' => false, 'message' => 'รายการนี้ไม่ได้อยู่ในสถานะ Re-clean ไม่สามารถบันทึกได้'], 400);
                         return back()->with('error', 'รายการนี้ไม่ได้อยู่ในสถานะ Re-clean ไม่สามารถบันทึกได้');
                     }
                 }
@@ -236,10 +276,12 @@ class AreaInspectionController extends Controller
                 // Validation: Enforce Photo & Note on Fail
                 if ($result === 'fail') {
                     if (empty($note)) {
+                         if ($request->wantsJson()) return response()->json(['success' => false, 'message' => 'กรุณาระบุสาเหตุที่ไม่ผ่าน / การแก้ไข (Correction) สำหรับรายการที่ไม่ผ่าน'], 400);
                          return back()->with('error', 'กรุณาระบุสาเหตุที่ไม่ผ่าน / การแก้ไข (Correction) สำหรับรายการที่ไม่ผ่าน');
                     }
                     if (!$request->hasFile("photos.$targetKey.$checkpointId")) {
                         $cpTitle = $checkpointTitles[$checkpointId] ?? 'รายการที่ไม่ผ่าน';
+                         if ($request->wantsJson()) return response()->json(['success' => false, 'message' => "กรุณาถ่ายรูปหลักฐาน (Evidence Photo) สำหรับ: $cpTitle"], 400);
                          return back()->with('error', "กรุณาถ่ายรูปหลักฐาน (Evidence Photo) สำหรับ: $cpTitle");
                     }
                 }
@@ -261,6 +303,11 @@ class AreaInspectionController extends Controller
                     'verification_status' => null,
                     'verification_comment' => null,
                 ];
+
+                // Loop Engineering: Auto-CAR triggers when fail
+                if ($result === 'fail') {
+                    $logData['verification_status'] = 'reclean';
+                }
 
                 // Handle Photo Upload (Target-prefixed)
                 if ($request->hasFile("photos.$targetKey.$checkpointId")) {
@@ -300,7 +347,7 @@ class AreaInspectionController extends Controller
                     }
                 }
 
-                InspectionLog::updateOrCreate(
+                $log = InspectionLog::updateOrCreate(
                     [
                         'session_id' => $session->id,
                         'location_id' => $locationId,
@@ -309,6 +356,27 @@ class AreaInspectionController extends Controller
                     ],
                     $logData
                 );
+
+                // Loop Engineering: Auto-CAR creation
+                if ($log->result === 'fail') {
+                    $action = \App\Models\CorrectiveAction::firstOrCreate([
+                        'inspection_log_id' => $log->id,
+                    ], [
+                        'status' => 'open',
+                        'escalated_by' => $session->inspector_id,
+                        'root_cause' => $log->correction_action ?? 'ระบบสั่งแก้ไขอัตโนมัติ เนื่องจากผลการตรวจไม่ผ่าน',
+                        'due_date' => now()->addHours(24),
+                    ]);
+
+                    if ($action->wasRecentlyCreated) {
+                        $managers = \App\Models\User::where('department_id', $session->department_id)
+                                    ->where('level', '>=', 5)
+                                    ->get();
+                        foreach ($managers as $manager) {
+                            $manager->notify(new \App\Notifications\NewCARNotification($action));
+                        }
+                    }
+                }
             }
         }
 
@@ -354,10 +422,12 @@ class AreaInspectionController extends Controller
                 'status' => 'completed',
             ]);
             $msg = 'บันทึกผลเรียบร้อยและจบงานแล้ว (Session Completed)';
+            if ($request->wantsJson()) return response()->json(['success' => true, 'message' => $msg]);
             return redirect()->route('inspection.dashboard', $session->type)
                 ->with('success', $msg);
         } else {
             $msg = 'บันทึกข้อมูลเครื่องจักรเรียบร้อย (เหลือ ' . $remainingCount . ' รายการ)';
+            if ($request->wantsJson()) return response()->json(['success' => true, 'message' => $msg]);
             return back()->with('success', $msg);
         }
     }
@@ -368,5 +438,241 @@ class AreaInspectionController extends Controller
         if ($hour >= 6 && $hour < 14) return 'morning';
         if ($hour >= 14 && $hour < 22) return 'afternoon';
         return 'night';
+    }
+
+    /**
+     * Store bulk no_production for all targets in a specific location
+     */
+    public function storeBulkNoProduction(Request $request, InspectionSession $session, $locationId)
+    {
+        if ($session->inspector_id !== Auth::id() && !Auth::user()->isAdmin()) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized: not session owner'], 403);
+        }
+
+        if ($session->isLocked()) {
+            return response()->json(['success' => false, 'message' => 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้'], 400);
+        }
+
+        $targetsQuery = $request->input('targets_query');
+        if (!$targetsQuery) {
+            return response()->json(['success' => false, 'message' => 'ไม่พบข้อมูลเป้าหมายการตรวจ'], 400);
+        }
+
+        $targetArray = explode(',', $targetsQuery);
+        $logsCreated = 0;
+
+        foreach ($targetArray as $t) {
+            $parts = explode(':', $t);
+            if (count($parts) !== 2) continue;
+
+            $type = $parts[0];
+            $id = $parts[1];
+
+            $targetLocationId = null;
+            $machineId = null;
+            $checkpoints = collect();
+
+            if ($type === 'loc') {
+                $loc = Location::find($id);
+                if (!$loc || $loc->id != $locationId) continue;
+                $targetLocationId = $loc->id;
+                
+                $checkpoints = $loc->checkpoints()
+                    ->where('type', 'area')
+                    ->where('is_active', true)
+                    ->get();
+
+                // Loop Engineering Fix: Auto-apply no_production to all machines inside this location
+                $machines = $loc->machines()->where('is_active', true)->get();
+                foreach ($machines as $mac) {
+                    $macCheckpoints = $mac->checkpoints()->where('is_active', true)->get();
+                    foreach ($macCheckpoints as $mCp) {
+                        $existingLog = \App\Models\InspectionLog::where('session_id', $session->id)
+                            ->where('location_id', $targetLocationId)
+                            ->where('machine_id', $mac->id)
+                            ->where('checkpoint_id', $mCp->id)
+                            ->first();
+                        
+                        if ($existingLog) {
+                            // Loop Engineering Fix: Overwrite existing log to no_production
+                            $existingLog->update([
+                                'result' => 'no_production',
+                                'inspected_at' => now(),
+                                'employee_id' => null,
+                                'correction_action' => null,
+                            ]);
+                            $logsCreated++;
+                        } else {
+                            \App\Models\InspectionLog::create([
+                                'session_id' => $session->id,
+                                'location_id' => $targetLocationId,
+                                'machine_id' => $mac->id,
+                                'checkpoint_id' => $mCp->id,
+                                'employee_id' => null,
+                                'result' => 'no_production',
+                                'correction_action' => null,
+                                'inspected_at' => now(),
+                                'checkpoint_title_snapshot' => $mCp->title,
+                                'dept_snapshot' => $session->department->dept_name,
+                                'verified_at' => null,
+                                'verifier_id' => null,
+                                'verification_status' => null,
+                                'verification_comment' => null,
+                            ]);
+                            $logsCreated++;
+                        }
+                    }
+                }
+            } else if ($type === 'machine') {
+                $machine = \App\Models\Machine::find($id);
+                if (!$machine || $machine->location_id != $locationId) continue;
+                $targetLocationId = $machine->location_id;
+                $machineId = $machine->id;
+
+                $checkpoints = $machine->checkpoints()
+                    ->where('is_active', true)
+                    ->get();
+            }
+
+            foreach ($checkpoints as $cp) {
+                // Check if a log already exists
+                $existingLog = \App\Models\InspectionLog::where('session_id', $session->id)
+                    ->where('location_id', $targetLocationId)
+                    ->where('machine_id', $machineId)
+                    ->where('checkpoint_id', $cp->id)
+                    ->first();
+                
+                // Loop Engineering Fix: Overwrite existing log to no_production
+                if ($existingLog) {
+                    $existingLog->update([
+                        'result' => 'no_production',
+                        'inspected_at' => now(),
+                        'employee_id' => null,
+                        'correction_action' => null,
+                    ]);
+                    $logsCreated++;
+                } else {
+                    // Create log with no_production result
+                    InspectionLog::create(
+                        [
+                            'session_id' => $session->id,
+                            'location_id' => $targetLocationId,
+                            'machine_id' => $machineId,
+                            'checkpoint_id' => $cp->id,
+                            'employee_id' => null,
+                            'result' => 'no_production',
+                            'correction_action' => null,
+                            'inspected_at' => now(),
+                            'checkpoint_title_snapshot' => $cp->title,
+                            'dept_snapshot' => $session->department->dept_name,
+                            'verified_at' => null,
+                            'verifier_id' => null,
+                            'verification_status' => null,
+                            'verification_comment' => null,
+                        ]
+                    );
+                    $logsCreated++;
+                }
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "อัพเดทสถานะไม่มีการผลิต จำนวน {$logsCreated} รายการ"
+        ]);
+    }
+
+    /**
+     * Store bulk pass for all targets in a specific location
+     */
+    public function storeBulkPass(Request $request, InspectionSession $session, $locationId)
+    {
+        if ($session->inspector_id !== Auth::id() && !Auth::user()->isAdmin()) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized: not session owner'], 403);
+        }
+
+        if ($session->isLocked()) {
+            return response()->json(['success' => false, 'message' => 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้'], 400);
+        }
+
+        $targetsQuery = $request->input('targets_query');
+        if (!$targetsQuery) {
+            return response()->json(['success' => false, 'message' => 'ไม่พบข้อมูลเป้าหมายการตรวจ'], 400);
+        }
+
+        $targetArray = explode(',', $targetsQuery);
+        $logsCreated = 0;
+
+        foreach ($targetArray as $t) {
+            $parts = explode(':', $t);
+            if (count($parts) !== 2) continue;
+
+            $type = $parts[0];
+            $id = $parts[1];
+
+            $targetLocationId = null;
+            $machineId = null;
+            $checkpoints = collect();
+
+            if ($type === 'loc') {
+                $loc = Location::find($id);
+                if (!$loc || $loc->id != $locationId) continue;
+                $targetLocationId = $loc->id;
+                
+                $checkpoints = $loc->checkpoints()
+                    ->where('type', 'area')
+                    ->where('is_active', true)
+                    ->get();
+            } else if ($type === 'machine') {
+                $machine = \App\Models\Machine::find($id);
+                if (!$machine || $machine->location_id != $locationId) continue;
+                $targetLocationId = $machine->location_id;
+                $machineId = $machine->id;
+
+                $checkpoints = $machine->checkpoints()
+                    ->where('is_active', true)
+                    ->get();
+            }
+
+            foreach ($checkpoints as $cp) {
+                // Check if a log already exists
+                $existingLog = \App\Models\InspectionLog::where('session_id', $session->id)
+                    ->where('location_id', $targetLocationId)
+                    ->where('machine_id', $machineId)
+                    ->where('checkpoint_id', $cp->id)
+                    ->first();
+                
+                // เงื่อนไขพิเศษ: ถ้ามีข้อมูลอยู่แล้ว (เช่น ติ๊ก ไม่มีผลิต หรือ ไม่ผ่าน ไปแล้ว) ให้ข้ามไปเลย ไม่ต้องเขียนทับ
+                if ($existingLog) {
+                    continue;
+                }
+
+                // Create log with pass result for remaining items
+                InspectionLog::create(
+                    [
+                        'session_id' => $session->id,
+                        'location_id' => $targetLocationId,
+                        'machine_id' => $machineId,
+                        'checkpoint_id' => $cp->id,
+                        'employee_id' => null,
+                        'result' => 'pass',
+                        'correction_action' => null,
+                        'inspected_at' => now(),
+                        'checkpoint_title_snapshot' => $cp->title,
+                        'dept_snapshot' => $session->department->dept_name,
+                        'verified_at' => null,
+                        'verifier_id' => null,
+                        'verification_status' => null,
+                        'verification_comment' => null,
+                    ]
+                );
+                $logsCreated++;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "อัพเดทสถานะผ่านทั้งหมด จำนวน {$logsCreated} จุดตรวจ"
+        ]);
     }
 }

@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'เพิ่มเครื่องจักรใหม่ (New Machine)')
+    @section('header', 'เพิ่มเครื่องจักรใหม่')
 
     <div class="row justify-content-center">
         <div class="col-md-8">
@@ -24,16 +24,12 @@
                         </div>
 
                         <div class="row g-3 mb-3">
-                            <div class="col-md-8">
+                            <div class="col-md-12">
                                 <label for="name" class="form-label fw-bold small">ชื่อเครื่องจักร / พื้นที่ย่อย</label>
                                 <input type="text" class="form-control @error('name') is-invalid @enderror" id="name" name="name" value="{{ old('name') }}" placeholder="Ex. Machine #1, Line A" required>
                                 @error('name')
                                     <div class="invalid-feedback">{{ $message }}</div>
                                 @enderror
-                            </div>
-                            <div class="col-md-4">
-                                <label for="code" class="form-label fw-bold small">รหัสทรัพย์สิน (Asset Code)</label>
-                                <input type="text" class="form-control @error('code') is-invalid @enderror" id="code" name="code" value="{{ old('code') }}" placeholder="Ex. MC-001">
                             </div>
                         </div>
 

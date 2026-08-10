@@ -12,3 +12,7 @@ use Illuminate\Support\Facades\Schedule;
 Schedule::command('schedule:check-missed')->hourly();
 
 Schedule::command('inspections:auto-close-stale')->everyFifteenMinutes();
+
+Schedule::command('inspection:escalate-verifications')->hourly();
+
+Schedule::command('inspection:send-smart-digest')->everyThirtyMinutes();

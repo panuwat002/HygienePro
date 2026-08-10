@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'สร้างผู้ใช้งานใหม่ (Create New User)')
+    @section('header', 'สร้างผู้ใช้งานใหม่')
 
     <div class="row justify-content-center">
         <div class="col-md-8">

@@ -17,7 +17,7 @@ class MachinesExport implements FromCollection, WithHeadings, WithMapping
     public function headings(): array
     {
         return [
-            'รหัสเครื่องจักร',
+            'ID (ห้ามแก้ไข)',
             'ชื่อเครื่องจักร / พื้นที่ย่อย',
             'ที่ตั้ง (Location)',
             'รายละเอียด',
@@ -28,9 +28,9 @@ class MachinesExport implements FromCollection, WithHeadings, WithMapping
     public function map($machine): array
     {
         return [
-            $machine->code ?? '',
+            $machine->id,
             $machine->name,
-            $machine->location->name ?? '-',
+            $machine->location->location_name ?? '-',
             $machine->description ?? '',
             $machine->is_active ? 'ใช้งาน' : 'ไม่ใช้งาน',
         ];

@@ -92,6 +92,7 @@
     <!-- For brevity, simplistic version or include same component if extracted -->
     <!-- I will copy the Quick Create Modal logic structure here to ensure it works independent of the location view -->
     
+    @push('modals')
     <div class="modal fade" id="quickCreateModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 rounded-4">
@@ -149,6 +150,7 @@
             </div>
         </div>
     </div>
+    @endpush
 
     @push('scripts')
     <script>
@@ -175,14 +177,35 @@
             fetch('{{ route("checkpoints.quick-store") }}', {
                 method: 'POST',
                 headers: {
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json'
                 },
                 body: formData
             })
-            .then(res => res.json())
+            .then(async response => {
+                if (!response.ok) {
+                    const err = await response.json().catch(() => null);
+                    throw err || { message: 'เกิดข้อผิดพลาดในการเชื่อมต่อ (HTTP ' + response.status + ')' };
+                }
+                return response.json();
+            })
             .then(data => {
                 if(data.success) window.location.reload();
-                else alert('Error');
+                else alert('Error: ' + JSON.stringify(data.errors));
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                if (error.errors) {
+                    let msg = '';
+                    for (let key in error.errors) {
+                        msg += error.errors[key].join('\n') + '\n';
+                    }
+                    alert('ไม่สามารถบันทึกได้:\n' + msg);
+                } else if (error.message) {
+                    alert('ข้อผิดพลาด: ' + error.message);
+                } else {
+                    alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+                }
             });
         });
     });

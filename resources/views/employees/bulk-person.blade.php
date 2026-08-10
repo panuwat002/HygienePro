@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'กำหนดจุดตรวจสุขลักษณะพนักงาน (Bulk Assign Person)')
+    @section('header', 'กำหนดจุดตรวจพนักงาน')
 
     <div class="mb-4">
         <a href="{{ route('employees.index') }}" class="text-decoration-none text-muted">
@@ -56,9 +56,14 @@
             {{-- Right: Checkpoints Selection --}}
             <div class="col-lg-5">
                 <div class="card border-0 shadow-sm rounded-4 sticky-top" style="top: 2rem;">
-                    <div class="card-header bg-white border-0 py-3 px-4">
-                        <h5 class="fw-bold mb-1"><i class="bi bi-list-check me-2 text-success"></i>เลือกจุดตรวจสุขลักษณะ</h5>
-                        <p class="text-muted small mb-0">จุดตรวจที่จะถูกกำหนดให้พนักงาน</p>
+                    <div class="card-header bg-white border-0 py-3 px-4 d-flex justify-content-between align-items-center">
+                        <div>
+                            <h5 class="fw-bold mb-1"><i class="bi bi-list-check me-2 text-success"></i>เลือกจุดตรวจสุขลักษณะ</h5>
+                            <p class="text-muted small mb-0">จุดตรวจที่จะถูกกำหนดให้พนักงาน</p>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-light text-primary border rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#quickCreateModal">
+                            <i class="bi bi-plus-lg me-1"></i> เพิ่มรายการใหม่
+                        </button>
                     </div>
                     <div class="card-body p-4">
                         {{-- Select All Checkpoints --}}
@@ -129,6 +134,101 @@
             </div>
         </div>
     </form>
+
+    @push('modals')
+    <!-- Quick Create Modal -->
+    <div class="modal fade" id="quickCreateModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 rounded-4">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">➕ เพิ่มจุดตรวจใหม่ (Quick Add)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="quickCreateForm">
+                        <div class="mb-3">
+                            <label for="new_title" class="form-label fw-bold small">ชื่อจุดตรวจ (Checklist Title)</label>
+                            <input type="text" class="form-control" id="new_title" required placeholder="เช่น ไม่สวมแหวน, เล็บสั้น">
+                        </div>
+                        <div class="mb-3">
+                            <label for="new_description" class="form-label fw-bold small">คำอธิบายเพิ่มเติม</label>
+                            <textarea class="form-control" id="new_description" rows="2" placeholder="อธิบายลายละเอียด..."></textarea>
+                        </div>
+
+                        <!-- Visual Standards -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">รูปตัวอย่างมาตรฐาน (Visual Standards)</label>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <div class="p-2 border rounded bg-light">
+                                        <label for="new_image_good" class="form-label text-success small fw-bold mb-1"><i class="bi bi-check-circle-fill me-1"></i>Good Example</label>
+                                        <input type="file" class="form-control form-control-sm" id="new_image_good" accept="image/*">
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="p-2 border rounded bg-light">
+                                        <label for="new_image_bad" class="form-label text-danger small fw-bold mb-1"><i class="bi bi-x-circle-fill me-1"></i>Bad Example</label>
+                                        <input type="file" class="form-control form-control-sm" id="new_image_bad" accept="image/*">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Type Selection -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">1. ระบุประเภท (Type)</label>
+                            <div class="d-flex gap-2">
+                                <div class="flex-fill">
+                                    <input type="radio" class="btn-check" name="new_type" id="type_person" value="person" checked>
+                                    <label class="btn btn-outline-primary w-100" for="type_person">
+                                        <i class="bi bi-person-check me-1"></i> บุคคล (Hygiene)
+                                    </label>
+                                </div>
+                                <div class="flex-fill">
+                                    <input type="radio" class="btn-check" name="new_type" id="type_area" value="area">
+                                    <label class="btn btn-outline-dark w-100" for="type_area">
+                                        <i class="bi bi-gear-wide-connected me-1"></i> พื้นที่ (Area)
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3 bg-light p-3 rounded-3 border">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label fw-bold small mb-0">2. เลือกหมวดหมู่ (Category)</label>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="toggleNewCategory">
+                                    <label class="form-check-label small text-muted" for="toggleNewCategory">สร้างหมวดใหม่?</label>
+                                </div>
+                            </div>
+                            
+                            <!-- Select Existing -->
+                            <div id="existingCategoryGroup">
+                                <select class="form-select" id="new_category_id">
+                                    <option value="">-- ไม่ระบุหมวดหมู่ --</option>
+                                    @if(isset($categories))
+                                        @foreach($categories as $cat)
+                                            <option value="{{ $cat->id }}">{{ $cat->name }}</option>
+                                        @endforeach
+                                    @endif
+                                </select>
+                            </div>
+
+                            <!-- Input New -->
+                            <div id="newCategoryGroup" class="d-none">
+                                <input type="text" class="form-control" id="new_category_name" placeholder="ระบุชื่อหมวดหมู่ใหม่...">
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary-custom py-2 shadow-sm rounded-3">บันทึกและเลือกทันที</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endpush
 
     @push('scripts')
     <script>
@@ -256,6 +356,106 @@
                 return false;
             }
             return confirm(`ยืนยันกำหนดจุดตรวจ ${checkpoints} รายการ ให้กับพนักงาน ${employees} คน?`);
+        }
+
+        // Quick Create Checkpoint JS
+        const quickForm = document.getElementById('quickCreateForm');
+        const toggleNewCategory = document.getElementById('toggleNewCategory');
+        const existingGroup = document.getElementById('existingCategoryGroup');
+        const newGroup = document.getElementById('newCategoryGroup');
+        const newCategoryInput = document.getElementById('new_category_name');
+        const existingCategoryConfig = document.getElementById('new_category_id');
+
+        if(quickForm) {
+            toggleNewCategory.addEventListener('change', function() {
+                if(this.checked) {
+                    existingGroup.classList.add('d-none');
+                    newGroup.classList.remove('d-none');
+                    newCategoryInput.focus();
+                    existingCategoryConfig.value = "";
+                } else {
+                    existingGroup.classList.remove('d-none');
+                    newGroup.classList.add('d-none');
+                    newCategoryInput.value = "";
+                }
+            });
+
+            quickForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const title = document.getElementById('new_title').value;
+                const description = document.getElementById('new_description').value;
+
+                const formData = new FormData();
+                formData.append('title', title);
+                formData.append('description', description);
+                formData.append('type', document.querySelector('input[name="new_type"]:checked').value);
+                
+                if (toggleNewCategory.checked) {
+                    const newName = newCategoryInput.value.trim();
+                    if (!newName) {
+                        alert("กรุณาระบุชื่อหมวดหมู่ใหม่");
+                        return;
+                    }
+                    formData.append('new_category_name', newName);
+                } else {
+                    formData.append('category_id', existingCategoryConfig.value || "");
+                }
+
+                const fileGood = document.getElementById('new_image_good').files[0];
+                const fileBad = document.getElementById('new_image_bad').files[0];
+                if(fileGood) formData.append('image_good', fileGood);
+                if(fileBad) formData.append('image_bad', fileBad);
+
+                const btn = quickForm.querySelector('button[type="submit"]');
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>กำลังบันทึก...';
+                btn.disabled = true;
+
+                fetch('{{ route("checkpoints.quick-store") }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    },
+                    body: formData
+                })
+                .then(async response => {
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => null);
+                        throw err || { message: 'เกิดข้อผิดพลาดในการเชื่อมต่อ (HTTP ' + response.status + ')' };
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('quickCreateModal'));
+                        modal.hide();
+                        quickForm.reset();
+                        window.location.reload(); 
+                    } else {
+                        alert('Error: ' + JSON.stringify(data.errors));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    if (error.errors) {
+                        let msg = '';
+                        for (let key in error.errors) {
+                            msg += error.errors[key].join('\n') + '\n';
+                        }
+                        alert('ไม่สามารถบันทึกได้:\n' + msg);
+                    } else if (error.message) {
+                        alert('ข้อผิดพลาด: ' + error.message);
+                    } else {
+                        alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+                    }
+                })
+                .finally(() => {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                });
+            });
         }
     });
     </script>

@@ -18,6 +18,7 @@ class Checkpoint extends Model
         'version',
         'is_active',
         'type', // person, area
+        'sort_order',
         'image_good',
         'image_bad',
     ];

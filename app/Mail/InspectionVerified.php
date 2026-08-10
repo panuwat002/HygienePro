@@ -33,7 +33,7 @@ class InspectionVerified extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'แจ้งเตือน: ทวนสอบผลเสร็จสิ้นรออนุมัติ (Pending Manager Approval) - ' . ucfirst($this->session->type),
+            subject: 'แจ้งเตือน: ทวนสอบผลเสร็จสิ้นรออนุมัติ (Pending Manager Approval) - ' . ucfirst($this->session->type ?? 'Unknown'),
         );
     }
 

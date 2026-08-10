@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'สิ่งที่ต้องแก้ไข (Corrective Actions)')
+    @section('header', 'สิ่งที่ต้องแก้ไข')
 
     <div class="container-fluid">
         <div class="row g-4">
@@ -9,64 +9,93 @@
                     <div class="card-header bg-white border-0 pt-4 px-4 pb-0">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                                <h5 class="fw-bold text-danger mb-0"><i class="bi bi-exclamation-octagon me-2"></i>สิ่งที่ต้องดำเนินการ (Outstanding)</h5>
+                                <h5 class="fw-bold text-danger mb-0"><i class="bi bi-exclamation-octagon me-2"></i>สิ่งที่ต้องดำเนินการ</h5>
                                 <div class="text-muted small mt-1">รายการที่ต้องแก้ไข หรือถูกส่งมอบหมายมา</div>
                             </div>
                             <span class="badge bg-danger rounded-pill">{{ $openActions->count() }}</span>
                         </div>
                     </div>
-                    <div class="card-body p-4">
+                    <div class="card-body p-3 p-md-4">
                         @forelse($openActions as $action)
-                            <div class="card mb-3 border bg-light">
-                                <div class="card-body">
-                                    <div class="d-flex justify-content-between">
-                                        <span class="badge {{ $action->status == 'open' ? 'bg-warning text-dark' : ($action->status == 'resolved' ? 'bg-success' : 'bg-primary') }} mb-2">
-                                            {{ ucfirst($action->status) }}
-                                        </span>
-                                        <small class="text-muted">{{ $action->created_at->diffForHumans() }}</small>
+                            <div class="card mb-3 border-0 shadow-sm rounded-4">
+                                <div class="card-body p-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <div>
+                                            <span class="badge {{ $action->status == 'open' ? 'bg-warning text-dark' : ($action->status == 'resolved' ? 'bg-success' : 'bg-primary') }}">
+                                                {{ ucfirst($action->status) }}
+                                            </span>
+                                            @if(in_array($action->status, ['open', 'assigned']))
+                                                @php
+                                                    $hoursOpen = now()->diffInHours($action->created_at);
+                                                @endphp
+                                                @if($hoursOpen > 24)
+                                                    <span class="badge bg-danger ms-1 animate__animated animate__flash animate__infinite"><i class="bi bi-fire"></i> >24h</span>
+                                                @elseif($hoursOpen > 2)
+                                                    <span class="badge text-dark ms-1" style="background-color: #fd7e14;"><i class="bi bi-clock-history"></i> >2h</span>
+                                                @endif
+                                            @endif
+                                        </div>
+                                        <small class="text-muted"><i class="bi bi-clock me-1"></i>{{ $action->created_at->diffForHumans() }}</small>
                                     </div>
-                                    <h6 class="fw-bold">{{ $action->log->checkpoint->title ?? 'N/A' }}</h6>
-                                    <div class="small mb-2">
-                                        <strong class="text-secondary">ผู้ถูกตรวจ/พื้นที่:</strong> 
+                                    
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <h5 class="fw-bold text-dark mb-0 pe-2" style="font-size:1.1rem;">{{ $action->log->checkpoint->title ?? 'N/A' }}</h5>
+                                        <button class="btn btn-sm btn-light border text-muted px-3 py-1 rounded-pill flex-shrink-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapseInfo{{ $action->id }}" aria-expanded="false">
+                                            <i class="bi bi-arrows-expand"></i> ย่อ/ขยาย
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="mb-2 text-muted" style="font-size:0.9rem;">
+                                        <i class="bi bi-geo-alt-fill me-1"></i> ผู้ถูกตรวจ/พื้นที่:
                                         <span class="text-dark fw-bold">
                                             {{ $action->log->employee->fullname ?? ($action->log->machine->name ?? ($action->log->location->location_name ?? '-')) }}
                                         </span>
                                     </div>
-                                    <div class="p-2 bg-white rounded border mb-3">
-                                        <small class="text-muted d-block">สิ่งที่พบ (Root Cause):</small>
-                                        <div class="text-danger">{{ $action->root_cause ?? $action->log->correction_action ?? '-' }}</div>
-                                        
-                                        @if($action->log->photo_path)
-                                            <div class="mt-2 mb-3 text-center bg-light p-2 rounded">
-                                                <small class="text-muted d-block mb-1">ภาพหลักฐานตอนตรวจพบ:</small>
-                                                <img src="/storage/{{ $action->log->photo_path }}" class="rounded img-fluid border" style="max-height: 150px;">
-                                            </div>
-                                        @endif
-                                        
-                                        @if($action->action_taken)
-                                            <hr class="my-2">
-                                            <small class="text-muted d-block">การแก้ไข (Action):</small>
-                                            <div class="text-success">{{ $action->action_taken }}</div>
-                                            @if($action->proof_image)
-                                                <div class="mt-2 text-center">
-                                                    <img src="/storage/{{ $action->proof_image }}" class="rounded img-fluid" style="max-height: 150px;">
+                                    
+                                    <div class="collapse" id="collapseInfo{{ $action->id }}">
+                                        <div class="p-3 bg-light rounded-3 border-0 mb-3 mt-3">
+                                            <small class="text-secondary fw-bold d-block mb-1"><i class="bi bi-search me-1"></i> สิ่งที่พบ (Root Cause)</small>
+                                            <div class="text-danger mb-2">{{ $action->root_cause ?? $action->log->correction_action ?? '-' }}</div>
+                                            
+                                            @if($action->log->photo_path)
+                                                <div class="mt-2 mb-3">
+                                                    <small class="text-secondary d-block mb-1"><i class="bi bi-camera me-1"></i> ภาพหลักฐานตอนตรวจพบ:</small>
+                                                    <img src="/storage/{{ $action->log->photo_path }}" class="rounded-3 img-fluid shadow-sm" style="max-height: 160px; object-fit: cover;">
                                                 </div>
                                             @endif
-                                        @endif
+                                            
+                                            @if($action->action_taken)
+                                                <hr class="my-3 border-secondary opacity-25">
+                                                <small class="text-secondary fw-bold d-block mb-1"><i class="bi bi-tools me-1"></i> การแก้ไข (Action Taken)</small>
+                                                <div class="text-success mb-2">{{ $action->action_taken }}</div>
+                                                
+                                                @if($action->preventive_action)
+                                                    <small class="text-secondary fw-bold d-block mb-1 mt-2"><i class="bi bi-shield-check me-1"></i> มาตรการป้องกัน (Preventive Action)</small>
+                                                    <div class="text-warning-emphasis mb-2">{{ $action->preventive_action }}</div>
+                                                @endif
+                                                
+                                                @if($action->proof_image)
+                                                    <div class="mt-2">
+                                                        <small class="text-secondary d-block mb-1"><i class="bi bi-camera me-1"></i> ภาพหลักฐานการแก้ไข:</small>
+                                                        <img src="/storage/{{ $action->proof_image }}" class="rounded-3 img-fluid shadow-sm" style="max-height: 160px; object-fit: cover;">
+                                                    </div>
+                                                @endif
+                                            @endif
+                                        </div>
                                     </div>
                                     
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <div>
+                                    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-end gap-3 mt-3 pt-3 border-top">
+                                        <div class="flex-grow-1">
                                             <div class="d-flex align-items-center small text-muted mb-1">
-                                                <i class="bi bi-person-circle me-1"></i> Escalated by {{ $action->escalator->name ?? 'Unknown' }}
+                                                <i class="bi bi-person-circle me-2"></i> แจ้งโดย: {{ $action->escalator->name ?? 'Unknown' }}
                                             </div>
                                             @if($action->assigned_to)
                                             <div class="d-flex align-items-center small text-primary fw-bold">
-                                                <i class="bi bi-person-check-fill me-1"></i> Assigned to: {{ $action->assignee->name ?? 'Unknown' }}
+                                                <i class="bi bi-person-check-fill me-2"></i> รับผิดชอบ: {{ $action->assignee->name ?? 'Unknown' }}
                                             </div>
                                             @if($action->due_date)
                                             <div class="d-flex align-items-center small mt-1 {{ $action->due_date->isPast() ? 'text-danger fw-bold' : 'text-muted' }}">
-                                                <i class="bi bi-calendar-event me-1"></i> Due: {{ $action->due_date->format('d/m/Y') }}
+                                                <i class="bi bi-calendar-event me-2"></i> กำหนดเสร็จ: {{ $action->due_date->format('d/m/Y') }}
                                             </div>
                                             @endif
                                             @endif
@@ -83,20 +112,16 @@
                                                 || auth()->user()->isAdmin() 
                                                 || auth()->user()->isQA()
                                                 || auth()->user()->level >= 5)
-                                                <form action="{{ route('corrective.close') }}" method="POST" class="d-inline">
-                                                    @csrf
-                                                    <input type="hidden" name="action_id" value="{{ $action->id }}">
-                                                    <button type="submit" class="btn btn-success btn-sm rounded-pill px-3 shadow-sm">
-                                                        <i class="bi bi-check-double me-1"></i> ปิดงาน (Close)
-                                                    </button>
-                                                </form>
+                                                <a href="{{ route('inspection.verification') }}" class="btn btn-outline-success rounded-pill px-4 shadow-sm w-100">
+                                                    <i class="bi bi-box-arrow-up-right me-1"></i> ไปหน้าทวนสอบ (Verify)
+                                                </a>
                                             @else
-                                                <span class="badge bg-light text-success border border-success">
+                                                <span class="badge bg-light text-success border border-success p-2 w-100 w-sm-auto text-center">
                                                     <i class="bi bi-hourglass-split"></i> รอ QA ตรวจสอบ
                                                 </span>
                                             @endif
                                         @else
-                                            <div class="d-flex gap-2">
+                                            <div class="d-flex flex-column flex-sm-row gap-2 w-100 w-sm-auto">
                                                 {{-- Assign/Re-assign Button:
                                                      Visible to:
                                                      1. Managers (Level >= 5) & Admins -> Can always assign/re-assign
@@ -106,33 +131,33 @@
                                                      - Supervisors/Staff if status is already 'Assigned' (Cannot re-assign assigned tasks)
                                                 --}}
                                                 @if($action->status == 'open' || auth()->user()->level >= 5 || auth()->user()->isAdmin())
-                                                <button class="btn btn-warning btn-sm rounded-pill px-3 shadow-sm text-dark" onclick="openAssignModal({{ $action->id }}, '{{ $action->assigned_to ?? '' }}', '{{ $action->due_date ? $action->due_date->format('Y-m-d') : '' }}')">
-                                                    <i class="bi bi-person-plus-fill me-1"></i> {{ $action->status == 'assigned' ? 'เปลี่ยนผู้รับผิดชอบ' : 'มอบหมาย (Assign)' }}
+                                                <button class="btn btn-warning rounded-pill px-3 shadow-sm text-dark flex-fill" onclick="openAssignModal({{ $action->id }}, '{{ $action->assigned_to ?? '' }}', '{{ $action->due_date ? $action->due_date->format('Y-m-d') : '' }}')">
+                                                    <i class="bi bi-person-plus-fill me-1"></i> {{ $action->status == 'assigned' ? 'เปลี่ยนคน' : 'มอบหมาย' }}
                                                 </button>
                                                 @endif
                                                 
                                                 {{-- Resolve Button --}}
                                                 
                                                 @if($action->status == 'assigned' && $action->assigned_to == auth()->id())
-                                                <button class="btn btn-primary btn-sm rounded-pill px-3" 
+                                                <button class="btn btn-primary rounded-pill px-3 shadow-sm flex-fill" 
                                                     data-id="{{ $action->id }}"
                                                     data-title="{{ $action->log->checkpoint->title ?? 'N/A' }}"
                                                     data-target="{{ $action->log->employee->fullname ?? ($action->log->machine->name ?? ($action->log->location->location_name ?? '-')) }}"
                                                     data-cause="{{ $action->root_cause ?? $action->log->correction_action ?? '-' }}"
                                                     data-image="{{ $action->log->photo_path ? '/storage/'.$action->log->photo_path : '' }}"
                                                     onclick="openResolveModal(this)">
-                                                    <i class="bi bi-tools me-1"></i> ดำเนินการแก้ไข
+                                                    <i class="bi bi-tools me-1"></i> ดำเนินการ
                                                 </button>
                                                 @elseif($action->status == 'open')
                                                 {{-- Allow resolve directly if open --}}
-                                                <button class="btn btn-primary btn-sm rounded-pill px-3" 
+                                                <button class="btn btn-primary rounded-pill px-3 shadow-sm flex-fill" 
                                                     data-id="{{ $action->id }}"
                                                     data-title="{{ $action->log->checkpoint->title ?? 'N/A' }}"
                                                     data-target="{{ $action->log->employee->fullname ?? ($action->log->machine->name ?? ($action->log->location->location_name ?? '-')) }}"
                                                     data-cause="{{ $action->root_cause ?? $action->log->correction_action ?? '-' }}"
                                                     data-image="{{ $action->log->photo_path ? '/storage/'.$action->log->photo_path : '' }}"
                                                     onclick="openResolveModal(this)">
-                                                    <i class="bi bi-tools me-1"></i> ดำเนินการแก้ไข
+                                                    <i class="bi bi-tools me-1"></i> ดำเนินการ
                                                 </button>
                                                 @endif
                                             </div>
@@ -155,7 +180,7 @@
                 {{-- Same History Code --}}
                 <div class="card border-0 shadow-sm rounded-4 h-100">
                     <div class="card-header bg-white border-0 pt-4 px-4 pb-0">
-                         <h5 class="fw-bold text-success mb-0"><i class="bi bi-check-all me-2"></i>ประวัติที่ดำเนินการแล้ว (Completed)</h5>
+                         <h5 class="fw-bold text-success mb-0"><i class="bi bi-check-all me-2"></i>ประวัติที่ดำเนินการแล้ว</h5>
                     </div>
                     <div class="card-body p-4">
                         <div class="table-modern">
@@ -163,9 +188,10 @@
                                 <thead>
                                     <tr>
                                         <th class="ps-4">รายการ</th>
+                                        <th>วิธีที่แก้ไข (Action Taken)</th>
                                         <th>แก้ไขโดย</th>
                                         <th>วันที่</th>
-                                        <th class="pe-4 text-center">สถานะ</th>
+                                        <th class="pe-4 text-center">สถานะ / หลักฐาน</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -173,12 +199,33 @@
                                         <tr>
                                             <td class="ps-4" data-label="รายการ">
                                                 <div class="fw-bold small">{{ $action->log->checkpoint->title ?? '-' }}</div>
-                                                <div class="x-small text-muted">{{ $action->log->machine->name ?? '-' }}</div>
+                                                <div class="x-small text-muted">{{ $action->log->machine->name ?? ($action->log->location->location_name ?? '-') }}</div>
+                                                @if($action->root_cause)
+                                                    <div class="x-small mt-1" style="color:#b45309;"><i class="bi bi-exclamation-triangle me-1"></i>สาเหตุ: {{ $action->root_cause }}</div>
+                                                @endif
+                                            </td>
+                                            <td class="small" data-label="วิธีที่แก้ไข">
+                                                @if($action->action_taken)
+                                                    <span class="text-dark">{{ $action->action_taken }}</span>
+                                                @else
+                                                    <span class="text-muted fst-italic">ไม่ได้บันทึกวิธีแก้ไข</span>
+                                                @endif
                                             </td>
                                             <td class="small" data-label="แก้ไขโดย">{{ $action->assignee->name ?? $action->escalator->name }}</td>
                                             <td class="small" data-label="วันที่">{{ $action->resolved_at ? $action->resolved_at->format('d/m/Y') : '-' }}</td>
                                             <td class="pe-4 text-center" data-label="สถานะ">
-                                                <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3">Resolved</span>
+                                                @if($action->status === 'closed')
+                                                    <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 d-block mb-1">Closed</span>
+                                                @else
+                                                    <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 d-block mb-1">{{ ucfirst($action->status) }}</span>
+                                                @endif
+                                                @if($action->proof_image)
+                                                    <a href="{{ Storage::url($action->proof_image) }}" target="_blank" class="btn btn-outline-success btn-sm rounded-pill px-2 py-0" style="font-size:0.7rem;">
+                                                        <i class="bi bi-image me-1"></i>ดูรูปหลักฐาน
+                                                    </a>
+                                                @else
+                                                    <span class="text-muted x-small d-block mt-1">ไม่มีรูปหลักฐาน</span>
+                                                @endif
                                             </td>
                                         </tr>
                                     @endforeach
@@ -191,6 +238,7 @@
         </div>
     </div>
 
+    @push('modals')
     <!-- Assign Modal -->
     <div class="modal fade" id="assignModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -205,10 +253,12 @@
                     <div class="modal-body p-4">
                          <div class="mb-3">
                             <label class="form-label fw-bold">เลือกพนักงาน (Assignee):</label>
-                            <select name="user_id" class="form-select rounded-3 p-2" required>
+                            <select name="assigned_to" class="form-select rounded-3 p-2" required>
                                 <option value="">-- กรุณาเลือก --</option>
                                 @foreach($assignableUsers as $u)
-                                    <option value="{{ $u->id }}">{{ $u->name }} ({{ $u->job_title ?? $u->email }})</option>
+                                    <option value="{{ $u->id }}">
+                                        {{ $u->name }} @if($u->job_title) ({{ \Illuminate\Support\Str::limit($u->job_title, 20) }}) @endif
+                                    </option>
                                 @endforeach
                             </select>
                         </div>
@@ -258,8 +308,13 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">การดำเนินการแก้ไข (Action Taken):</label>
-                            <textarea name="action_taken" class="form-control rounded-3" rows="3" required placeholder="ระบุสิ่งที่ได้ดำเนินการแก้ไข..."></textarea>
+                            <label class="form-label fw-bold">การแก้ไขเบื้องต้น (Correction Action):</label>
+                            <textarea name="action_taken" class="form-control rounded-3" rows="2" required placeholder="ระบุสิ่งที่ได้ดำเนินการแก้ไขหน้างาน..."></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">มาตรการป้องกัน (Preventive Action):</label>
+                            <textarea name="preventive_action" class="form-control rounded-3 border-warning" rows="2" required placeholder="ระบุวิธีป้องกันไม่ให้เกิดปัญหานี้ซ้ำ..."></textarea>
+                            <small class="text-muted">เช่น เปลี่ยนอะไหล่, อบรมพนักงานใหม่, ปรับปรุงตารางทำความสะอาด</small>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">รูปภาพหลังแก้ไข (Proof Image):</label>
@@ -275,13 +330,14 @@
             </div>
         </div>
     </div>
+    @endpush
 
     @push('scripts')
     <script>
         function openAssignModal(id, assigneeId = '', dueDate = '') {
             document.getElementById('assignActionId').value = id;
             
-            let selectUser = document.querySelector('#assignModal select[name="user_id"]');
+            let selectUser = document.querySelector('#assignModal select[name="assigned_to"]');
             if (assigneeId) {
                 selectUser.value = assigneeId;
             } else {

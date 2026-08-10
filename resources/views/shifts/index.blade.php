@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'การจัดการกะการทำงาน (Work Shifts)')
+    @section('header', 'จัดการกะการทำงาน')
 
     <div class="row">
         <div class="col-12">

@@ -2,10 +2,16 @@
     @section('header', 'ตรวจพนักงาน')
 
     @php
-        // Calculate progress percentage (filtered by session's shift)
+        // Calculate progress percentage (filtered by session's shift, handling both English and Thai DB names)
+        $shiftNames = match($session->shift) {
+            'morning' => ['morning', 'กะเช้า'],
+            'afternoon' => ['afternoon', 'กะบ่าย'],
+            'night' => ['night', 'กะดึก'],
+            default => [$session->shift]
+        };
         $totalEmployees = $session->department->employees()
             ->where('is_active', true)
-            ->whereHas('shift', fn($q) => $q->where('shift_name', $session->shift))
+            ->whereHas('shift', fn($q) => $q->whereIn('shift_name', $shiftNames))
             ->count();
         $inspectedCount = $session->logs()->distinct('employee_id')->count();
         $progressPercent = $totalEmployees > 0 ? round(($inspectedCount / $totalEmployees) * 100) : 0;
@@ -53,12 +59,47 @@
                         ตรวจไปแล้ว <strong style="color: var(--primary);">{{ $inspectedCount }}</strong> จาก <strong>{{ $totalEmployees }}</strong> คน
                     </p>
                     
-                    <button id="start-scan-btn" class="btn btn-primary-custom btn-lg w-75 shadow-sm mb-3">
+                    <button id="start-scan-btn" class="btn btn-primary-custom btn-lg w-100 shadow-sm mb-3 py-3 fs-5 fw-bold">
                         <i class="bi bi-qr-code me-2"></i> สแกน QR Code
                     </button>
                     
                     <div class="px-4">
                         <hr class="my-4" style="opacity: 0.2;">
+                        
+                        {{-- Bulk Pass Button Section --}}
+                        @php
+                            $shiftRemainingCount = $totalEmployees - $inspectedCount;
+                        @endphp
+                        
+                        <div class="card border-0 shadow-sm mb-3" style="background: {{ $shiftRemainingCount > 0 ? 'var(--success-soft)' : '#f8f9fa' }}; border-radius: var(--radius-lg); border-left: 4px solid {{ $shiftRemainingCount > 0 ? 'var(--success)' : '#ced4da' }} !important;">
+                            <div class="card-body p-3 text-start">
+                                <h6 class="fw-bold mb-1" style="color: {{ $shiftRemainingCount > 0 ? 'var(--success)' : '#6c757d' }};">ตรวจพนักงานกะ{{ $session->shift === 'morning' ? 'เช้า' : 'ดึก' }}ครบแล้วใช่ไหม?</h6>
+                                <small class="text-muted d-block mb-3">
+                                    @if($shiftRemainingCount > 0)
+                                        ระบบจะให้ "ผ่าน" เฉพาะพนักงานในกะปัจจุบันเท่านั้น
+                                    @elseif($totalEmployees == 0)
+                                        แผนกนี้ไม่มีพนักงานที่ทำงานในกะปัจจุบัน
+                                    @else
+                                        คุณได้ตรวจสอบพนักงานกะปัจจุบันครบทุกคนแล้ว
+                                    @endif
+                                </small>
+                                
+                                @if($shiftRemainingCount > 0)
+                                    <button type="button" class="btn btn-success rounded-pill fw-bold shadow-sm w-100" data-bs-toggle="modal" data-bs-target="#bulkPassModal">
+                                        <i class="bi bi-check-all me-1"></i> ผ่านทุกคนที่เหลือ ({{ $shiftRemainingCount }})
+                                    </button>
+                                @elseif($totalEmployees == 0)
+                                    <button type="button" class="btn btn-secondary rounded-pill fw-bold shadow-sm w-100" disabled>
+                                        <i class="bi bi-dash-circle me-1"></i> ไม่มีพนักงานในกะนี้
+                                    </button>
+                                @else
+                                    <button type="button" class="btn btn-secondary rounded-pill fw-bold shadow-sm w-100" disabled>
+                                        <i class="bi bi-check-all me-1"></i> กะปัจจุบันครบแล้ว
+                                    </button>
+                                @endif
+                            </div>
+                        </div>
+
                         <div class="d-flex gap-2">
                              <form action="{{ route('inspection.pause', $session->id) }}" method="POST" class="flex-fill">
                                 @csrf
@@ -73,6 +114,29 @@
                                 </button>
                             </form>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary State (Hidden by default, shown after Bulk Pass) -->
+            <div id="summary-state" class="card border-0 shadow-sm text-center py-5 d-none" style="border-radius: var(--radius-xl); background: var(--success-soft); border: 2px solid var(--success) !important;">
+                <div class="card-body">
+                    <div class="mb-4">
+                        <i class="bi bi-check-circle-fill text-success" style="font-size: 5rem;"></i>
+                    </div>
+                    
+                    <h3 class="fw-bold mb-2 text-success">ตรวจสอบครบถ้วนแล้ว</h3>
+                    <p class="mb-4 px-3" style="color: var(--slate-600);">
+                        คุณได้ทำการตรวจสอบเป้าหมายทั้งหมดในรอบนี้เรียบร้อยแล้ว กรุณากด "จบงาน" เพื่อบันทึกข้อมูลและส่งให้หัวหน้าอนุมัติ
+                    </p>
+                    
+                    <div class="d-flex gap-2 justify-content-center px-4">
+                        <a href="{{ route('inspection.browse', $session->id) }}" class="btn btn-outline-success btn-lg flex-fill py-3 fw-bold rounded-pill">
+                            <i class="bi bi-search me-1"></i> ทบทวนข้อมูล
+                        </a>
+                        <button type="button" class="btn btn-success btn-lg flex-fill py-3 fw-bold rounded-pill shadow-sm" onclick="confirmFinishSession(this)">
+                            <i class="bi bi-check2-circle me-2"></i> จบงาน (Finish Job)
+                        </button>
                     </div>
                 </div>
             </div>
@@ -117,6 +181,54 @@
         </div>
     </div>
 
+
+    @if($shiftRemainingCount > 0)
+        @push('modals')
+        {{-- Bulk Pass Confirmation Modal --}}
+        <div class="modal fade" id="bulkPassModal" tabindex="-1" aria-labelledby="bulkPassModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+                    <div class="modal-header bg-success text-white border-0 py-3">
+                        <h5 class="modal-title fw-bold" id="bulkPassModalLabel">
+                            <i class="bi bi-shield-check me-2"></i>ยืนยัน Bulk Pass (เฉพาะกะปัจจุบัน)
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="text-center mb-3">
+                            <div class="bg-success bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+                                <i class="bi bi-people-fill text-success" style="font-size: 2.5rem;"></i>
+                            </div>
+                            <h5 class="fw-bold text-dark">คุณกำลังจะให้ผ่านทั้งหมด</h5>
+                            <p class="text-muted mb-0">
+                                พนักงานที่เหลืออีก <strong class="text-success fs-4">{{ $shiftRemainingCount }}</strong> คน
+                                <strong class="text-danger border-bottom border-danger">เฉพาะในกะ{{ $session->shift === 'morning' ? 'เช้า' : 'ดึก' }}</strong><br>
+                                จะถูกบันทึกว่า <strong class="text-success">"ผ่าน"</strong> ทุกหัวข้อตรวจโดยอัตโนมัติ
+                            </p>
+                        </div>
+                        <div class="alert alert-warning d-flex align-items-start rounded-3 mb-0" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-2 mt-1 flex-shrink-0"></i>
+                            <div class="small">
+                                <strong>พนักงานกะอื่นจะไม่ได้รับผลกระทบ:</strong> การดำเนินการนี้จะเปลี่ยนสถานะเฉพาะพนักงานที่มีรอบทำงานตรงกับกะของ Session นี้เท่านั้น (พนักงานกะอื่นจะยังคงสถานะเดิม)
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 p-3 pt-0 gap-2">
+                        <button type="button" class="btn btn-light rounded-pill flex-grow-1 fw-bold" data-bs-dismiss="modal">
+                            <i class="bi bi-x-lg me-1"></i> ยกเลิก
+                        </button>
+                        <form id="bulkPassForm" action="{{ route('inspection.bulk-pass', $session->id) }}" method="POST" class="flex-grow-1 m-0">
+                            @csrf
+                            <button type="submit" class="btn btn-success w-100 rounded-pill fw-bold shadow-sm">
+                                <i class="bi bi-check-all me-1"></i> ยืนยัน ผ่านทุกคน ({{ $shiftRemainingCount }} คน)
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endpush
+    @endif
 
     @push('scripts')
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
@@ -306,6 +418,27 @@
 
             // Finish Session Confirmation
             window.confirmFinishSession = function(btn) {
+                const failedCount = {{ $failedCount ?? 0 }};
+                
+                if (failedCount > 0) {
+                    Swal.fire({
+                        title: 'มีพนักงานที่ไม่ผ่านสุขลักษณะ',
+                        html: `พบพนักงานจำนวน <strong class="text-danger">${failedCount}</strong> คนที่ไม่ผ่านการตรวจ<br>กรุณากด <strong>"ทบทวนข้อมูล"</strong> เพื่อตรวจสอบและแก้ไขให้เรียบร้อยก่อนจบงาน`,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#eab308',
+                        cancelButtonColor: '#64748b',
+                        confirmButtonText: '<i class="bi bi-search"></i> ทบทวนข้อมูล',
+                        cancelButtonText: 'ยกเลิก',
+                        reverseButtons: true
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            window.location.href = "{{ route('inspection.browse', $session->id) }}";
+                        }
+                    });
+                    return; // Block finish
+                }
+
                 Swal.fire({
                     title: 'ยืนยันสรุปยอดการตรวจ?',
                     html: 'ตรวจแล้ว <strong>{{ $inspectedCount }}</strong> จาก <strong>{{ $totalEmployees }}</strong> คน ({{ $progressPercent }}%)'
@@ -343,10 +476,106 @@
                 }
             }).then((result) => {
                 if (result.isConfirmed && result.value) {
+                    isIntentionalNav = true;
                     window.location.href = `/inspection/session/{{ $session->id }}/verify/${encodeURIComponent(result.value.trim())}`;
                 }
             });
         }
+
+        // Bulk Pass AJAX handling
+        const bulkPassForm = document.getElementById('bulkPassForm');
+        if (bulkPassForm) {
+            bulkPassForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Show Loading
+                Swal.fire({
+                    title: 'กำลังบันทึกข้อมูล...',
+                    html: 'กรุณารอสักครู่',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+
+                // Submit via Fetch
+                fetch(this.action, {
+                    method: 'POST',
+                    body: new FormData(this),
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Close Modal
+                        let myModalEl = document.getElementById('bulkPassModal');
+                        let modal = bootstrap.Modal.getInstance(myModalEl);
+                        if (modal) {
+                            modal.hide();
+                        } else {
+                            // Fallback
+                            myModalEl.classList.remove('show');
+                            document.body.classList.remove('modal-open');
+                            const backdrops = document.querySelectorAll('.modal-backdrop');
+                            backdrops.forEach(b => b.remove());
+                        }
+                        
+                        // Hide UI elements
+                        document.getElementById('scan-ready-state').classList.add('d-none');
+                        const scannerContainer = document.getElementById('scanner-container');
+                        if (scannerContainer) scannerContainer.classList.add('d-none');
+                        
+                        // Hide Fallbacks and Toggles
+                        const fallbacks = document.querySelectorAll('.text-center.mt-3, .card.border-0.shadow-sm.mt-3');
+                        fallbacks.forEach(el => el.classList.add('d-none'));
+                        
+                        // Show Summary UI
+                        const summaryState = document.getElementById('summary-state');
+                        if (summaryState) {
+                            summaryState.classList.remove('d-none');
+                            // Add a tiny animation class if available in their stack
+                            summaryState.style.animation = 'fadeIn 0.5s ease-in-out';
+                        }
+                        
+                        Swal.close();
+                    } else {
+                        Swal.fire('ข้อผิดพลาด', data.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+                });
+            });
+        }
+    </script>
+    
+    <!-- Prevent Accidental Exit -->
+    <script>
+        let isIntentionalNav = false;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // All forms are intentional
+            document.querySelectorAll('form').forEach(f => {
+                f.addEventListener('submit', () => isIntentionalNav = true);
+            });
+
+            // Browse button is intentional
+            const browseBtn = document.querySelector('a[href*="browse"]');
+            if (browseBtn) {
+                browseBtn.addEventListener('click', () => isIntentionalNav = true);
+            }
+        });
+
+        window.addEventListener('beforeunload', function (e) {
+            if (!isIntentionalNav) {
+                e.preventDefault();
+                e.returnValue = ''; // Standard behavior requires truthy value
+            }
+        });
     </script>
     @endpush
 </x-app-layout>

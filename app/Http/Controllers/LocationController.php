@@ -13,7 +13,9 @@ class LocationController extends Controller
 {
     public function index()
     {
-        $locations = Location::withCount('checkpoints')->get();
+        $locations = Location::withCount(['checkpoints', 'machines'])
+            ->havingRaw('checkpoints_count > 0 OR machines_count > 0 OR description != ? OR description IS NULL', ['Auto Created from Schedule Import'])
+            ->get();
         return view('locations.index', compact('locations'));
     }
 
@@ -53,8 +55,33 @@ class LocationController extends Controller
 
     public function destroy(Location $location)
     {
-        $location->delete();
-        return redirect()->route('locations.index')->with('success', 'Location deleted successfully.');
+        try {
+            $location->delete();
+            return redirect()->route('locations.index')->with('success', 'ลบข้อมูลจุดประจำการเรียบร้อยแล้ว');
+        } catch (\Illuminate\Database\QueryException $e) {
+            if ($e->getCode() == "23000") {
+                return redirect()->route('locations.index')->with('error', 'ไม่สามารถลบข้อมูลได้ เนื่องจากห้องนี้มีประวัติการถูกใช้งานในระบบแล้ว');
+            }
+            return redirect()->route('locations.index')->with('error', 'เกิดข้อผิดพลาดในการลบข้อมูล');
+        }
+    }
+
+    public function destroyBulk(Request $request)
+    {
+        $request->validate([
+            'location_ids' => 'required|array',
+            'location_ids.*' => 'exists:locations,id',
+        ]);
+
+        try {
+            Location::whereIn('id', $request->location_ids)->delete();
+            return redirect()->route('locations.index')->with('success', 'ลบข้อมูลจุดประจำการที่เลือกเรียบร้อยแล้ว');
+        } catch (\Illuminate\Database\QueryException $e) {
+            if ($e->getCode() == "23000") {
+                return redirect()->route('locations.index')->with('error', 'ไม่สามารถลบห้องบางส่วนได้ เนื่องจากมีประวัติการถูกใช้งานในระบบแล้ว');
+            }
+            return redirect()->route('locations.index')->with('error', 'เกิดข้อผิดพลาดในการลบข้อมูล');
+        }
     }
 
     public function export()
@@ -75,7 +102,7 @@ class LocationController extends Controller
 
     public function showMapping(Location $location)
     {
-        $allCheckpoints = Checkpoint::with('category')->get()->groupBy('category.name');
+        $allCheckpoints = Checkpoint::with('category')->orderBy('sort_order')->orderBy('id')->get()->groupBy('category.name');
         $selectedCheckpoints = $location->checkpoints->pluck('id')->toArray();
         $categories = \App\Models\CheckpointCategory::all(); // Fetch all categories
         
@@ -94,6 +121,8 @@ class LocationController extends Controller
         
         $allCheckpoints = Checkpoint::where('is_active', true)
                             ->with('category')
+                            ->orderBy('sort_order')
+                            ->orderBy('id')
                             ->get()
                             ->groupBy('category.name');
 
@@ -130,5 +159,18 @@ class LocationController extends Controller
         $modeText = $mode === 'replace' ? 'แทนที่' : 'เพิ่ม';
         return redirect()->route('locations.index')
             ->with('success', "{$modeText}จุดตรวจ " . count($checkpointIds) . " รายการ ให้สถานที่ {$count} รายการ เรียบร้อยแล้ว");
+    }
+
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'location_ids' => 'required|array|min:1',
+            'location_ids.*' => 'exists:locations,id',
+        ]);
+
+        $count = Location::whereIn('id', $request->location_ids)->delete();
+
+        return redirect()->route('locations.index')
+            ->with('success', "ลบข้อมูลพื้นที่ {$count} รายการ เรียบร้อยแล้ว");
     }
 }

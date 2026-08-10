@@ -1,36 +1,36 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Inspection Verified</title>
-</head>
-<body style="font-family: sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-    <h2 style="color: #8b5cf6;">ทวนสอบผลเสร็จสิ้น รออนุมัติ (Pending Manager Approval)</h2>
-    
-    <p>เรียน QA Manager,</p>
-    
-    <p>ขณะนี้ <strong>{{ $supervisor->name }}</strong> (QA Supervisor) ได้ทำการทวนสอบ (Verify) ผลการตรวจหน้างานเรียบร้อยแล้ว และกำลังรอให้ท่านเข้าตรวจสอบภาพรวมและกดอนุมัติ (Approve) เพื่อล็อกเซสชันครับ</p>
-    
-    <div style="background-color: #f3f4f6; padding: 15px; border-radius: 5px; margin: 20px 0;">
-        <h3 style="margin-top: 0; color: #374151;">ข้อมูลเซสชัน</h3>
-        <ul style="list-style: none; padding: 0; margin: 0;">
-            <li style="margin-bottom: 8px;"><strong>ประเภทการตรวจ:</strong> {{ ucfirst($session->type) }}</li>
-            <li style="margin-bottom: 8px;"><strong>แผนกที่ไปตรวจ:</strong> {{ $session->department->dept_name ?? 'รวมทุกแผนก' }}</li>
-            <li style="margin-bottom: 8px;"><strong>รอบการตรวจ:</strong> {{ ucfirst($session->shift) }} (Round {{ $session->round }})</li>
-            <li><strong>วันที่ตรวจ:</strong> {{ \Carbon\Carbon::parse($session->inspection_date)->format('d/m/Y') }}</li>
-        </ul>
-    </div>
+@extends('emails.layouts.master')
 
-    <div style="text-align: center; margin: 30px 0;">
-        <a href="{{ url('/verification?date=' . $session->inspection_date) }}" 
-           style="background-color: #3b82f6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
-           เข้าสู่ระบบเพื่ออนุมัติ (Approve)
-        </a>
-    </div>
-    
-    <br>
-    <p style="font-size: 12px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 10px;">
-        นี่คืออีเมลอัตโนมัติจากระบบ HygienePro กรุณาอย่าตอบกลับอีเมลนี้
-    </p>
-</body>
-</html>
+@section('title', 'Inspection Verified')
+@section('header_title', 'ทวนสอบผลเสร็จสิ้น')
+@section('header_subtitle', '(Pending Manager Approval)')
+
+@section('content')
+<p style="margin-top: 0; font-size: 16px;">เรียน <strong>QA Manager</strong>,</p>
+<p>ขณะนี้ <strong>{{ $supervisor->name ?? 'QA Supervisor' }}</strong> ได้ทำการทวนสอบ (Verify) ผลการตรวจหน้างานเรียบร้อยแล้ว และกำลังรอให้ท่านเข้าตรวจสอบภาพรวมและกดอนุมัติ (Approve) เพื่อล็อกเซสชันครับ</p>
+
+<div style="background-color: #f8fafc; border-left: 4px solid #8b5cf6; padding: 25px; border-radius: 6px; margin: 30px 0;">
+    <h3 style="margin-top: 0; color: #111827; font-size: 16px;">ข้อมูลเซสชัน</h3>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+            <td style="padding-bottom: 12px; width: 40%;"><strong style="color: #6b7280; font-size: 14px; text-transform: uppercase;">ประเภทการตรวจ:</strong></td>
+            <td style="padding-bottom: 12px; color: #1f2937; font-weight: 500;">{{ ucfirst($session->type) }}</td>
+        </tr>
+        <tr>
+            <td style="padding-bottom: 12px;"><strong style="color: #6b7280; font-size: 14px; text-transform: uppercase;">แผนกเป้าหมาย:</strong></td>
+            <td style="padding-bottom: 12px; color: #1f2937; font-weight: 500;">{{ $session->department->dept_name ?? 'รวมทุกแผนก' }}</td>
+        </tr>
+        <tr>
+            <td style="padding-bottom: 12px;"><strong style="color: #6b7280; font-size: 14px; text-transform: uppercase;">รอบการตรวจ:</strong></td>
+            <td style="padding-bottom: 12px; color: #1f2937; font-weight: 500;">{{ ucfirst($session->shift) }} (Round {{ $session->round }})</td>
+        </tr>
+        <tr>
+            <td><strong style="color: #6b7280; font-size: 14px; text-transform: uppercase;">วันที่ตรวจ:</strong></td>
+            <td style="color: #1f2937; font-weight: 500;">{{ \Carbon\Carbon::parse($session->inspection_date)->format('d/m/Y') }}</td>
+        </tr>
+    </table>
+</div>
+
+<div style="text-align: center; margin-top: 40px;">
+    <a href="{{ url('/verification?date=' . \Carbon\Carbon::parse($session->inspection_date)->format('Y-m-d')) }}" style="display: inline-block; padding: 12px 24px; background-color: #8b5cf6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">เข้าสู่ระบบเพื่ออนุมัติ (Approve)</a>
+</div>
+@endsection

@@ -1,5 +1,5 @@
 <x-app-layout>
-    @section('header', 'ประวัติการใช้งานระบบ (Audit Logs)')
+    @section('header', 'ประวัติการใช้งาน')
 
     <div class="card border-0 shadow-sm rounded-4">
         <div class="card-header bg-transparent border-0 p-4 pb-0">

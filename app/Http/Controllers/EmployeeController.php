@@ -59,8 +59,9 @@ class EmployeeController extends Controller
         }
 
         $shifts = \App\Models\Shift::all();
+        $locations = \App\Models\Location::all();
 
-        return view('employees.index', compact('employees', 'departments', 'shifts'));
+        return view('employees.index', compact('employees', 'departments', 'shifts', 'locations'));
     }
 
     public function create()
@@ -205,8 +206,20 @@ class EmployeeController extends Controller
 
     public function destroy(Employee $employee)
     {
-        $employee->delete(); // Soft delete
-        return redirect()->route('employees.index')->with('success', 'Employee deleted successfully.');
+        $employee->delete();
+        return redirect()->route('employees.index')->with('success', 'ลบข้อมูลพนักงานเรียบร้อยแล้ว');
+    }
+
+    public function destroyBulk(Request $request)
+    {
+        $request->validate([
+            'employee_ids' => 'required|array',
+            'employee_ids.*' => 'exists:employees,id',
+        ]);
+
+        Employee::whereIn('id', $request->employee_ids)->delete();
+
+        return redirect()->route('employees.index')->with('success', 'ลบข้อมูลพนักงานที่เลือกเรียบร้อยแล้ว');
     }
 
     public function export()
@@ -220,9 +233,43 @@ class EmployeeController extends Controller
             'file' => 'required|mimes:xlsx,xls,csv',
         ]);
 
-        Excel::import(new EmployeesImport, $request->file('file'));
+        try {
+            Excel::import(new EmployeesImport, $request->file('file'));
+            return redirect()->route('employees.index')->with('success', 'Employees imported successfully.');
+        } catch (\Exception $e) {
+            $msg = 'เกิดข้อผิดพลาดในการนำเข้าพนักงาน: ' . $e->getMessage();
+            if (str_contains($e->getMessage(), 'Duplicate entry') || str_contains($e->getMessage(), 'default value')) {
+                $msg .= ' (กรุณาตรวจสอบว่าคุณนำเข้า "ไฟล์พนักงานหลัก" ถูกต้องหรือไม่ หากเป็น "ไฟล์ตารางกะ" ให้ใช้ปุ่ม "นำเข้าตารางกะ" แทนครับ)';
+            }
+            return redirect()->route('employees.index')->with('error', $msg);
+        }
+    }
 
-        return redirect()->route('employees.index')->with('success', 'Employees imported successfully.');
+    public function importSchedules(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|mimes:xlsx,xls,csv',
+        ]);
+
+        try {
+            $import = new \App\Imports\SchedulesImport;
+            Excel::import($import, $request->file('file'));
+            
+            $msg = "นำเข้าตารางกะสำเร็จ {$import->importedCount} รายการ";
+            
+            if ($import->skippedCount > 0) {
+                return redirect()->route('employees.index')->with('warning', $msg . " แต่ข้ามไป {$import->skippedCount} รายการ เนื่องจากไม่พบรหัสพนักงานในระบบ (อาจถูกลบไปแล้ว)");
+            }
+
+            return redirect()->route('employees.index')->with('success', $msg);
+        } catch (\Exception $e) {
+            return redirect()->route('employees.index')->with('error', 'เกิดข้อผิดพลาดในการนำเข้า: ' . $e->getMessage());
+        }
+    }
+
+    public function downloadSchedulesTemplate()
+    {
+        return Excel::download(new \App\Exports\SchedulesTemplateExport, 'schedules-template.xlsx');
     }
 
     public function printCard($id)
@@ -304,7 +351,9 @@ class EmployeeController extends Controller
             ->get()
             ->groupBy(fn($cp) => $cp->category?->name ?? 'ไม่มีหมวดหมู่');
 
-        return view('employees.bulk-person', compact('employees', 'departments', 'personCheckpoints'));
+        $categories = \App\Models\CheckpointCategory::all();
+
+        return view('employees.bulk-person', compact('employees', 'departments', 'personCheckpoints', 'categories'));
     }
 
     public function saveBulkPerson(Request $request)
@@ -363,5 +412,38 @@ class EmployeeController extends Controller
         
         return redirect()->route('employees.index')
             ->with('success', "กำหนดกะ {$shift->shift_name} ให้กับพนักงาน {$count} คน เรียบร้อยแล้ว");
+    }
+
+    public function saveBulkDepartment(Request $request)
+    {
+        $request->validate([
+            'employee_ids' => 'required|array|min:1',
+            'employee_ids.*' => 'exists:employees,id',
+            'department_id' => 'required|exists:departments,id',
+        ]);
+
+        $employees = Employee::whereIn('id', $request->employee_ids)->get();
+        $count = 0;
+        foreach ($employees as $employee) {
+            $employee->department_id = $request->department_id;
+            if ($employee->save()) {
+                $count++;
+            }
+        }
+
+        return redirect()->route('employees.index')
+            ->with('success', "ย้ายแผนกให้พนักงาน {$count} คน เรียบร้อยแล้ว");
+    }
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'employee_ids' => 'required|array|min:1',
+            'employee_ids.*' => 'exists:employees,id',
+        ]);
+
+        $count = Employee::whereIn('id', $request->employee_ids)->delete();
+
+        return redirect()->route('employees.index')
+            ->with('success', "ลบข้อมูลพนักงาน {$count} รายการ เรียบร้อยแล้ว");
     }
 }

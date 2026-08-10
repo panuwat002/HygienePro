@@ -230,9 +230,21 @@ class ReportController extends Controller
         $areaCheckpoints = \App\Models\Checkpoint::where('type', 'area')
             ->whereIn('title', ['ความสมบูรณ์ของพื้นที่', 'ความสะอาดของพื้นที่'])
             ->orderBy('id')->get();
+            
+        $areaMachineCheckpoints = \App\Models\Checkpoint::with('category')->where('type', 'area')->orderBy('id')->get()
+            ->sortBy(function ($checkpoint) {
+                $catName = $checkpoint->category ? $checkpoint->category->name : '';
+                $title = $checkpoint->title;
+                
+                if (str_contains($title, 'ความสะอาด') && str_contains($catName, 'พื้นที่')) return 1;
+                if (str_contains($title, 'ความสะอาด') && str_contains($catName, 'เครื่องจักร')) return 2;
+                if (str_contains($title, 'ความสมบูรณ์') && str_contains($catName, 'เครื่องจักร')) return 3;
+                
+                return $checkpoint->sort_order > 0 ? $checkpoint->sort_order + 10 : 99;
+            })->values();
 
         // Base Query
-        $query = InspectionSession::with(['inspector', 'department', 'logs.checkpoint', 'logs.employee', 'logs.machine', 'logs.location'])
+        $query = InspectionSession::with(['inspector', 'department', 'logs.checkpoint', 'logs.employee', 'logs.machine', 'logs.location', 'logs.correctiveAction'])
             ->whereDate('inspection_date', $date);
 
         // Scope Enforcement
@@ -245,6 +257,13 @@ class ReportController extends Controller
 
         if ($shift) {
             $query->where('shift', $shift);
+        }
+
+        // Filter by specific session IDs if provided
+        $sessionIds = $request->input('session_ids');
+        if ($sessionIds) {
+            $ids = is_array($sessionIds) ? $sessionIds : explode(',', $sessionIds);
+            $query->whereIn('id', $ids);
         }
 
         // ... existing scope checks ...
@@ -319,9 +338,25 @@ class ReportController extends Controller
             }
         }
         
+        // Filter out items that only have no_production or absent (no action required)
+        $filterNoAction = function($matrix) {
+            return array_filter($matrix, function($item) {
+                foreach ($item['results'] as $log) {
+                    if (!in_array($log->result, ['no_production', 'absent'])) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+        };
+
+        $employeeMatrix = $filterNoAction($employeeMatrix);
+        $machineMatrix = $filterNoAction($machineMatrix);
+        $areaMatrix = $filterNoAction($areaMatrix);
+        
         // Sort matrices by info name for cleaner report presentation
         uasort($employeeMatrix, function($a, $b) {
-            return strcmp($a['info']->fullname, $b['info']->fullname); // Sort alphabetically by fullname
+            return strcmp($a['info']->fullname ?? $a['info']->fname ?? '', $b['info']->fullname ?? $b['info']->fname ?? ''); // Sort alphabetically by fullname
         });
 
         // Collect Signatures (Unique Managers and Supervisors involved)
@@ -331,20 +366,83 @@ class ReportController extends Controller
         $verifiers = \App\Models\User::whereIn('id', $verifierIds)->get();
         $approvers = \App\Models\User::whereIn('id', $approverIds)->get();
 
-        // Chunk data for pagination (25 items per page)
-        $perPage = 25;
+        // Combine Area and Machine Matrices by Location for unified table
+        $areaMachineCombined = [];
+        
+        foreach ($areaMatrix as $lId => $data) {
+            $loc = $data['info'];
+            $areaMachineCombined[$lId] = [
+                'location' => $loc,
+                'location_data' => $data,
+                'machines' => []
+            ];
+        }
+        
+        foreach ($machineMatrix as $mId => $data) {
+            $machine = $data['info'];
+            $lId = $machine->location_id;
+            
+            if (!$lId) {
+                $lId = 'no_loc_' . $mId;
+                $areaMachineCombined[$lId] = [
+                    'location' => null,
+                    'location_data' => null,
+                    'machines' => [$data]
+                ];
+                continue;
+            }
+            
+            if (!isset($areaMachineCombined[$lId])) {
+                $loc = $machine->location;
+                $areaMachineCombined[$lId] = [
+                    'location' => $loc,
+                    'location_data' => null,
+                    'machines' => []
+                ];
+            }
+            $areaMachineCombined[$lId]['machines'][] = $data;
+        }
+
+        // Flatten for the PDF rows
+        $flattenedAreaMachine = [];
+        foreach ($areaMachineCombined as $lId => $group) {
+            if ($group['location_data']) {
+                $flattenedAreaMachine[] = [
+                    'type' => 'area',
+                    'info' => $group['location_data']['info'],
+                    'session' => $group['location_data']['session'],
+                    'results' => $group['location_data']['results'],
+                ];
+            } elseif ($group['location']) {
+                $flattenedAreaMachine[] = [
+                    'type' => 'area_header',
+                    'info' => $group['location'],
+                    'session' => null,
+                    'results' => [],
+                ];
+            }
+            
+            foreach ($group['machines'] as $mData) {
+                $flattenedAreaMachine[] = [
+                    'type' => 'machine',
+                    'info' => $mData['info'],
+                    'session' => $mData['session'],
+                    'results' => $mData['results'],
+                ];
+            }
+        }
+
+        // Chunk data for pagination (prevent overflow into signatures by reducing perPage)
+        $perPage = 18;
         $employeeChunks = array_chunk($employeeMatrix, $perPage, true);
-        $machineChunks = array_chunk($machineMatrix, $perPage, true);
-        $areaChunks = array_chunk($areaMatrix, $perPage, true);
+        $areaMachineChunks = array_chunk($flattenedAreaMachine, $perPage, true);
 
         $pdf = Pdf::loadView('reports.pdf.daily', compact(
             'sessions', 
             'employeeChunks', 
-            'machineChunks', 
-            'areaChunks',
+            'areaMachineChunks',
             'personCheckpoints', 
-            'machineCheckpoints',
-            'areaCheckpoints', 
+            'areaMachineCheckpoints',
             'date', 
             'shift',
             'reportType',
@@ -398,11 +496,22 @@ class ReportController extends Controller
             $machineLogs = $logs->get($machine->id, collect());
             
             $results = [];
+            $hasValidAction = false;
+            $hasAnyResult = false;
             foreach ($machineLogs as $log) {
+                $hasAnyResult = true;
                 $results[$log->checkpoint_id] = [
                     'result' => $log->result,
                     'note' => $log->note
                 ];
+                if (!in_array($log->result, ['no_production', 'absent'])) {
+                    $hasValidAction = true;
+                }
+            }
+
+            // Skip if this machine was explicitly checked but ALL results were no_production or absent
+            if ($hasAnyResult && !$hasValidAction) {
+                continue;
             }
 
             $locationGroups[$locId]['machines'][$machine->id] = [
@@ -425,5 +534,51 @@ class ReportController extends Controller
         $pdf->setPaper('a4', 'landscape');
         
         return $pdf->stream("fm-qa-22-{$date}.pdf");
+    }
+
+    public function exportMonthlyPdf(Request $request)
+    {
+        $month = $request->input('month', date('Y-m'));
+        $departmentId = $request->input('department_id');
+        
+        $startDate = \Carbon\Carbon::parse($month . '-01')->startOfMonth();
+        $endDate = $startDate->copy()->endOfMonth();
+
+        $query = \App\Models\InspectionLog::whereBetween('inspected_at', [$startDate, $endDate]);
+        
+        if ($departmentId) {
+            $query->whereHas('session', function($q) use ($departmentId) {
+                $q->where('department_id', $departmentId);
+            });
+        }
+
+        $totalInspections = (clone $query)->count();
+        $totalFails = (clone $query)->where('result', 'fail')->count();
+        $healthScore = $totalInspections > 0 ? round((($totalInspections - $totalFails) / $totalInspections) * 100) : 100;
+
+        $topDefectsRaw = (clone $query)->where('result', 'fail')
+            ->join('checkpoints', 'inspection_logs.checkpoint_id', '=', 'checkpoints.id')
+            ->select('checkpoints.title', \Illuminate\Support\Facades\DB::raw('count(*) as total'))
+            ->groupBy('checkpoints.id', 'checkpoints.title')
+            ->orderByDesc('total')
+            ->limit(5)
+            ->get();
+            
+        $topDefects = [];
+        foreach($topDefectsRaw as $defect) {
+            $topDefects[$defect->title] = $defect->total;
+        }
+
+        $data = [
+            'month' => $month,
+            'targetType' => 'machine',
+            'healthScore' => $healthScore,
+            'totalInspections' => $totalInspections,
+            'totalFails' => $totalFails,
+            'topDefects' => $topDefects,
+        ];
+
+        $pdf = Pdf::loadView('reports.pdf.monthly_summary', $data);
+        return $pdf->stream("monthly-report-{$month}.pdf");
     }
 }
