@@ -741,10 +741,49 @@
                         `;
                     }
                 } else if ('{{ $type }}' === 'machine') {
-                    // Machine Mode: Show ONLY Machines
-                    if (loc.machines && loc.machines.length > 0) {
-                        let visibleMachines = 0;
-                        let machineListHtml = '';
+                    // Machine Mode: show machines + "ตรวจพื้นที่ทั่วไป" if the location
+                    // itself carries area-type checkpoints (floors, walls, ceiling, etc.).
+                    // The tab label promises "พื้นที่/เครื่องจักร" so both belong here.
+                    let visibleMachines = 0;
+                    let machineListHtml = '';
+
+                    // General Area target for this location (loc:X)
+                    if (loc.has_area_checkpoints) {
+                        const areaTargetId = `target_loc_${loc.id}`;
+                        if (loc.area_inspected) {
+                            visibleMachines++;
+                            const areaBadge = loc.area_no_production
+                                ? '<span class="badge bg-secondary text-light"><i class="bi bi-dash-circle me-1"></i>ไม่ได้ใช้งาน</span>'
+                                : '<span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>ตรวจแล้ว</span>';
+                            machineListHtml += `
+                                <div class="selection-menu">
+                                    <div class="form-check p-0">
+                                        <input type="checkbox" class="btn-check target-checkbox" disabled>
+                                        <label class="btn btn-sm btn-outline-secondary text-muted bg-light border-0 w-100 rounded-3 text-start px-3 mb-2 py-2 d-flex justify-content-between align-items-center border-dashed" style="opacity: 0.7; cursor: not-allowed;">
+                                            <span class="fw-medium"><i class="bi bi-layers me-2"></i>ตรวจพื้นที่ทั่วไป (พื้น/ผนัง/เพดาน)</span>
+                                            <div class="check-indicator">${areaBadge}</div>
+                                        </label>
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            visibleMachines++;
+                            machineListHtml += `
+                                <div class="selection-menu">
+                                    <div class="form-check p-0">
+                                        <input type="checkbox" class="btn-check target-checkbox" name="targets[]" value="loc:${loc.id}" id="${areaTargetId}" autocomplete="off">
+                                        <label class="btn btn-sm btn-outline-primary w-100 rounded-3 text-start px-3 mb-2 py-2 d-flex justify-content-between align-items-center border-dashed" for="${areaTargetId}">
+                                            <span class="fw-medium"><i class="bi bi-layers me-2"></i>ตรวจพื้นที่ทั่วไป (พื้น/ผนัง/เพดาน)</span>
+                                            <div class="check-indicator"><i class="bi bi-circle check-box-icon"></i></div>
+                                        </label>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+
+                    const hasMachines = loc.machines && loc.machines.length > 0;
+                    if (hasMachines) {
                         loc.machines.forEach(m => {
                             const isMInspected = m.is_inspected;
                             if (isMInspected) {
@@ -795,24 +834,24 @@
                                 </div>
                             `;
                         });
-                        
-                        if (visibleMachines > 0) {
-                            const collapseId = `collapse_loc_${loc.id}`;
-                            // Add collapse button
-                            areaSelectionHtml += `
-                                <button class="btn btn-sm btn-light w-100 mb-0 border text-dark d-flex justify-content-between align-items-center rounded-3 px-3 py-2 shadow-sm" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
-                                    <span class="fw-bold"><i class="bi bi-list-ul me-2 text-primary"></i> รายการเป้าหมาย (${visibleMachines} รายการ)</span>
-                                    <i class="bi bi-chevron-expand text-muted"></i>
-                                </button>
-                                <div class="collapse mt-2" id="${collapseId}">
-                                    ${machineListHtml}
-                                </div>
-                            `;
-                        } else {
-                            areaSelectionHtml += `<div class="text-muted small ms-2 my-2 fw-medium"><i class="bi bi-check2-all text-success me-1"></i>ตรวจสอบครบทุกเครื่องแล้ว</div>`;
-                        }
-                    } else {
-                         areaSelectionHtml += `<div class="text-muted small ms-2 my-2 fst-italic">ไม่มีเครื่องจักรในพื้นที่นี้</div>`;
+                    }
+
+                    if (visibleMachines > 0) {
+                        const collapseId = `collapse_loc_${loc.id}`;
+                        // Collapse button covers area + machines together.
+                        areaSelectionHtml += `
+                            <button class="btn btn-sm btn-light w-100 mb-0 border text-dark d-flex justify-content-between align-items-center rounded-3 px-3 py-2 shadow-sm" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
+                                <span class="fw-bold"><i class="bi bi-list-ul me-2 text-primary"></i> รายการเป้าหมาย (${visibleMachines} รายการ)</span>
+                                <i class="bi bi-chevron-expand text-muted"></i>
+                            </button>
+                            <div class="collapse mt-2" id="${collapseId}">
+                                ${machineListHtml}
+                            </div>
+                        `;
+                    } else if (hasMachines) {
+                        areaSelectionHtml += `<div class="text-muted small ms-2 my-2 fw-medium"><i class="bi bi-check2-all text-success me-1"></i>ตรวจสอบครบทุกเครื่องแล้ว</div>`;
+                    } else if (!loc.has_area_checkpoints) {
+                        areaSelectionHtml += `<div class="text-muted small ms-2 my-2 fst-italic">ไม่มีเครื่องจักรในพื้นที่นี้</div>`;
                     }
                 }
 

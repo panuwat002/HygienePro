@@ -616,16 +616,29 @@ class InspectionController extends Controller
                     $loc->inspected_count = count(array_intersect($locEmployees, $inspectedEmployeeIds));
                     $loc->has_checkpoints = true;
                 } else {
-                    // For Area
+                    // For Area / Machine — both share the location list
                     $loc->inspected_count = in_array($loc->id, $inspectedLocationIds) ? 1 : 0;
                     $loc->is_no_production = in_array($loc->id, $noProductionLocationIds);
-                    
-                    // Check area checkpoints
-                    $loc->has_checkpoints = false;
-                    if ($type === 'area') {
-                         $loc->has_checkpoints = $loc->checkpoints()->where('type', 'area')->where('is_active', true)->exists();
-                    }
-                    
+
+                    // Legacy field: only area mode used to render the area checkbox based on
+                    // this. Machine mode kept it false because it didn't surface area targets
+                    // at all. Now that machine mode also offers a "ตรวจพื้นที่ทั่วไป" checkbox,
+                    // has_area_checkpoints is the canonical signal for BOTH modes.
+                    $loc->has_area_checkpoints = $loc->checkpoints()
+                        ->where('type', 'area')
+                        ->where('is_active', true)
+                        ->exists();
+                    // area_inspected / area_no_production mirror the two flags above but with
+                    // names the machine-mode selection UI can key on without a mode-check.
+                    $loc->area_inspected = $loc->inspected_count > 0;
+                    $loc->area_no_production = $loc->is_no_production;
+
+                    // Preserve the old field so any code path still reading has_checkpoints
+                    // in area mode keeps working.
+                    $loc->has_checkpoints = ($type === 'area')
+                        ? $loc->has_area_checkpoints
+                        : false;
+
                     // Machine inspection status
                     if ($loc->machines) {
                         foreach ($loc->machines as $m) {
@@ -698,26 +711,42 @@ class InspectionController extends Controller
             // For Area/Machine, redirect to bulk checklist with targets
             $targetList = is_array($request->targets) ? $request->targets : [];
 
-            // If resuming and no targets selected, load targets that were already inspected in this session
+            // Resume path: the Resume/"กลับเข้าสู่การตรวจ" button on the dashboard submits
+            // only department_id — no targets — because it doesn't re-render the checkbox
+            // grid. Two things used to break here:
+            //   1. The code tried to recover targets from ->pluck(location_id/machine_id)
+            //      of existing logs, so a resume BEFORE any log was saved (fresh session,
+            //      just clicked Start then closed the tab) yielded no targets and errored
+            //      out with "กรุณาเลือกพื้นที่หรือเครื่องจักร...".
+            //   2. Even when logs existed, that recovery only listed targets the inspector
+            //      HAD ALREADY inspected — the un-inspected remaining ones (the whole point
+            //      of resuming) were lost.
+            // Fix: rebuild the target list from the same full-scope query the dashboard
+            // uses for its "remaining count", so Resume behaves like clicking "เลือกทั้งหมด"
+            // then Start. The bulk view will still mark inspected rows as done.
             if (empty($targetList) && $session) {
-                 // Query existing logs for this session to get locations and machines
-                 $existingLogs = \App\Models\InspectionLog::where('session_id', $session->id)->get();
-                 
-                 $locIds = $existingLogs->pluck('location_id')->filter()->unique();
-                 foreach ($locIds as $lid) {
-                     $targetList[] = "loc:{$lid}";
-                 }
-                 
-                 $machineIds = $existingLogs->pluck('machine_id')->filter()->unique();
-                 foreach ($machineIds as $mid) {
-                     $targetList[] = "machine:{$mid}";
-                 }
+                if ($type === 'machine') {
+                    $machineIds = \App\Models\Machine::where('is_active', true)
+                        ->whereHas('checkpoints', function ($q) {
+                            $q->where('is_active', true);
+                        })
+                        ->pluck('id');
+                    foreach ($machineIds as $mid) {
+                        $targetList[] = "machine:{$mid}";
+                    }
+                } elseif ($type === 'area') {
+                    $locIds = \App\Models\Location::whereHas('checkpoints', function ($q) {
+                        $q->where('type', 'area')->where('is_active', true);
+                    })->pluck('id');
+                    foreach ($locIds as $lid) {
+                        $targetList[] = "loc:{$lid}";
+                    }
+                }
 
-                 // If still empty (e.g., started session but no logs saved), return error
-                 if (empty($targetList)) {
-                     return redirect()->route('inspection.dashboard', $type)
-                         ->with('error', 'กรุณาเลือกพื้นที่หรือเครื่องจักรที่ต้องการตรวจบนหน้า Dashboard ก่อนเริ่ม (Please select targets)');
-                 }
+                if (empty($targetList)) {
+                    return redirect()->route('inspection.dashboard', $type)
+                        ->with('error', 'ไม่พบพื้นที่หรือเครื่องจักรที่มีจุดตรวจในระบบ กรุณาตั้งค่า Master Data ก่อน');
+                }
             }
 
             $targets = implode(',', $targetList);
