@@ -256,32 +256,64 @@
                                         <span class="badge bg-warning text-dark rounded-pill" style="font-size:0.7rem;"><i class="bi bi-slash-circle me-1"></i>N/A {{ $groupNoProd }}</span>
                                     @endif
                                 </div>
-                                {{-- Fix #6: per-target icon strip. One chip per target so an inspector
-                                     can spot which specific machine failed / is idle at a glance.
-                                     Aggregated numbers above tell the count; this row tells the identity. --}}
-                                @if($group->count() > 1)
-                                <div class="target-status-strip d-flex flex-wrap gap-1 align-items-center mt-2" role="group" aria-label="สถานะรายเป้าหมาย">
+                                {{-- Adaptive target strip (revised Fix #6):
+                                     - Empty / all-pass / all-no-prod: hide entirely — aggregated counts already say it all.
+                                     - Any fail present: render only the fail chips (name-bearing, clickable) so the
+                                       inspector can jump straight to the problem.
+                                     - Partial progress (no fail): render a compact icon-only dot strip so the
+                                       inspector sees which specific targets are done vs. waiting, without a wall
+                                       of grey pills eating vertical space. --}}
+                                @php
+                                    $hideStrip = $groupSaved === 0
+                                        || ($groupSaved === $groupTotal && $groupFailed === 0);
+                                    $stripMode = null;
+                                    if (!$hideStrip) {
+                                        $stripMode = $groupFailed > 0 ? 'fail' : 'progress';
+                                    }
+                                @endphp
+                                @if($stripMode === 'fail')
+                                <div class="target-fail-strip d-flex flex-wrap gap-1 align-items-center mt-2"
+                                     role="group" aria-label="รายการที่ไม่ผ่าน">
+                                    @foreach($sortedGroup->filter(fn($t) => $t->existing_logs->contains('result', 'fail')) as $tgt)
+                                        @php
+                                            $accordionId = 'collapse_' . str_replace(':', '_', "{$tgt->target_type}:{$tgt->target_id}");
+                                        @endphp
+                                        <a href="#{{ $accordionId }}"
+                                           class="badge bg-danger text-white rounded-pill text-decoration-none d-inline-flex align-items-center gap-1"
+                                           style="font-size:0.7rem; padding:0.3rem 0.65rem;"
+                                           data-bs-toggle="collapse"
+                                           data-bs-target="#{{ $accordionId }}"
+                                           aria-expanded="false"
+                                           aria-controls="{{ $accordionId }}"
+                                           title="ไม่ผ่าน: {{ $tgt->name }} — คลิกเพื่อขยายรายละเอียด">
+                                            <i class="bi bi-x-lg"></i>
+                                            <span>{{ $tgt->name }}</span>
+                                        </a>
+                                    @endforeach
+                                </div>
+                                @elseif($stripMode === 'progress')
+                                <div class="target-dot-strip d-flex flex-wrap gap-1 align-items-center mt-2"
+                                     role="group" aria-label="สถานะรายเป้าหมาย">
                                     @foreach($sortedGroup as $tgt)
                                         @php
-                                            $tgtName = $tgt->name;
-                                            $tgtFailed  = $tgt->existing_logs->contains('result', 'fail');
-                                            $tgtNoProd  = !$tgtFailed && $tgt->existing_logs->contains('result', 'no_production');
+                                            $tgtNoProd  = $tgt->existing_logs->contains('result', 'no_production');
                                             $tgtWaiting = count($tgt->existing_logs) === 0;
-                                            $tgtPass    = !$tgtFailed && !$tgtNoProd && !$tgtWaiting;
+                                            $tgtPass    = !$tgtNoProd && !$tgtWaiting;
 
-                                            [$chipClass, $chipIcon, $chipTitle] = match(true) {
-                                                $tgtFailed  => ['bg-danger text-white',           'bi-x-lg',        "ไม่ผ่าน: {$tgtName}"],
-                                                $tgtWaiting => ['bg-secondary bg-opacity-25 text-secondary', 'bi-hourglass', "รอตรวจ: {$tgtName}"],
-                                                $tgtNoProd  => ['bg-warning text-dark',           'bi-slash-circle', "ไม่มีผลิต: {$tgtName}"],
-                                                default     => ['bg-success bg-opacity-25 text-success',    'bi-check-lg',   "ผ่าน: {$tgtName}"],
+                                            [$dotClass, $dotIcon, $dotTitle] = match(true) {
+                                                $tgtWaiting => ['text-secondary opacity-50', 'bi-circle',       "รอตรวจ: {$tgt->name}"],
+                                                $tgtNoProd  => ['text-warning',              'bi-slash-circle', "ไม่มีผลิต: {$tgt->name}"],
+                                                default     => ['text-success',              'bi-check-circle-fill', "ผ่าน: {$tgt->name}"],
                                             };
+                                            $dotAccordionId = 'collapse_' . str_replace(':', '_', "{$tgt->target_type}:{$tgt->target_id}");
                                         @endphp
-                                        <span class="badge rounded-pill {{ $chipClass }} d-inline-flex align-items-center gap-1"
-                                              style="font-size:0.65rem; padding:0.25rem 0.55rem; max-width: 10rem;"
-                                              title="{{ $chipTitle }}" data-bs-toggle="tooltip">
-                                            <i class="bi {{ $chipIcon }}"></i>
-                                            <span class="text-truncate" style="max-width: 6.5rem;">{{ $tgtName }}</span>
-                                        </span>
+                                        <a href="#{{ $dotAccordionId }}"
+                                           class="target-dot {{ $dotClass }} text-decoration-none"
+                                           style="font-size:0.85rem; line-height:1;"
+                                           data-bs-toggle="tooltip"
+                                           title="{{ $dotTitle }}">
+                                            <i class="bi {{ $dotIcon }}"></i>
+                                        </a>
                                     @endforeach
                                 </div>
                                 @endif
