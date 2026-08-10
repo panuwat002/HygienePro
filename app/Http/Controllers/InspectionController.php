@@ -45,8 +45,37 @@ class InspectionController extends Controller
 
     public function home()
     {
+        // Diagnostic instrumentation for the /dashboard slowness report.
+        // Turn on by setting DASHBOARD_DEBUG_QUERIES=true in .env. When enabled
+        // this logs every SQL query fired during home() with its wall-clock time
+        // plus a checkpoint per section to storage/logs/dashboard-debug.log so
+        // we can see WHICH block is slow before proposing a fix. Zero cost when
+        // the flag is off (env() read + one boolean check).
+        $debug = env('DASHBOARD_DEBUG_QUERIES', false);
+        $debugChannel = null;
+        $debugStart = 0.0;
+        $debugMark = null;
+        if ($debug) {
+            $debugStart = microtime(true);
+            $debugChannel = \Illuminate\Support\Facades\Log::build([
+                'driver' => 'single',
+                'path' => storage_path('logs/dashboard-debug.log'),
+            ]);
+            $debugChannel->info('--- dashboard render start ---', ['user_id' => Auth::id()]);
+            \Illuminate\Support\Facades\DB::listen(function ($q) use ($debugChannel) {
+                $debugChannel->info(sprintf('[%.1fms] %s', $q->time, $q->sql), [
+                    'bindings' => $q->bindings,
+                ]);
+            });
+            $debugMark = function (string $label) use ($debugChannel, &$debugStart) {
+                $elapsed = (microtime(true) - $debugStart) * 1000;
+                $debugChannel->info(sprintf('[+%.0fms] checkpoint: %s', $elapsed, $label));
+            };
+        }
+
         // Opportunistically auto-close stale sessions on dashboard load (throttled, non-blocking).
         $this->autoCloseHeartbeat();
+        if ($debugMark) $debugMark('after autoCloseHeartbeat');
 
         $today = now()->toDateString();
         $user = Auth::user();
@@ -83,6 +112,7 @@ class InspectionController extends Controller
 
         $row = (clone $todayBase)->selectRaw("COUNT(DISTINCT {$entityExpr}) as cnt")->first();
         $inspectionsToday = $row ? (int) $row->cnt : 0;
+        if ($debugMark) $debugMark('§1 inspectionsToday');
 
         // 2. Pending Verification (unverified logs have NULL verification_status)
         $pendingBase = InspectionLog::whereNull('verification_status')
@@ -90,17 +120,20 @@ class InspectionController extends Controller
         $applyScope($pendingBase);
         $row = $pendingBase->selectRaw("COUNT(DISTINCT {$entityExpr}) as cnt")->first();
         $pendingVerificationCount = $row ? (int) $row->cnt : 0;
+        if ($debugMark) $debugMark('§2 pendingVerification');
 
         // 3. Outstanding Re-cleans
         $recleanBase = InspectionLog::where('verification_status', 'reclean');
         $applyScope($recleanBase);
         $row = $recleanBase->selectRaw("COUNT(DISTINCT {$entityExpr}) as cnt")->first();
         $recleanCount = $row ? (int) $row->cnt : 0;
+        if ($debugMark) $debugMark('§3 reclean');
 
         // 4. Daily Pass Rate (DB-level counts)
         $totalPass = (clone $todayBase)->where('result', 'pass')->count();
         $totalFail = (clone $todayBase)->where('result', 'fail')->count();
         $passRate = ($totalPass + $totalFail) > 0 ? round(($totalPass / ($totalPass + $totalFail)) * 100) : 100;
+        if ($debugMark) $debugMark('§4 passRate');
 
         // 5. Recent Activity
         $recentQuery = InspectionLog::with(['employee', 'location', 'machine', 'checkpoint', 'session.inspector'])
@@ -113,6 +146,7 @@ class InspectionController extends Controller
                  return $log->session_id . '-' . ($log->employee_id ?? $log->machine_id ?? $log->location_id);
             })
             ->take(5);
+        if ($debugMark) $debugMark('§5 recentLogs');
 
         // 6. CAR Statistics (Executive View)
         $startOfMonth = now()->startOfMonth();
@@ -145,6 +179,7 @@ class InspectionController extends Controller
         // AI Tag Insights
         // Pluck tags, flatten them to a single list, remove empties, count occurrences, and get top 5
         $aiTagCounts = $carsThisMonth->pluck('ai_tags')->flatten()->filter()->countBy()->sortDesc()->take(5);
+        if ($debugMark) $debugMark('§6 CAR stats (loaded ' . $carsThisMonth->count() . ' CARs)');
 
         // 7. Today's Scheduled Inspections
         $scheduleDeptId = $user->isAdmin() || $user->hasGlobalVisibility() ? null : $user->department_id;
@@ -154,6 +189,7 @@ class InspectionController extends Controller
             $todaysSchedules->load('department');
             $scheduledTasks = $this->scheduleService->getComplianceStatus($todaysSchedules, $today);
         }
+        if ($debugMark) $debugMark('§7 scheduledTasks');
 
         // 8. Active Sessions (For Admins)
         $activeSessions = collect();
@@ -164,6 +200,7 @@ class InspectionController extends Controller
                 ->orderBy('created_at', 'desc')
                 ->get();
         }
+        if ($debugMark) $debugMark('§8 activeSessions');
 
         // 9. Today's Random Audits (For Supervisors/Managers)
         $todayAudits = collect();
@@ -178,6 +215,11 @@ class InspectionController extends Controller
             }
             
             $todayAudits = $auditQuery->get();
+        }
+        if ($debugMark) $debugMark('§9 todayAudits');
+        if ($debugChannel) {
+            $total = (microtime(true) - $debugStart) * 1000;
+            $debugChannel->info(sprintf('--- dashboard render end: %.0fms total ---', $total));
         }
 
         return view('dashboard', compact(
