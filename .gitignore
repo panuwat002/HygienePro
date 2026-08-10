@@ -22,3 +22,38 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Scratch scripts at repo root — kept out of git so `git status` stays actionable.
+# One-off debug/fix/import helpers accumulate here during incident response;
+# put them under scripts/ or delete when done, don't commit from the root.
+/check_*.php
+/clear_*.php
+/debug_*.php
+/dump_db.php
+/fix_*.php
+/generate_*.php
+/get_checkpoints.php
+/pdo_test*.php
+/test_*.php
+/wipe_db.php
+
+# PRD / product drafts and Word autosave lock files.
+/HygienePro_PRD_*.doc
+/HygienePro_PRD_*.docx
+/HygienePro_PRD_*.csv
+/docs/~$*
+/docs/Document_Request_*.docx
+/docs/Document_Request_*.doc
+
+# Session-local Claude Code metadata.
+/.agents/
+
+# Sidecar directories that don't belong in the app repo.
+/ai_service/
+/scripts/
+/storage/fonts/
+/public/storage_backup/
+/public/test-render.html
+
+# Typo-name artefact leftover from a broken template render.
+/dept_name})
