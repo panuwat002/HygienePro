@@ -399,7 +399,16 @@
                         </div>
 
                         <div class="collapse" id="loc_container_{{ $locationId }}">
-                        @foreach($sortedGroup as $data)
+                        @php
+                            // Pin the room's own area target to the top of the group so the
+                            // "การตรวจพื้นที่ทำงาน" card is always visible above the machine list,
+                            // regardless of the fail/waiting/no-prod sort key. Machines keep the
+                            // original ordering underneath.
+                            $areaFirstSortedGroup = $sortedGroup->sortBy(fn($d) => $d->target_type === 'loc' ? 0 : 1)->values();
+                            $groupHasAreaCard = $areaFirstSortedGroup->contains(fn($d) => $d->target_type === 'loc');
+                            $renderedFirstMachineHeader = false;
+                        @endphp
+                        @foreach($areaFirstSortedGroup as $data)
                         @php
                             $targetKey = "{$data->target_type}:{$data->target_id}";
                             $targetUniqueId = str_replace(':', '_', $targetKey);
@@ -409,21 +418,53 @@
                             }
                             $hasSaved = count($data->existing_logs) > 0;
                         @endphp
+
+                        @if($groupHasAreaCard && $data->target_type === 'machine' && !$renderedFirstMachineHeader)
+                            <div class="d-flex align-items-center gap-2 mt-4 mb-2 mx-2 mx-md-0">
+                                <div class="flex-shrink-0 text-primary small fw-bold text-uppercase" style="letter-spacing: 0.5px;">
+                                    <i class="bi bi-signpost-split me-1"></i>ส่วนที่ 2: การตรวจเครื่องจักร ({{ $areaFirstSortedGroup->where('target_type', 'machine')->count() }})
+                                </div>
+                                <hr class="flex-grow-1 my-0" style="border-color: rgba(13,110,253,0.2);">
+                            </div>
+                            @php $renderedFirstMachineHeader = true; @endphp
+                        @endif
+
                         
+                        @php
+                            // Distinct styling for the area card so it can't be mistaken for a machine.
+                            $isAreaCard = $data->target_type === 'loc';
+                            $cardWrapClass = $isAreaCard
+                                ? 'accordion mb-3 mx-2 mx-md-0 premium-card rounded-4 area-target-card border-start border-4 border-success'
+                                : 'accordion mb-3 mx-2 mx-md-0 premium-card rounded-4 bg-white';
+                            $iconWrapClass = $isAreaCard
+                                ? 'bg-success bg-opacity-10 text-success rounded-circle p-2 me-3 d-flex align-items-center justify-content-center flex-shrink-0'
+                                : 'bg-primary bg-opacity-10 text-primary rounded-circle p-2 me-3 d-flex align-items-center justify-content-center flex-shrink-0';
+                            $iconWrapStyle = $isAreaCard ? 'width: 56px; height: 56px;' : 'width: 48px; height: 48px;';
+                            $iconName = $isAreaCard ? 'bi-building-check' : 'bi-gear-wide-connected';
+                            $iconSize = $isAreaCard ? 'fs-3' : 'fs-4';
+                            $cardTitle = $isAreaCard ? 'การตรวจพื้นที่ทำงาน' : $data->name;
+                            $cardSubtext = $isAreaCard
+                                ? 'พื้น/ผนัง/เพดาน/สุขอนามัยของ ' . ($data->location->location_name ?? '')
+                                : $data->subtext;
+                        @endphp
                         <form class="target-form" data-status="{{ $hasSaved ? 'saved' : 'pending' }}" action="{{ route('inspection.area.store', ['session' => $session->id, 'location' => $data->location->id ?? 0]) }}" method="POST" enctype="multipart/form-data">
                             @csrf
-                            <div class="accordion mb-3 mx-2 mx-md-0 premium-card rounded-4 bg-white" id="accordion_{{ $targetUniqueId }}">
+                            <div class="{{ $cardWrapClass }} bg-white" id="accordion_{{ $targetUniqueId }}">
                             <div class="accordion-item border-0 rounded-4 overflow-hidden" data-saved="{{ $hasSaved ? '1' : '0' }}" data-has-fail="{{ ($hasSaved && $data->existing_logs->contains('result', 'fail')) ? '1' : '0' }}">
                                 <h2 class="accordion-header" id="heading_{{ $targetUniqueId }}">
-                                    <!-- Remove loop->first show/collapse, let JS handle it -->
+                                    @if($isAreaCard)
+                                        <div class="px-3 pt-2 pb-0 small fw-bold text-success text-uppercase" style="letter-spacing: 0.5px;">
+                                            <i class="bi bi-signpost-split me-1"></i>ส่วนที่ 1: การตรวจพื้นที่
+                                        </div>
+                                    @endif
                                     <button class="accordion-button collapsed bg-white p-3 p-md-4" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_{{ $targetUniqueId }}" aria-expanded="false" aria-controls="collapse_{{ $targetUniqueId }}">
                                         <div class="d-flex align-items-center w-100 pe-2">
-                                            <div class="bg-primary bg-opacity-10 text-primary rounded-circle p-2 me-3 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 48px; height: 48px;">
-                                                <i class="bi bi-{{ $data->target_type === 'machine' ? 'gear-wide-connected' : 'layers' }} fs-4"></i>
+                                            <div class="{{ $iconWrapClass }}" style="{{ $iconWrapStyle }}">
+                                                <i class="bi {{ $iconName }} {{ $iconSize }}"></i>
                                             </div>
                                             <div class="flex-grow-1 min-w-0">
-                                                <h5 class="fw-bold mb-0 text-dark text-truncate">{{ $data->name }}</h5>
-                                                <span class="text-muted small text-truncate d-block"><i class="bi bi-geo-alt me-1"></i>{{ $data->subtext }}</span>
+                                                <h5 class="fw-bold mb-0 text-dark text-truncate">{{ $cardTitle }}</h5>
+                                                <span class="text-muted small text-truncate d-block"><i class="bi bi-geo-alt me-1"></i>{{ $cardSubtext }}</span>
                                             </div>
                                             <div class="text-end ms-auto mt-0 ps-2">
                                                 @if($hasSaved)

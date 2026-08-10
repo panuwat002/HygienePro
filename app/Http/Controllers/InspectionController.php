@@ -749,6 +749,38 @@ class InspectionController extends Controller
                 }
             }
 
+            // Auto-include area target: for every Location that has at least one machine
+            // target AND has area-type checkpoints of its own, add its loc:X target so the
+            // room's own inspection (floors, walls, ceilings) can't be silently skipped.
+            // Idempotent — skips if loc:X is already in the list. Silent no-op when the
+            // Location has no area checkpoints, so this doesn't clutter machine-only rooms.
+            if ($type === 'machine' && !empty($targetList)) {
+                $selectedLocationIds = collect($targetList)
+                    ->filter(fn ($t) => str_starts_with($t, 'machine:'))
+                    ->map(function ($t) {
+                        $mid = explode(':', $t)[1] ?? null;
+                        return $mid ? \App\Models\Machine::whereKey($mid)->value('location_id') : null;
+                    })
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                if ($selectedLocationIds->isNotEmpty()) {
+                    $locsWithArea = \App\Models\Location::whereIn('id', $selectedLocationIds)
+                        ->whereHas('checkpoints', function ($q) {
+                            $q->where('type', 'area')->where('is_active', true);
+                        })
+                        ->pluck('id');
+
+                    foreach ($locsWithArea as $lid) {
+                        $key = "loc:{$lid}";
+                        if (!in_array($key, $targetList, true)) {
+                            $targetList[] = $key;
+                        }
+                    }
+                }
+            }
+
             $targets = implode(',', $targetList);
 
             return redirect()->route('inspection.area.bulk', [
