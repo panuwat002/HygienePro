@@ -53,7 +53,7 @@
 <body>
     <div class="header">
         <h1>รายงานสรุปสถิติการตรวจสอบสุขลักษณะ (Monthly Summary Report)</h1>
-        <p>ประจำเดือน: {{ \Carbon\Carbon::parse($month . '-01')->translatedFormat('F Y') }} | เป้าหมาย: {{ $targetType == 'person' ? 'บุคลากร' : ($targetType == 'machine' ? 'เครื่องจักร' : 'พื้นที่') }}</p>
+        <p>ประจำเดือน: {{ \Carbon\Carbon::parse($month . '-01')->translatedFormat('F Y') }} | เป้าหมาย: {{ $targetType == 'person' ? 'พนักงาน' : 'เครื่องจักร / พื้นที่' }}</p>
     </div>
 
     <div class="score-box">
@@ -105,7 +105,7 @@
                 <thead>
                     <tr>
                         <th style="width: 5%;">ลำดับ</th>
-                        <th style="width: 50%;">ชื่อเป้าหมาย ({{ $targetType == 'person' ? 'บุคลากร' : ($targetType == 'machine' ? 'เครื่องจักร' : 'พื้นที่') }})</th>
+                        <th style="width: 50%;">ชื่อเป้าหมาย ({{ $targetType == 'person' ? 'พนักงาน' : 'เครื่องจักร / พื้นที่' }})</th>
                         <th style="width: 15%; text-align: center;">จำนวนไม่ผ่าน (ครั้ง)</th>
                         <th style="width: 30%;">สัดส่วนความถี่</th>
                     </tr>

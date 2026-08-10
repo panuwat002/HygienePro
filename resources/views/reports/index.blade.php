@@ -156,9 +156,8 @@
                                     <label class="form-label small text-muted">ประเภท</label>
                                     <select name="report_type" id="report_type" class="form-select form-select-sm">
                                         <option value="all">ทั้งหมด</option>
-                                        <option value="person">รายคน</option>
-                                        <option value="machine">เครื่องจักร</option>
-                                        <option value="area">พื้นที่</option>
+                                        <option value="person">พนักงาน</option>
+                                        <option value="machine">เครื่องจักร / พื้นที่</option>
                                     </select>
                                 </div>
                             </div>
@@ -239,9 +238,8 @@
                                 <div class="col-6">
                                     <label class="form-label small text-muted">เป้าหมาย</label>
                                     <select name="target_type" class="form-select form-select-sm">
-                                        <option value="person">รายคน</option>
-                                        <option value="machine">เครื่องจักร</option>
-                                        <option value="area">พื้นที่</option>
+                                        <option value="person">พนักงาน</option>
+                                        <option value="machine">เครื่องจักร / พื้นที่</option>
                                     </select>
                                 </div>
                                 <div class="col-6">

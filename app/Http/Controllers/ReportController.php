@@ -185,23 +185,28 @@ class ReportController extends Controller
             $query->where('shift', $shift);
         }
 
-        // Filter by Report Type
+        // Filter by Report Type.
+        // The dropdown was consolidated to 3 options — ทั้งหมด / พนักงาน /
+        // "เครื่องจักร / พื้นที่" — because the app only creates sessions of type
+        // 'personnel' or 'machine' now; legacy 'area' sessions still exist in old
+        // data and should be included under the merged bucket. Old bookmarks that
+        // pass ?report_type=area map to the same bucket (whereIn covers it too).
         $reportType = $request->input('report_type', 'all');
         if ($reportType && $reportType !== 'all') {
             $typeMap = [
-                'person' => 'personnel',
-                'area' => 'area',
-                'machine' => 'machine'
+                'person'  => ['personnel'],
+                'machine' => ['machine', 'area'],
+                'area'    => ['machine', 'area'], // legacy alias for old saved URLs
             ];
-            
+
             if (isset($typeMap[$reportType])) {
-                $query->where('type', $typeMap[$reportType]);
+                $query->whereIn('type', $typeMap[$reportType]);
             }
         }
-        
-        // Filter by Machine ID if type is machine
+
+        // Filter by Machine ID if the merged machine/area bucket is picked.
         $machineId = $request->input('machine_id');
-        if ($reportType === 'machine' && $machineId) {
+        if (in_array($reportType, ['machine', 'area'], true) && $machineId) {
              $query->whereHas('logs', function($q) use ($machineId) {
                  $q->where('machine_id', $machineId);
              });
@@ -569,9 +574,19 @@ class ReportController extends Controller
             $topDefects[$defect->title] = $defect->total;
         }
 
+        // Read the target-type selection from the form. The value used to be
+        // hard-coded to 'machine', which meant the PDF header always said
+        // "เครื่องจักร" regardless of what the user picked. Now honour the
+        // selection so the "พนักงาน" report actually says พนักงาน. Any legacy
+        // 'area' value maps to the merged machine/area bucket.
+        $targetType = $request->input('target_type', 'machine');
+        if ($targetType === 'area') {
+            $targetType = 'machine';
+        }
+
         $data = [
             'month' => $month,
-            'targetType' => 'machine',
+            'targetType' => $targetType,
             'healthScore' => $healthScore,
             'totalInspections' => $totalInspections,
             'totalFails' => $totalFails,

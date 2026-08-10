@@ -41,7 +41,7 @@
 <body>
     <div class="header">
         <h1>ตารางรายงานผลการตรวจสอบประจำเดือน (Monthly Inspection Matrix)</h1>
-        <p>ประจำเดือน: {{ \Carbon\Carbon::parse($month . '-01')->translatedFormat('F Y') }} | เป้าหมาย: {{ $targetType == 'person' ? 'บุคลากร' : ($targetType == 'machine' ? 'เครื่องจักร' : 'พื้นที่') }}</p>
+        <p>ประจำเดือน: {{ \Carbon\Carbon::parse($month . '-01')->translatedFormat('F Y') }} | เป้าหมาย: {{ $targetType == 'person' ? 'พนักงาน' : 'เครื่องจักร / พื้นที่' }}</p>
     </div>
 
     @if(count($matrix) > 0)
