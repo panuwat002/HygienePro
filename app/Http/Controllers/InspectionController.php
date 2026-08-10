@@ -159,7 +159,7 @@ class InspectionController extends Controller
         $activeSessions = collect();
         if ($user->isAdmin() || $user->hasGlobalVisibility()) {
             $activeSessions = InspectionSession::with(['inspector', 'department'])
-                ->where('inspection_date', $today)
+                ->whereDate('inspection_date', $today)
                 ->where('status', 'in_progress')
                 ->orderBy('created_at', 'desc')
                 ->get();
@@ -231,7 +231,7 @@ class InspectionController extends Controller
         // Loop Engineering Fix: Cross-Midnight Bug. Hours 0-5 belong to yesterday's shift.
         $today = now()->hour < 6 ? now()->subDay()->toDateString() : now()->toDateString();
         $currentSession = InspectionSession::where('inspector_id', Auth::id())
-            ->where('inspection_date', $today)
+            ->whereDate('inspection_date', $today)
             ->where('type', $type)
             // เงื่อนไขพิเศษ: ไม่กรองตาม $currentAutoShift เพื่อให้กะเช้าที่ยังตรวจไม่เสร็จ โชว์ขึ้นมาให้ทำต่อได้
             // ->where('shift', $currentAutoShift) 
@@ -339,7 +339,7 @@ class InspectionController extends Controller
         // Fetch active sessions today
         // TEMPORARY: Commented out the inspector_id filter so you can see it with your own session!
         $activeOtherSessions = InspectionSession::with(['inspector', 'department'])
-            ->where('inspection_date', $today)
+            ->whereDate('inspection_date', $today)
             ->where('type', $type)
             ->where('status', 'in_progress')
             // ->where('inspector_id', '!=', Auth::id()) 
@@ -391,7 +391,7 @@ class InspectionController extends Controller
                 }]);
 
                 $session = InspectionSession::where('department_id', $deptModel->id)
-                            ->where('inspection_date', $today)
+                            ->whereDate('inspection_date', $today)
                             ->where('shift', $shift)
                             ->where('type', $type)
                             ->latest('id')
@@ -406,7 +406,7 @@ class InspectionController extends Controller
                 // Find ANY active session for this inspector today matching type/shift
                 // We shouldn't restrict by department if we are doing a global inspection
                 $session = InspectionSession::where('inspector_id', Auth::id())
-                            ->where('inspection_date', $today)
+                            ->whereDate('inspection_date', $today)
                             ->where('shift', $shift)
                             ->where('type', $type)
                             ->latest('id')
@@ -453,7 +453,7 @@ class InspectionController extends Controller
 
                     // Get all today's sessions for this department
                     $allTodaySessions = InspectionSession::where('department_id', $deptModel->id)
-                                        ->where('inspection_date', $today)
+                                        ->whereDate('inspection_date', $today)
                                         ->where('type', 'personnel')
                                         ->get();
 
@@ -858,7 +858,7 @@ class InspectionController extends Controller
 
         // Get inspected TODAY across ALL sessions for this department
         $todaySessions = InspectionSession::where('department_id', $session->department_id)
-            ->where('inspection_date', $session->inspection_date)
+            ->whereDate('inspection_date', $session->inspection_date)
             ->where('type', 'personnel')
             ->pluck('id')
             ->toArray();

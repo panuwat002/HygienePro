@@ -48,8 +48,12 @@ class AreaInspectionController extends Controller
         } else {
             $shift = $this->determineShift();
             $today = now()->toDateString();
+            // Fix #12: The 'inspection_date' column has a 'date' cast on the model, so
+            // Laravel writes it as 'Y-m-d 00:00:00' text on SQLite. A raw ->where()
+            // against a 'Y-m-d' string then misses those rows. whereDate() coerces
+            // both sides to the date-only form and works in every driver we target.
             $session = InspectionSession::where('department_id', $department->id)
-                        ->where('inspection_date', $today)
+                        ->whereDate('inspection_date', $today)
                         ->where('shift', $shift)
                         ->where('type', 'area')
                         ->latest('id')
@@ -515,12 +519,16 @@ class AreaInspectionController extends Controller
         }
     }
 
-    private function determineShift()
+    /**
+     * Fix #13: Delegate to Shift::detectCurrent() so this controller and
+     * InspectionController agree on which shift "now" belongs to.
+     * The previous local implementation used hard-coded hour ranges
+     * (6-14 / 14-22 / else), which drifted from the DB-driven definition
+     * once the shifts table was tuned.
+     */
+    private function determineShift(): string
     {
-        $hour = now()->hour;
-        if ($hour >= 6 && $hour < 14) return 'morning';
-        if ($hour >= 14 && $hour < 22) return 'afternoon';
-        return 'night';
+        return \App\Models\Shift::detectCurrent();
     }
 
     /**

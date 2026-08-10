@@ -329,9 +329,39 @@
                                     </button>
                                     @endif
 
+                                    @php
+                                        // Fix #5 UI: "no production, remaining machines only" fits a real case —
+                                        // the room is producing but some machines are idle. Only expose it when
+                                        // there are machine targets AND at least one is still un-inspected, so
+                                        // the button isn't confusing when the group is all-locations or fully done.
+                                        $remainingMachineCount = $group
+                                            ->where('target_type', 'machine')
+                                            ->filter(fn($d) => count($d->existing_logs) === 0)
+                                            ->count();
+                                    @endphp
+                                    @if($machineTargets && $remainingMachineCount > 0)
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-outline-warning fw-bold rounded-pill px-3 dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                            <i class="bi bi-slash-circle me-1"></i> ไม่มีผลิต
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-3">
+                                            <li>
+                                                <a class="dropdown-item text-warning fw-bold py-2" href="#" onclick="event.preventDefault(); event.stopPropagation(); markRoomNoProduction({{ $locationId }}, '{{ addslashes($locName) }}', '{{ $groupTargets }}')">
+                                                    <i class="bi bi-slash-circle me-2"></i> ไม่มีผลิต ทั้งห้อง (เขียนทับข้อมูลเดิม)
+                                                </a>
+                                            </li>
+                                            <li>
+                                                <a class="dropdown-item py-2" href="#" onclick="event.preventDefault(); event.stopPropagation(); markRemainingMachinesNoProduction({{ $locationId }}, '{{ addslashes($locName) }}', '{{ $machineTargets }}', {{ $remainingMachineCount }})">
+                                                    <i class="bi bi-gear-wide-connected me-2 text-secondary"></i> ไม่มีผลิต เฉพาะเครื่องที่เหลือ ({{ $remainingMachineCount }} เครื่อง)
+                                                </a>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    @else
                                     <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3 fw-bold" onclick="markRoomNoProduction({{ $locationId }}, '{{ $locName }}', '{{ $groupTargets }}')">
                                         <i class="bi bi-slash-circle me-1"></i> ไม่มีผลิต
                                     </button>
+                                    @endif
                                 @endif
                             </div>
                         </div>
@@ -946,6 +976,58 @@
                         Swal.fire('ข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง', 'error');
                     });
                 }
+            });
+        }
+
+        // Fix #5 UI: bulk 'no production' for ONLY the machines that still have no log.
+        // Does not touch the location's own area checkpoints or the machines that were
+        // already inspected — non-destructive counterpart to markRoomNoProduction.
+        function markRemainingMachinesNoProduction(locationId, locName, machineTargetsQuery, remainingCount) {
+            Swal.fire({
+                title: 'ไม่มีผลิต — เฉพาะเครื่องที่เหลือ?',
+                html: `ระบบจะทำเครื่องหมาย <b>"ไม่มีผลิต"</b> ให้เฉพาะเครื่องจักรใน <b>${locName}</b> ที่ยังไม่ตรวจ (${remainingCount} เครื่อง)<br><br><small class="text-muted">เครื่องที่ตรวจไปแล้วและจุดตรวจของห้องจะไม่ถูกแตะต้อง</small>`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#ffc107',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: '<i class="bi bi-check-circle"></i> ยืนยัน',
+                cancelButtonText: 'ยกเลิก'
+            }).then((result) => {
+                if (!result.isConfirmed) return;
+
+                Swal.fire({
+                    title: 'กำลังบันทึก...',
+                    allowOutsideClick: false,
+                    didOpen: () => { Swal.showLoading(); }
+                });
+
+                fetch(`{{ url('/inspection/area') }}/{{ $session->id }}/${locationId}/bulk-no-production-remaining`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ targets_query: machineTargetsQuery })
+                })
+                .then(response => response.json().then(data => ({ ok: response.ok, data })))
+                .then(({ ok, data }) => {
+                    if (ok && data.success) {
+                        Swal.fire({
+                            title: 'สำเร็จ!',
+                            text: data.message,
+                            icon: 'success',
+                            confirmButtonText: 'ตกลง',
+                            confirmButtonColor: '#28a745'
+                        }).then(() => window.location.reload());
+                    } else {
+                        Swal.fire('ข้อผิดพลาด', data.message || 'ไม่สามารถบันทึกข้อมูลได้', 'error');
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    Swal.fire('ข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง', 'error');
+                });
             });
         }
 

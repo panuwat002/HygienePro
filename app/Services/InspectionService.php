@@ -26,7 +26,7 @@ class InspectionService
 
         $session = DB::transaction(function () use ($user, $departmentId, $type, $today, $shift, $forceNew) {
             $session = InspectionSession::where('department_id', $departmentId)
-                ->where('inspection_date', $today)
+                ->whereDate('inspection_date', $today)
                 ->where('shift', $shift)
                 ->where('type', $type)
                 ->lockForUpdate()
