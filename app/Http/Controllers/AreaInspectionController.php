@@ -203,8 +203,14 @@ class AreaInspectionController extends Controller
         }
 
         // Anti-Cheat (Speed Trap): Level 1
-        // Check if the same inspector has submitted another area/machine inspection too quickly (< 15 seconds)
-        // Prevent walking past multiple machines and swiping pass rapidly
+        // Reject the submission when the previous per-checkpoint save by the same
+        // inspector landed less than $minSeconds ago — prevents walking past
+        // machines and swiping "pass" without reading. Only applies to the
+        // per-checkpoint path (this method); the bulk-pass / bulk-no-production
+        // endpoints are legitimate one-tap actions and are not throttled here.
+        // The threshold is tunable via INSPECTION_SPEED_TRAP_SECONDS so QA can
+        // relax it if inspectors report false positives from realistic pacing.
+        $minSeconds = (int) env('INSPECTION_SPEED_TRAP_SECONDS', 5);
         $lastLog = \App\Models\InspectionLog::whereHas('session', function($q) use ($session) {
             $q->where('inspector_id', $session->inspector_id);
         })
@@ -214,20 +220,21 @@ class AreaInspectionController extends Controller
         ->latest('created_at')
         ->first();
 
-        if ($lastLog && $lastLog->created_at->diffInSeconds(now()) < 3) {
+        if ($lastLog && $lastLog->created_at->diffInSeconds(now()) < $minSeconds) {
             \Illuminate\Support\Facades\Log::warning('Speed Trap Triggered (Area/Machine)', [
                 'inspector_id' => $session->inspector_id,
                 'session_id' => $session->id,
                 'time_diff' => $lastLog->created_at->diffInSeconds(now()),
+                'threshold' => $minSeconds,
                 'ip' => $request->ip()
             ]);
 
+            $msg = "คุณทำรายการเร็วเกินไป กรุณารอสักครู่ (ประมาณ {$minSeconds} วินาที) แล้วกดบันทึกใหม่อีกครั้ง";
             if ($request->wantsJson()) {
-                return response()->json(['success' => false, 'message' => 'คุณทำรายการเร็วเกินไป กรุณารอสักครู่ (ประมาณ 3 วินาที) แล้วกดบันทึกใหม่อีกครั้ง'], 429);
+                return response()->json(['success' => false, 'message' => $msg], 429);
             }
 
-            return redirect()->back()
-                ->with('error', 'คุณทำรายการเร็วเกินไป กรุณารอสักครู่ (ประมาณ 3 วินาที) แล้วกดบันทึกใหม่อีกครั้ง');
+            return redirect()->back()->with('error', $msg);
         }
 
         // Structure: results[targets][loc:1][cp_id] = pass/fail
@@ -798,6 +805,103 @@ class AreaInspectionController extends Controller
         return response()->json([
             'success' => true,
             'message' => "อัพเดทสถานะผ่านทั้งหมด จำนวน {$logsCreated} จุดตรวจ"
+        ]);
+    }
+
+    /**
+     * Fix #5: Mark "no production" ONLY on machines that have no log yet.
+     *
+     * Complements storeBulkNoProduction (which cascades no_production to the
+     * whole room, overwriting any existing entries). Real production case: the
+     * room is still producing, but one or two machines in it are offline. The
+     * inspector wants to close out just those idle machines without touching
+     * the room's area checkpoints or the running machines' already-saved logs.
+     *
+     * Rules:
+     *   - Skips loc: targets entirely (only touches machine: targets).
+     *   - Skips any machine that already has ANY log in this session.
+     *   - Same reclean-mode + supervisor-review guards as the other bulk endpoints.
+     */
+    public function storeBulkNoProductionRemainingMachines(Request $request, InspectionSession $session, $locationId)
+    {
+        if ($session->inspector_id !== Auth::id() && !Auth::user()->isAdmin()) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized: not session owner'], 403);
+        }
+
+        if ($session->isLocked()) {
+            return response()->json(['success' => false, 'message' => 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้'], 400);
+        }
+
+        if ($session->status === 'completed' && $session->hasPendingRecleans()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'โหมด Re-clean บันทึกได้เฉพาะรายการที่ถูกสั่งแก้เท่านั้น ไม่สามารถทำ Bulk "ไม่มีผลิต" ได้',
+            ], 400);
+        }
+
+        $targetsQuery = $request->input('targets_query');
+        if (!$targetsQuery) {
+            return response()->json(['success' => false, 'message' => 'ไม่พบข้อมูลเป้าหมายการตรวจ'], 400);
+        }
+
+        $targetArray = explode(',', $targetsQuery);
+        $machinesTouched = 0;
+        $logsCreated = 0;
+
+        DB::beginTransaction();
+        try {
+            foreach ($targetArray as $t) {
+                $parts = explode(':', $t);
+                if (count($parts) !== 2) continue;
+                [$type, $id] = $parts;
+
+                if ($type !== 'machine') continue;
+
+                $machine = \App\Models\Machine::find($id);
+                if (!$machine || $machine->location_id != $locationId) continue;
+
+                // Skip machines that already have any log in this session — this
+                // endpoint only closes out the untouched ones.
+                $alreadyTouched = InspectionLog::where('session_id', $session->id)
+                    ->where('machine_id', $machine->id)
+                    ->exists();
+                if ($alreadyTouched) continue;
+
+                $checkpoints = $machine->checkpoints()->where('is_active', true)->get();
+                if ($checkpoints->isEmpty()) continue;
+
+                foreach ($checkpoints as $cp) {
+                    InspectionLog::create([
+                        'session_id' => $session->id,
+                        'location_id' => $machine->location_id,
+                        'machine_id' => $machine->id,
+                        'checkpoint_id' => $cp->id,
+                        'employee_id' => null,
+                        'result' => 'no_production',
+                        'correction_action' => null,
+                        'inspected_at' => now(),
+                        'checkpoint_title_snapshot' => $cp->title,
+                        'dept_snapshot' => $session->department->dept_name,
+                        'verified_at' => null,
+                        'verifier_id' => null,
+                        'verification_status' => null,
+                        'verification_comment' => null,
+                    ]);
+                    $logsCreated++;
+                }
+                $machinesTouched++;
+            }
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+
+        return response()->json([
+            'success' => true,
+            'machines_marked' => $machinesTouched,
+            'logs_created' => $logsCreated,
+            'message' => "บันทึก 'ไม่มีผลิต' ให้เครื่องจักรที่ยังไม่ตรวจ จำนวน {$machinesTouched} เครื่อง ({$logsCreated} จุดตรวจ)",
         ]);
     }
 }

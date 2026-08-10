@@ -53,6 +53,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/inspection/area/{department}/{location}', [App\Http\Controllers\AreaInspectionController::class, 'showChecklist'])->name('inspection.area.checklist');
             Route::post('/inspection/area/{session}/{location}', [App\Http\Controllers\AreaInspectionController::class, 'store'])->name('inspection.area.store');
             Route::post('/inspection/area/{session}/{location}/bulk-no-production', [App\Http\Controllers\AreaInspectionController::class, 'storeBulkNoProduction'])->name('inspection.area.bulk-no-production');
+            Route::post('/inspection/area/{session}/{location}/bulk-no-production-remaining', [App\Http\Controllers\AreaInspectionController::class, 'storeBulkNoProductionRemainingMachines'])->name('inspection.area.bulk-no-production-remaining');
             Route::post('/inspection/area/{session}/{location}/bulk-pass', [App\Http\Controllers\AreaInspectionController::class, 'storeBulkPass'])->name('inspection.area.bulk-pass');
 
             Route::get('/inspection/session/{session}/scan', [InspectionController::class, 'scan'])->name('inspection.scan');

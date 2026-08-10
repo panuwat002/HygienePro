@@ -478,6 +478,81 @@ test('storeBulk rolls back created logs when a later checkpoint fails validation
     expect(InspectionLog::where('session_id', $session->id)->count())->toBe(0);
 });
 
+test('storeBulkNoProductionRemainingMachines only closes machines with no existing log', function () {
+    $location = \App\Models\Location::create(['location_name' => 'Mixed Room']);
+
+    $mCp = Checkpoint::create(['title' => 'gear', 'description' => '', 'is_active' => true, 'type' => 'area']);
+
+    // 3 machines: one already inspected (pass), two untouched.
+    $mDone = \App\Models\Machine::create(['location_id' => $location->id, 'name' => 'Running', 'is_active' => true]);
+    $mIdle1 = \App\Models\Machine::create(['location_id' => $location->id, 'name' => 'Idle 1', 'is_active' => true]);
+    $mIdle2 = \App\Models\Machine::create(['location_id' => $location->id, 'name' => 'Idle 2', 'is_active' => true]);
+    foreach ([$mDone, $mIdle1, $mIdle2] as $m) {
+        $m->checkpoints()->attach($mCp->id);
+    }
+
+    $session = makeAreaSession($this->staff->id, $this->deptPd->id);
+    // The "Running" machine was already inspected in this session.
+    InspectionLog::create([
+        'session_id' => $session->id,
+        'location_id' => $location->id,
+        'machine_id' => $mDone->id,
+        'checkpoint_id' => $mCp->id,
+        'result' => 'pass',
+        'inspected_at' => now(),
+    ]);
+
+    $this->actingAs($this->staff);
+    $targets = "machine:{$mDone->id},machine:{$mIdle1->id},machine:{$mIdle2->id}";
+    $response = $this->postJson(
+        route('inspection.area.bulk-no-production-remaining', ['session' => $session->id, 'location' => $location->id]),
+        ['targets_query' => $targets]
+    );
+
+    $response->assertStatus(200);
+    expect($response->json('machines_marked'))->toBe(2);
+
+    // Running machine untouched
+    expect(InspectionLog::where('session_id', $session->id)
+        ->where('machine_id', $mDone->id)->first()->result)->toBe('pass');
+    // Idle machines now marked no_production
+    expect(InspectionLog::where('session_id', $session->id)
+        ->where('machine_id', $mIdle1->id)->first()->result)->toBe('no_production');
+    expect(InspectionLog::where('session_id', $session->id)
+        ->where('machine_id', $mIdle2->id)->first()->result)->toBe('no_production');
+});
+
+test('storeBulkNoProductionRemainingMachines is blocked in reclean-fix mode', function () {
+    $location = \App\Models\Location::create(['location_name' => 'Reclean Guard Room']);
+    $areaCp = Checkpoint::create(['title' => 'floor', 'description' => '', 'is_active' => true, 'type' => 'area']);
+    $location->checkpoints()->attach($areaCp->id);
+
+    $session = makeAreaSession($this->staff->id, $this->deptPd->id, 'completed');
+    InspectionLog::create([
+        'session_id' => $session->id,
+        'location_id' => $location->id,
+        'checkpoint_id' => $areaCp->id,
+        'result' => 'fail',
+        'correction_action' => 'need clean',
+        'verification_status' => 'reclean',
+        'inspected_at' => now(),
+    ]);
+
+    $mCp = Checkpoint::create(['title' => 'gear', 'description' => '', 'is_active' => true, 'type' => 'area']);
+    $m = \App\Models\Machine::create(['location_id' => $location->id, 'name' => 'M', 'is_active' => true]);
+    $m->checkpoints()->attach($mCp->id);
+
+    $this->actingAs($this->staff);
+    $response = $this->postJson(
+        route('inspection.area.bulk-no-production-remaining', ['session' => $session->id, 'location' => $location->id]),
+        ['targets_query' => "machine:{$m->id}"]
+    );
+
+    $response->assertStatus(400);
+    expect(InspectionLog::where('session_id', $session->id)
+        ->where('machine_id', $m->id)->count())->toBe(0);
+});
+
 test('storeBulk deletes the previous photo file when a log photo is replaced', function () {
     \Illuminate\Support\Facades\Storage::fake('public');
 
