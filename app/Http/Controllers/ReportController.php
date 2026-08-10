@@ -346,7 +346,56 @@ class ReportController extends Controller
                 }
             }
         }
-        
+
+        // Cross-session area log fallback.
+        //
+        // A daily report scoped by session_ids (or by a machine-only session)
+        // used to leave the Location's own area checkpoints as "-" if that
+        // specific session never carried a loc: target — even when a colleague
+        // had inspected the same room's floors/walls/ceiling in a DIFFERENT
+        // session on the same date. Area status is a property of the room,
+        // not of who happened to open it, so we widen the query for area logs
+        // only: still constrained to the same date + department + shift + type
+        // bucket, but not narrowed by session_ids. Any area log already picked
+        // up above is preserved (isset guard), so per-session results still
+        // win over cross-session ones.
+        if (in_array($reportType, ['all', 'area', 'machine'], true)) {
+            $areaFallbackQuery = \App\Models\InspectionLog::with(['checkpoint', 'location', 'correctiveAction'])
+                ->whereHas('session', function ($q) use ($date, $departmentId, $shift, $reportType) {
+                    $q->whereDate('inspection_date', $date);
+                    if ($departmentId) {
+                        $q->where('department_id', $departmentId);
+                    }
+                    if ($shift) {
+                        $q->where('shift', $shift);
+                    }
+                    if ($reportType !== 'all') {
+                        // Merged machine + area session bucket (matches the outer $query above).
+                        $q->whereIn('type', ['machine', 'area']);
+                    }
+                })
+                ->whereNotNull('location_id')
+                ->whereNull('machine_id')
+                ->whereNull('employee_id');
+
+            foreach ($areaFallbackQuery->get() as $log) {
+                $lId = $log->location_id;
+                if (!isset($areaMatrix[$lId])) {
+                    $loc = $log->location;
+                    if (!$loc) continue;
+                    $areaMatrix[$lId] = [
+                        'info' => $loc,
+                        'session' => $log->session,
+                        'results' => []
+                    ];
+                }
+                // Do not clobber a per-session result already captured above.
+                if (!isset($areaMatrix[$lId]['results'][$log->checkpoint_id])) {
+                    $areaMatrix[$lId]['results'][$log->checkpoint_id] = $log;
+                }
+            }
+        }
+
         // Filter out items that only have no_production or absent (no action required)
         $filterNoAction = function($matrix) {
             return array_filter($matrix, function($item) {
