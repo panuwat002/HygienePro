@@ -323,3 +323,46 @@ test('shift card count is not zeroed out when other shift has been fully inspect
     // from every shift unconditionally.
     expect($nightCard['employees_count'])->toBe(1);
 });
+
+test('inspector can finish session even when it contains corrected fail logs', function () {
+    // Regression: finishSession used to block redirect back with error whenever ANY log had
+    // result=fail, even though the workflow expects fails (with correction) to pass through to
+    // Supervisor verification. That block silently swallowed itself on the dashboard (no flash
+    // display), so users experienced "Finish button does nothing".
+    $session = InspectionSession::create([
+        'department_id' => $this->deptPd->id,
+        'inspection_date' => now()->toDateString(),
+        'shift' => 'morning',
+        'inspector_id' => $this->staff->id,
+        'status' => 'in_progress',
+        'type' => 'personnel',
+        'round' => 1,
+    ]);
+
+    InspectionLog::create([
+        'session_id' => $session->id,
+        'checkpoint_id' => $this->checkpoint1->id,
+        'employee_id' => $this->employee->id,
+        'result' => 'pass',
+        'inspected_at' => now(),
+    ]);
+    InspectionLog::create([
+        'session_id' => $session->id,
+        'checkpoint_id' => $this->checkpoint2->id,
+        'employee_id' => $this->employee->id,
+        'result' => 'fail',
+        'correction_action' => 'ถอดเครื่องประดับเรียบร้อย',
+        'photo_path' => 'inspections/fake.jpg',
+        'inspected_at' => now(),
+    ]);
+
+    $this->actingAs($this->staff);
+    $response = $this->post(route('inspection.finish', $session->id));
+
+    $response->assertRedirect(route('inspection.dashboard', $session->type));
+    $response->assertSessionHas('success');
+    $response->assertSessionMissing('error');
+
+    $session->refresh();
+    expect($session->status)->toBe('completed');
+});

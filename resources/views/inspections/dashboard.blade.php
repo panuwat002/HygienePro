@@ -24,7 +24,29 @@
 
     <div class="row justify-content-center">
         <div class="col-md-9 col-lg-8">
-            
+
+            @if(session('error'))
+            <div class="alert alert-danger d-flex align-items-start rounded-3 shadow-sm border-0 mb-3" role="alert">
+                <i class="bi bi-exclamation-triangle-fill fs-4 me-3 flex-shrink-0"></i>
+                <div>
+                    <strong>ไม่สำเร็จ</strong><br>
+                    <span class="small">{{ session('error') }}</span>
+                </div>
+            </div>
+            @endif
+            @if(session('success'))
+            <div class="alert alert-success d-flex align-items-start rounded-3 shadow-sm border-0 mb-3" role="alert">
+                <i class="bi bi-check-circle-fill fs-4 me-3 flex-shrink-0"></i>
+                <div class="small">{{ session('success') }}</div>
+            </div>
+            @endif
+            @if(session('info'))
+            <div class="alert alert-info d-flex align-items-start rounded-3 shadow-sm border-0 mb-3" role="alert">
+                <i class="bi bi-info-circle-fill fs-4 me-3 flex-shrink-0"></i>
+                <div class="small">{{ session('info') }}</div>
+            </div>
+            @endif
+
             <!-- Type Tabs -->
             <ul class="nav nav-pills nav-pills-modern nav-fill mb-4 animate-in">
                 <li class="nav-item">
