@@ -553,6 +553,44 @@ test('storeBulkNoProductionRemainingMachines is blocked in reclean-fix mode', fu
         ->where('machine_id', $m->id)->count())->toBe(0);
 });
 
+test('Resume on a machine session without targets redirects to bulk view with dept scope', function () {
+    // Regression: previously the resume path tried to recover targets from existing
+    // logs. A fresh session (no logs yet) hit the "กรุณาเลือกพื้นที่หรือเครื่องจักร..."
+    // error and the inspector was stuck. It now falls back to the full active-machines
+    // scope so resume behaves like Start-with-Select-All.
+    $location = \App\Models\Location::create(['location_name' => 'Line A']);
+    $mCp = Checkpoint::create(['title' => 'gear', 'description' => '', 'is_active' => true, 'type' => 'area']);
+    $mA = \App\Models\Machine::create(['location_id' => $location->id, 'name' => 'MA', 'is_active' => true]);
+    $mB = \App\Models\Machine::create(['location_id' => $location->id, 'name' => 'MB', 'is_active' => true]);
+    $mA->checkpoints()->attach($mCp->id);
+    $mB->checkpoints()->attach($mCp->id);
+
+    // Pre-existing in-progress session with no logs yet — the exact state the bug
+    // reproduces from (the dashboard's "Resume" button POSTs only department_id).
+    InspectionSession::create([
+        'department_id' => $this->deptPd->id,
+        'inspection_date' => now()->toDateString(),
+        'shift' => \App\Models\Shift::detectCurrent(),
+        'inspector_id' => $this->staff->id,
+        'status' => 'in_progress',
+        'type' => 'machine',
+        'round' => 1,
+    ]);
+
+    $this->actingAs($this->staff);
+    $response = $this->post(route('inspection.start', 'machine'), [
+        'department_id' => $this->deptPd->id,
+    ]);
+
+    $response->assertStatus(302);
+    $location_header = $response->headers->get('Location');
+    expect($location_header)->toContain('/inspection/area/bulk/');
+    expect($location_header)->toContain("machine%3A{$mA->id}");
+    expect($location_header)->toContain("machine%3A{$mB->id}");
+    // The old error must not appear.
+    $response->assertSessionMissing('error');
+});
+
 test('storeBulk batches the reclean-pending lookup across all checkpoints', function () {
     $location = \App\Models\Location::create(['location_name' => 'Batch Test']);
     $cps = collect();
