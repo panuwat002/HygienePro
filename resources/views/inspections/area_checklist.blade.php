@@ -256,6 +256,35 @@
                                         <span class="badge bg-warning text-dark rounded-pill" style="font-size:0.7rem;"><i class="bi bi-slash-circle me-1"></i>N/A {{ $groupNoProd }}</span>
                                     @endif
                                 </div>
+                                {{-- Fix #6: per-target icon strip. One chip per target so an inspector
+                                     can spot which specific machine failed / is idle at a glance.
+                                     Aggregated numbers above tell the count; this row tells the identity. --}}
+                                @if($group->count() > 1)
+                                <div class="target-status-strip d-flex flex-wrap gap-1 align-items-center mt-2" role="group" aria-label="สถานะรายเป้าหมาย">
+                                    @foreach($sortedGroup as $tgt)
+                                        @php
+                                            $tgtName = $tgt->name;
+                                            $tgtFailed  = $tgt->existing_logs->contains('result', 'fail');
+                                            $tgtNoProd  = !$tgtFailed && $tgt->existing_logs->contains('result', 'no_production');
+                                            $tgtWaiting = count($tgt->existing_logs) === 0;
+                                            $tgtPass    = !$tgtFailed && !$tgtNoProd && !$tgtWaiting;
+
+                                            [$chipClass, $chipIcon, $chipTitle] = match(true) {
+                                                $tgtFailed  => ['bg-danger text-white',           'bi-x-lg',        "ไม่ผ่าน: {$tgtName}"],
+                                                $tgtWaiting => ['bg-secondary bg-opacity-25 text-secondary', 'bi-hourglass', "รอตรวจ: {$tgtName}"],
+                                                $tgtNoProd  => ['bg-warning text-dark',           'bi-slash-circle', "ไม่มีผลิต: {$tgtName}"],
+                                                default     => ['bg-success bg-opacity-25 text-success',    'bi-check-lg',   "ผ่าน: {$tgtName}"],
+                                            };
+                                        @endphp
+                                        <span class="badge rounded-pill {{ $chipClass }} d-inline-flex align-items-center gap-1"
+                                              style="font-size:0.65rem; padding:0.25rem 0.55rem; max-width: 10rem;"
+                                              title="{{ $chipTitle }}" data-bs-toggle="tooltip">
+                                            <i class="bi {{ $chipIcon }}"></i>
+                                            <span class="text-truncate" style="max-width: 6.5rem;">{{ $tgtName }}</span>
+                                        </span>
+                                    @endforeach
+                                </div>
+                                @endif
                             </div>
                             @php
                                 $groupTargets = $group->map(function($data) { return "{$data->target_type}:{$data->target_id}"; })->implode(',');

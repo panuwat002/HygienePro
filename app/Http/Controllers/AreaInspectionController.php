@@ -433,9 +433,14 @@ class AreaInspectionController extends Controller
                     $logData
                 );
 
-                // Loop Engineering: Auto-CAR creation
+                // Loop Engineering: Auto-CAR creation.
+                // Fix #7: Per-CAR notifications are suppressed here — the manager gets a
+                // single SessionCarsSummaryNotification when the session completes
+                // (see finalizeBulkResponse). $pendingCarNotifications is retained but
+                // stays empty on the auto path; it's still useful if a future manual
+                // escalation path decides to enqueue immediate notices.
                 if ($log->result === 'fail') {
-                    $action = \App\Models\CorrectiveAction::firstOrCreate([
+                    \App\Models\CorrectiveAction::firstOrCreate([
                         'inspection_log_id' => $log->id,
                     ], [
                         'status' => 'open',
@@ -443,15 +448,6 @@ class AreaInspectionController extends Controller
                         'root_cause' => $log->correction_action ?? 'ระบบสั่งแก้ไขอัตโนมัติ เนื่องจากผลการตรวจไม่ผ่าน',
                         'due_date' => now()->addHours(24),
                     ]);
-
-                    if ($action->wasRecentlyCreated) {
-                        $managers = \App\Models\User::where('department_id', $session->department_id)
-                                    ->where('level', '>=', 5)
-                                    ->get();
-                        // Defer until after commit — rolling back the log/CAR should
-                        // roll back the email too.
-                        $pendingCarNotifications[] = [$managers, new \App\Notifications\NewCARNotification($action)];
-                    }
                 }
             }
         }
@@ -505,6 +501,9 @@ class AreaInspectionController extends Controller
             $session->update([
                 'status' => 'completed',
             ]);
+            // Fix #7: One summary notification of every auto-CAR opened during
+            // this session, instead of one bell entry per fail.
+            app(\App\Services\InspectionService::class)->notifyManagersOfSessionCars($session);
             $msg = 'บันทึกผลเรียบร้อยและจบงานแล้ว (Session Completed)';
             if ($request->wantsJson()) return response()->json(['success' => true, 'message' => $msg]);
             return redirect()->route('inspection.dashboard', $session->type)

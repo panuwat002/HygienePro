@@ -82,6 +82,43 @@ class InspectionService
         ]);
 
         $this->notifySupervisorsFinished($session);
+        // Fix #7: One consolidated bell entry for all CARs opened this session.
+        $this->notifyManagersOfSessionCars($session);
+    }
+
+    /**
+     * Fix #7: Send ONE SessionCarsSummaryNotification per manager listing every
+     * auto-CAR opened during this session. Silent if no CARs. Called from
+     * finishSession() and from the area/machine auto-complete path.
+     */
+    public function notifyManagersOfSessionCars(InspectionSession $session): void
+    {
+        $cars = \App\Models\CorrectiveAction::whereHas('log', function ($q) use ($session) {
+            $q->where('session_id', $session->id);
+        })->with('log')->get();
+
+        if ($cars->isEmpty()) {
+            return;
+        }
+
+        $summaries = $cars->map(function ($car) {
+            $log = $car->log;
+            return [
+                'car_id' => $car->id,
+                'checkpoint' => $log?->checkpoint_title_snapshot ?? 'ไม่ระบุจุดตรวจ',
+                'place' => $log?->machine?->name
+                    ?? $log?->location?->location_name
+                    ?? 'ไม่ระบุพื้นที่',
+            ];
+        })->all();
+
+        $managers = \App\Models\User::where('department_id', $session->department_id)
+            ->where('level', '>=', 5)
+            ->get();
+
+        foreach ($managers as $manager) {
+            $manager->notify(new \App\Notifications\SessionCarsSummaryNotification($session, $summaries));
+        }
     }
 
     /**
@@ -460,9 +497,15 @@ class InspectionService
                 $logData
             );
 
-            // Loop Engineering: Auto-CAR creation
+            // Loop Engineering: Auto-CAR creation.
+            // Fix #7: We used to notify managers per-CAR, which flooded the bell during a
+            // normal shift. The per-CAR notification is now suppressed for AUTO-created CARs;
+            // a single SessionCarsSummaryNotification fires when the session completes
+            // (see notifyManagersOfSessionCars). Manual escalations from
+            // CorrectiveActionController keep their own per-CAR notification because they
+            // are explicit high-priority actions.
             if ($log->result === 'fail') {
-                $action = \App\Models\CorrectiveAction::firstOrCreate([
+                \App\Models\CorrectiveAction::firstOrCreate([
                     'inspection_log_id' => $log->id,
                 ], [
                     'status' => 'open',
@@ -470,15 +513,6 @@ class InspectionService
                     'root_cause' => $log->correction_action ?? 'ระบบสั่งแก้ไขอัตโนมัติ เนื่องจากผลการตรวจไม่ผ่าน',
                     'due_date' => now()->addHours(24),
                 ]);
-
-                if ($action->wasRecentlyCreated) {
-                    $managers = \App\Models\User::where('department_id', $session->department_id)
-                                ->where('level', '>=', 5)
-                                ->get();
-                    foreach ($managers as $manager) {
-                        $manager->notify(new \App\Notifications\NewCARNotification($action));
-                    }
-                }
             }
 
             return $log;

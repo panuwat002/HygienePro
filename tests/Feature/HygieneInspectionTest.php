@@ -553,6 +553,90 @@ test('storeBulkNoProductionRemainingMachines is blocked in reclean-fix mode', fu
         ->where('machine_id', $m->id)->count())->toBe(0);
 });
 
+test('finishSession sends one SessionCarsSummaryNotification per manager, not one per CAR', function () {
+    \Illuminate\Support\Facades\Notification::fake();
+
+    $mgr = User::create([
+        'name' => 'PD Manager', 'email' => 'pdmgr@example.com',
+        'password' => Hash::make('password'),
+        'role' => 'manager', 'level' => 5, 'department_id' => $this->deptPd->id,
+    ]);
+
+    $session = InspectionSession::create([
+        'department_id' => $this->deptPd->id,
+        'inspection_date' => now()->toDateString(),
+        'shift' => 'morning',
+        'inspector_id' => $this->staff->id,
+        'status' => 'in_progress',
+        'type' => 'personnel',
+        'round' => 1,
+    ]);
+
+    // Two fails → two auto-CARs. Under the fix, the manager gets 1 summary, not 2 per-CAR entries.
+    $log1 = InspectionLog::create([
+        'session_id' => $session->id, 'checkpoint_id' => $this->checkpoint1->id,
+        'employee_id' => $this->employee->id, 'result' => 'fail',
+        'correction_action' => 'reason 1', 'photo_path' => 'inspections/f1.jpg',
+        'inspected_at' => now(), 'checkpoint_title_snapshot' => 'cp1',
+    ]);
+    $log2 = InspectionLog::create([
+        'session_id' => $session->id, 'checkpoint_id' => $this->checkpoint2->id,
+        'employee_id' => $this->employee->id, 'result' => 'fail',
+        'correction_action' => 'reason 2', 'photo_path' => 'inspections/f2.jpg',
+        'inspected_at' => now(), 'checkpoint_title_snapshot' => 'cp2',
+    ]);
+    \App\Models\CorrectiveAction::create([
+        'inspection_log_id' => $log1->id, 'status' => 'open',
+        'escalated_by' => $this->staff->id, 'root_cause' => 'r1',
+        'due_date' => now()->addHours(24),
+    ]);
+    \App\Models\CorrectiveAction::create([
+        'inspection_log_id' => $log2->id, 'status' => 'open',
+        'escalated_by' => $this->staff->id, 'root_cause' => 'r2',
+        'due_date' => now()->addHours(24),
+    ]);
+
+    app(\App\Services\InspectionService::class)->finishSession($session);
+
+    \Illuminate\Support\Facades\Notification::assertSentToTimes(
+        $mgr, \App\Notifications\SessionCarsSummaryNotification::class, 1
+    );
+    \Illuminate\Support\Facades\Notification::assertNotSentTo(
+        $mgr, \App\Notifications\NewCARNotification::class
+    );
+});
+
+test('finishSession sends no summary when session has zero CARs', function () {
+    \Illuminate\Support\Facades\Notification::fake();
+
+    $mgr = User::create([
+        'name' => 'Clean Mgr', 'email' => 'cleanmgr@example.com',
+        'password' => Hash::make('password'),
+        'role' => 'manager', 'level' => 5, 'department_id' => $this->deptPd->id,
+    ]);
+
+    $session = InspectionSession::create([
+        'department_id' => $this->deptPd->id,
+        'inspection_date' => now()->toDateString(),
+        'shift' => 'morning',
+        'inspector_id' => $this->staff->id,
+        'status' => 'in_progress',
+        'type' => 'personnel',
+        'round' => 1,
+    ]);
+    InspectionLog::create([
+        'session_id' => $session->id, 'checkpoint_id' => $this->checkpoint1->id,
+        'employee_id' => $this->employee->id, 'result' => 'pass',
+        'inspected_at' => now(),
+    ]);
+
+    app(\App\Services\InspectionService::class)->finishSession($session);
+
+    \Illuminate\Support\Facades\Notification::assertNotSentTo(
+        $mgr, \App\Notifications\SessionCarsSummaryNotification::class
+    );
+});
+
 test('storeBulk deletes the previous photo file when a log photo is replaced', function () {
     \Illuminate\Support\Facades\Storage::fake('public');
 
