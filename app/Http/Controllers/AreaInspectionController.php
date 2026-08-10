@@ -9,8 +9,16 @@ use App\Models\InspectionSession;
 use App\Models\Location;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Intervention\Image\Laravel\Facades\Image;
+
+/**
+ * Thrown from inside a bulk transaction when server-side validation of a single
+ * checkpoint fails. Caught at the top of storeBulk so the whole transaction
+ * rolls back — no half-written logs or CARs.
+ */
+class BulkValidationException extends \RuntimeException {}
 
 class AreaInspectionController extends Controller
 {
@@ -236,7 +244,57 @@ class AreaInspectionController extends Controller
             }
         }
         $checkpointTitles = Checkpoint::whereIn('id', array_unique($allCheckpointIds))->pluck('title', 'id');
-        
+
+        // Collect CAR notifications inside the transaction and dispatch AFTER commit,
+        // so a rollback never leaks emails to managers about work that didn't save.
+        $pendingCarNotifications = [];
+        // Old photo files to delete after the transaction commits — we only want to
+        // touch disk once we're sure the DB write survived.
+        $oldPhotosToDelete = [];
+
+        try {
+            DB::transaction(function () use (
+                $request, $session, $recleanFixMode, $targetResults, $checkpointTitles,
+                &$pendingCarNotifications, &$oldPhotosToDelete
+            ) {
+                $this->processBulkTargets(
+                    $request, $session, $recleanFixMode, $targetResults, $checkpointTitles,
+                    $pendingCarNotifications, $oldPhotosToDelete
+                );
+            });
+        } catch (BulkValidationException $e) {
+            if ($request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => $e->getMessage()], 400);
+            }
+            return back()->with('error', $e->getMessage());
+        }
+
+        foreach ($oldPhotosToDelete as $oldPath) {
+            Storage::disk('public')->delete($oldPath);
+        }
+        foreach ($pendingCarNotifications as [$managers, $notification]) {
+            foreach ($managers as $manager) {
+                $manager->notify($notification);
+            }
+        }
+
+        return $this->finalizeBulkResponse($request, $session, $recleanFixMode);
+    }
+
+    /**
+     * Per-target processing loop, extracted so the transaction body stays focused.
+     * Any user-facing validation failure raises BulkValidationException, which
+     * the caller catches to return the correct 400 response.
+     */
+    private function processBulkTargets(
+        Request $request,
+        InspectionSession $session,
+        bool $recleanFixMode,
+        array $targetResults,
+        $checkpointTitles,
+        array &$pendingCarNotifications,
+        array &$oldPhotosToDelete
+    ): void {
         foreach ($targetResults as $targetKey => $results) {
             $parts = explode(':', $targetKey);
             $type = $parts[0];
@@ -266,8 +324,7 @@ class AreaInspectionController extends Controller
                         ->exists();
 
                     if (!$pendingReclean) {
-                        if ($request->wantsJson()) return response()->json(['success' => false, 'message' => 'รายการนี้ไม่ได้อยู่ในสถานะ Re-clean ไม่สามารถบันทึกได้'], 400);
-                        return back()->with('error', 'รายการนี้ไม่ได้อยู่ในสถานะ Re-clean ไม่สามารถบันทึกได้');
+                        throw new BulkValidationException('รายการนี้ไม่ได้อยู่ในสถานะ Re-clean ไม่สามารถบันทึกได้');
                     }
                 }
 
@@ -276,13 +333,11 @@ class AreaInspectionController extends Controller
                 // Validation: Enforce Photo & Note on Fail
                 if ($result === 'fail') {
                     if (empty($note)) {
-                         if ($request->wantsJson()) return response()->json(['success' => false, 'message' => 'กรุณาระบุสาเหตุที่ไม่ผ่าน / การแก้ไข (Correction) สำหรับรายการที่ไม่ผ่าน'], 400);
-                         return back()->with('error', 'กรุณาระบุสาเหตุที่ไม่ผ่าน / การแก้ไข (Correction) สำหรับรายการที่ไม่ผ่าน');
+                        throw new BulkValidationException('กรุณาระบุสาเหตุที่ไม่ผ่าน / การแก้ไข (Correction) สำหรับรายการที่ไม่ผ่าน');
                     }
                     if (!$request->hasFile("photos.$targetKey.$checkpointId")) {
                         $cpTitle = $checkpointTitles[$checkpointId] ?? 'รายการที่ไม่ผ่าน';
-                         if ($request->wantsJson()) return response()->json(['success' => false, 'message' => "กรุณาถ่ายรูปหลักฐาน (Evidence Photo) สำหรับ: $cpTitle"], 400);
-                         return back()->with('error', "กรุณาถ่ายรูปหลักฐาน (Evidence Photo) สำหรับ: $cpTitle");
+                        throw new BulkValidationException("กรุณาถ่ายรูปหลักฐาน (Evidence Photo) สำหรับ: $cpTitle");
                     }
                 }
                 
@@ -309,6 +364,16 @@ class AreaInspectionController extends Controller
                     $logData['verification_status'] = 'reclean';
                 }
 
+                // Fix #4: Look up any existing photo before writing the new one, so the
+                // stale file can be cleaned up after the transaction commits. We defer
+                // the actual Storage::delete until after commit — deleting inside the
+                // transaction would leave orphaned files if we rolled back.
+                $existingPhotoPath = InspectionLog::where('session_id', $session->id)
+                    ->where('location_id', $locationId)
+                    ->where('machine_id', $machineId)
+                    ->where('checkpoint_id', $checkpointId)
+                    ->value('photo_path');
+
                 // Handle Photo Upload (Target-prefixed)
                 if ($request->hasFile("photos.$targetKey.$checkpointId")) {
                     $file = $request->file("photos.$targetKey.$checkpointId");
@@ -324,6 +389,10 @@ class AreaInspectionController extends Controller
                     } catch (\Exception $e) {
                         $path = $file->store('evidence', 'public');
                         $logData['photo_path'] = $path;
+                    }
+
+                    if ($existingPhotoPath && $existingPhotoPath !== $path) {
+                        $oldPhotosToDelete[] = $existingPhotoPath;
                     }
                 }
 
@@ -372,14 +441,22 @@ class AreaInspectionController extends Controller
                         $managers = \App\Models\User::where('department_id', $session->department_id)
                                     ->where('level', '>=', 5)
                                     ->get();
-                        foreach ($managers as $manager) {
-                            $manager->notify(new \App\Notifications\NewCARNotification($action));
-                        }
+                        // Defer until after commit — rolling back the log/CAR should
+                        // roll back the email too.
+                        $pendingCarNotifications[] = [$managers, new \App\Notifications\NewCARNotification($action)];
                     }
                 }
             }
         }
+    }
 
+    /**
+     * Post-transaction: pick between auto-complete, force-finish, and continue-session
+     * responses. Kept out of the transaction body because a rollback should not have
+     * flipped session status yet.
+     */
+    private function finalizeBulkResponse(Request $request, InspectionSession $session, bool $recleanFixMode)
+    {
         // Check remaining targets to Auto-Complete
         $remainingCount = 0;
         
@@ -453,13 +530,40 @@ class AreaInspectionController extends Controller
             return response()->json(['success' => false, 'message' => 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้'], 400);
         }
 
+        // Fix #2: Bulk actions must not fire during re-clean, otherwise they would
+        // overwrite the reclean tag and hide the fact that a Supervisor asked for a
+        // fix. Only the per-checkpoint save path is allowed to touch reclean rows.
+        if ($session->status === 'completed' && $session->hasPendingRecleans()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'โหมด Re-clean บันทึกได้เฉพาะรายการที่ถูกสั่งแก้เท่านั้น ไม่สามารถทำ Bulk "ไม่มีผลิต" ได้',
+            ], 400);
+        }
+
         $targetsQuery = $request->input('targets_query');
         if (!$targetsQuery) {
             return response()->json(['success' => false, 'message' => 'ไม่พบข้อมูลเป้าหมายการตรวจ'], 400);
         }
 
+        // Fix #1: A log the Supervisor has already touched (verification_status != null —
+        // verified, reclean, approved, rejected) must not be silently converted to
+        // no_production; that would erase their review. Refuse the whole batch and let
+        // the Inspector clean up manually.
+        $reviewedExists = InspectionLog::where('session_id', $session->id)
+            ->where('location_id', $locationId)
+            ->whereNotNull('verification_status')
+            ->exists();
+        if ($reviewedExists) {
+            return response()->json([
+                'success' => false,
+                'message' => 'มีรายการที่ Supervisor ตรวจแล้วในห้องนี้ ไม่สามารถเปลี่ยนเป็น "ไม่มีผลิต" แบบทั้งกลุ่มได้',
+            ], 400);
+        }
+
         $targetArray = explode(',', $targetsQuery);
         $logsCreated = 0;
+        DB::beginTransaction();
+        try {
 
         foreach ($targetArray as $t) {
             $parts = explode(':', $t);
@@ -575,6 +679,11 @@ class AreaInspectionController extends Controller
                 }
             }
         }
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
 
         return response()->json([
             'success' => true,
@@ -595,6 +704,15 @@ class AreaInspectionController extends Controller
             return response()->json(['success' => false, 'message' => 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้'], 400);
         }
 
+        // Fix #2: Same reasoning as storeBulkNoProduction — bulk-pass during re-clean
+        // would erase reclean tags that Supervisor set.
+        if ($session->status === 'completed' && $session->hasPendingRecleans()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'โหมด Re-clean บันทึกได้เฉพาะรายการที่ถูกสั่งแก้เท่านั้น ไม่สามารถทำ Bulk "ผ่านทั้งหมด" ได้',
+            ], 400);
+        }
+
         $targetsQuery = $request->input('targets_query');
         if (!$targetsQuery) {
             return response()->json(['success' => false, 'message' => 'ไม่พบข้อมูลเป้าหมายการตรวจ'], 400);
@@ -602,6 +720,8 @@ class AreaInspectionController extends Controller
 
         $targetArray = explode(',', $targetsQuery);
         $logsCreated = 0;
+        DB::beginTransaction();
+        try {
 
         foreach ($targetArray as $t) {
             $parts = explode(':', $t);
@@ -668,6 +788,11 @@ class AreaInspectionController extends Controller
                 );
                 $logsCreated++;
             }
+        }
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
         }
 
         return response()->json([

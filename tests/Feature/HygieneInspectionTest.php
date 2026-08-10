@@ -366,3 +366,154 @@ test('inspector can finish session even when it contains corrected fail logs', f
     $session->refresh();
     expect($session->status)->toBe('completed');
 });
+
+/* ------------------------------------------------------------------ */
+/* Area/Machine bulk-endpoints — data-integrity regression suite     */
+/* ------------------------------------------------------------------ */
+
+function makeAreaSession($ownerId, $deptId, $status = 'in_progress') {
+    return InspectionSession::create([
+        'department_id' => $deptId,
+        'inspection_date' => now()->toDateString(),
+        'shift' => 'morning',
+        'inspector_id' => $ownerId,
+        'status' => $status,
+        'type' => 'area',
+        'round' => 1,
+    ]);
+}
+
+test('storeBulkNoProduction is blocked when session is in reclean-fix mode', function () {
+    $location = \App\Models\Location::create(['location_name' => 'Test Area']);
+    $areaCp = Checkpoint::create([
+        'title' => 'พื้นสะอาด', 'description' => 'clean floor',
+        'is_active' => true, 'type' => 'area',
+    ]);
+    $location->checkpoints()->attach($areaCp->id);
+
+    $session = makeAreaSession($this->staff->id, $this->deptPd->id, 'completed');
+    // Existing reclean log makes the session enter recleanFixMode
+    InspectionLog::create([
+        'session_id' => $session->id,
+        'location_id' => $location->id,
+        'checkpoint_id' => $areaCp->id,
+        'result' => 'fail',
+        'correction_action' => 'สกปรก',
+        'verification_status' => 'reclean',
+        'inspected_at' => now(),
+    ]);
+
+    $this->actingAs($this->staff);
+    $response = $this->postJson(
+        route('inspection.area.bulk-no-production', ['session' => $session->id, 'location' => $location->id]),
+        ['targets_query' => "loc:{$location->id}"]
+    );
+
+    $response->assertStatus(400);
+    expect(InspectionLog::where('session_id', $session->id)
+        ->where('result', 'no_production')->count())->toBe(0);
+});
+
+test('storeBulkNoProduction refuses to overwrite logs already reviewed by supervisor', function () {
+    $location = \App\Models\Location::create(['location_name' => 'Reviewed Area']);
+    $areaCp = Checkpoint::create([
+        'title' => 'ผนัง', 'description' => 'wall',
+        'is_active' => true, 'type' => 'area',
+    ]);
+    $location->checkpoints()->attach($areaCp->id);
+
+    $session = makeAreaSession($this->staff->id, $this->deptPd->id);
+    // A log the supervisor has already touched — this must not be silently overwritten.
+    InspectionLog::create([
+        'session_id' => $session->id,
+        'location_id' => $location->id,
+        'checkpoint_id' => $areaCp->id,
+        'result' => 'pass',
+        'verification_status' => 'verified',
+        'verifier_id' => $this->supervisor->id,
+        'verified_at' => now(),
+        'inspected_at' => now(),
+    ]);
+
+    $this->actingAs($this->staff);
+    $response = $this->postJson(
+        route('inspection.area.bulk-no-production', ['session' => $session->id, 'location' => $location->id]),
+        ['targets_query' => "loc:{$location->id}"]
+    );
+
+    $response->assertStatus(400);
+    $reviewedLog = InspectionLog::where('session_id', $session->id)
+        ->where('location_id', $location->id)
+        ->where('checkpoint_id', $areaCp->id)->first();
+    expect($reviewedLog->result)->toBe('pass'); // not touched
+    expect($reviewedLog->verification_status)->toBe('verified');
+});
+
+test('storeBulk rolls back created logs when a later checkpoint fails validation', function () {
+    $location = \App\Models\Location::create(['location_name' => 'Tx Test']);
+    $cpOk = Checkpoint::create(['title' => 'ok', 'description' => '', 'is_active' => true, 'type' => 'area']);
+    $cpMissingPhoto = Checkpoint::create(['title' => 'no photo', 'description' => '', 'is_active' => true, 'type' => 'area']);
+    $location->checkpoints()->attach([$cpOk->id, $cpMissingPhoto->id]);
+
+    $session = makeAreaSession($this->staff->id, $this->deptPd->id);
+    $this->actingAs($this->staff);
+
+    // Second checkpoint is fail with a note but no photo → server rejects. Under the fix, the
+    // first checkpoint's pass log should ALSO be rolled back rather than half-written.
+    $response = $this->post(
+        route('inspection.area.store', ['session' => $session->id, 'location' => $location->id]),
+        [
+            'results' => ['targets' => [
+                "loc:{$location->id}" => [
+                    $cpOk->id => 'pass',
+                    $cpMissingPhoto->id => 'fail',
+                ],
+            ]],
+            'notes' => ["loc:{$location->id}" => [
+                $cpMissingPhoto->id => 'missing photo test',
+            ]],
+        ]
+    );
+
+    expect(InspectionLog::where('session_id', $session->id)->count())->toBe(0);
+});
+
+test('storeBulk deletes the previous photo file when a log photo is replaced', function () {
+    \Illuminate\Support\Facades\Storage::fake('public');
+
+    $location = \App\Models\Location::create(['location_name' => 'Photo Test']);
+    $cp = Checkpoint::create(['title' => 'wall', 'description' => '', 'is_active' => true, 'type' => 'area']);
+    $location->checkpoints()->attach($cp->id);
+
+    $session = makeAreaSession($this->staff->id, $this->deptPd->id);
+
+    // Seed an existing fail log with a photo file already on disk.
+    \Illuminate\Support\Facades\Storage::disk('public')->put('evidence/old.jpg', 'oldbytes');
+    InspectionLog::create([
+        'session_id' => $session->id,
+        'location_id' => $location->id,
+        'checkpoint_id' => $cp->id,
+        'result' => 'fail',
+        'correction_action' => 'first fail',
+        'photo_path' => 'evidence/old.jpg',
+        'inspected_at' => now(),
+    ]);
+
+    // Sleep long enough to clear the 3s speed-trap window before hitting the endpoint again.
+    \Illuminate\Support\Carbon::setTestNow(now()->addSeconds(10));
+
+    $this->actingAs($this->staff);
+    $newPhoto = \Illuminate\Http\UploadedFile::fake()->image('new.jpg', 800, 600);
+    $response = $this->post(
+        route('inspection.area.store', ['session' => $session->id, 'location' => $location->id]),
+        [
+            'results' => ['targets' => [
+                "loc:{$location->id}" => [$cp->id => 'fail'],
+            ]],
+            'notes' => ["loc:{$location->id}" => [$cp->id => 'second fail']],
+            'photos' => ["loc:{$location->id}" => [$cp->id => $newPhoto]],
+        ]
+    );
+
+    expect(\Illuminate\Support\Facades\Storage::disk('public')->exists('evidence/old.jpg'))->toBeFalse();
+});
