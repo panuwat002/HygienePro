@@ -306,8 +306,11 @@ class ReportController extends Controller
                     $employeeMatrix[$empId]['results'][$log->checkpoint_id] = $log;
                 }
                 
-                // 2. Machine Logs
-                elseif (($reportType === 'all' || $reportType === 'machine') && $log->machine_id) {
+                // 2. Machine Logs — 'machine' is the merged "เครื่องจักร / พื้นที่"
+                // bucket after commit 40bafb3, so it covers both machine-attached
+                // logs (this branch) and location-only logs (next branch). 'area'
+                // is kept as a legacy alias for old saved URLs.
+                elseif (in_array($reportType, ['all', 'machine', 'area'], true) && $log->machine_id) {
                     if ($machineId && $log->machine_id != $machineId) continue;
 
                     $mId = $log->machine_id;
@@ -324,9 +327,10 @@ class ReportController extends Controller
                     }
                     $machineMatrix[$mId]['results'][$log->checkpoint_id] = $log;
                 }
-                
+
                 // 3. Area Logs (Location only, no machine, no employee)
-                elseif (($reportType === 'all' || $reportType === 'area') && $log->location_id && !$log->machine_id && !$log->employee_id) {
+                // Same bucket as machine after the dropdown merge — see comment above.
+                elseif (in_array($reportType, ['all', 'area', 'machine'], true) && $log->location_id && !$log->machine_id && !$log->employee_id) {
                     $lId = $log->location_id;
                     if (!isset($areaMatrix[$lId])) {
                          $loc = $log->location;
