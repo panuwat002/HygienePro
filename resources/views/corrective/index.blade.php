@@ -1,16 +1,143 @@
 <x-app-layout>
     @section('header', 'สิ่งที่ต้องแก้ไข')
 
-    <div class="container-fluid">
+    @push('styles')
+    <style>
+        .impeccable-card {
+            border: none;
+            border-radius: 20px;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.02);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            background: #ffffff;
+        }
+        .impeccable-header-icon {
+            width: 52px;
+            height: 52px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+        .icon-danger {
+            background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+            color: #ef4444;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.1);
+        }
+        .icon-success {
+            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+            color: #10b981;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.1);
+        }
+        .task-item {
+            border: 1px solid #f1f5f9;
+            border-radius: 16px;
+            background: #ffffff;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .task-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 4px;
+            background: #ef4444;
+            opacity: 0.7;
+        }
+        .task-item:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.06);
+            border-color: #e2e8f0;
+        }
+        .task-item::before:hover {
+            opacity: 1;
+        }
+        .premium-btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
+            transition: all 0.2s;
+        }
+        .premium-btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
+            color: white;
+        }
+        .premium-btn-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);
+            transition: all 0.2s;
+        }
+        .premium-btn-success:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
+            color: white;
+        }
+        .modern-table {
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        .modern-table thead th {
+            background: #f8fafc;
+            color: #64748b;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            padding: 1rem 1.5rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .modern-table tbody td {
+            padding: 1.25rem 1.5rem;
+            vertical-align: middle;
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+        .modern-table tbody tr:hover td {
+            background: #f8fafc;
+        }
+        .modern-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .badge-soft-success {
+            background-color: #dcfce7;
+            color: #166534;
+            font-weight: 600;
+            border-radius: 8px;
+            padding: 0.35rem 0.75rem;
+        }
+        .badge-soft-warning {
+            background-color: #fef3c7;
+            color: #92400e;
+            font-weight: 600;
+            border-radius: 8px;
+            padding: 0.35rem 0.75rem;
+        }
+    </style>
+    @endpush
+
+    <div class="container-fluid py-4" style="background-color: #f8fafc; min-height: calc(100vh - 70px);">
         <div class="row g-4">
             <!-- Left Column: Pending Actions -->
             <div class="col-lg-6">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-header bg-white border-bottom border-light pt-4 px-4 pb-3">
+                <div class="impeccable-card h-100">
+                    <div class="card-header bg-transparent border-0 pt-4 px-4 pb-3">
                         <div class="d-flex justify-content-between align-items-center">
                             <div class="d-flex align-items-center">
-                                <div class="bg-danger bg-opacity-10 text-danger rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 48px; height: 48px;">
-                                    <i class="bi bi-exclamation-octagon fs-4"></i>
+                                <div class="impeccable-header-icon icon-danger me-3">
+                                    <i class="bi bi-exclamation-lg"></i>
                                 </div>
                                 <div>
                                     <h5 class="fw-bold text-dark mb-0">สิ่งที่ต้องดำเนินการ</h5>
@@ -22,8 +149,8 @@
                     </div>
                     <div class="card-body p-3 p-md-4">
                         @forelse($openActions as $action)
-                            <div class="card mb-3 border-0 shadow-sm rounded-4 overflow-hidden" style="border-left: 4px solid #dc3545 !important; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 .5rem 1rem rgba(0,0,0,.15)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 .125rem .25rem rgba(0,0,0,.075)'">
-                                <div class="card-body p-3">
+                            <div class="task-item mb-3">
+                                <div class="card-body p-4">
                                     <div class="d-flex justify-content-between align-items-center mb-2">
                                         <div>
                                             <span class="badge {{ $action->status == 'open' ? 'bg-warning text-dark' : ($action->status == 'resolved' ? 'bg-success' : 'bg-primary') }}">
@@ -40,13 +167,13 @@
                                                 @endif
                                             @endif
                                         </div>
-                                        <small class="text-muted"><i class="bi bi-clock me-1"></i>{{ $action->created_at->diffForHumans() }}</small>
+                                        <small class="text-muted fw-medium"><i class="bi bi-clock me-1"></i>{{ $action->created_at->diffForHumans() }}</small>
                                     </div>
                                     
                                     <div class="d-flex justify-content-between align-items-start mb-2">
-                                        <h5 class="fw-bold text-dark mb-0 pe-2" style="font-size:1.1rem;">{{ $action->log->checkpoint->title ?? 'N/A' }}</h5>
-                                        <button class="btn btn-sm btn-light border text-muted px-3 py-1 rounded-pill flex-shrink-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapseInfo{{ $action->id }}" aria-expanded="false">
-                                            <i class="bi bi-arrows-expand"></i> ย่อ/ขยาย
+                                        <h5 class="fw-bolder text-dark mb-0 pe-2" style="font-size:1.15rem; letter-spacing: -0.02em;">{{ $action->log->checkpoint->title ?? 'N/A' }}</h5>
+                                        <button class="btn btn-sm btn-light border-0 px-3 py-1 rounded-pill flex-shrink-0 text-secondary" style="background-color: #f1f5f9; font-weight: 500;" type="button" data-bs-toggle="collapse" data-bs-target="#collapseInfo{{ $action->id }}" aria-expanded="false">
+                                            <i class="bi bi-chevron-expand"></i> รายละเอียด
                                         </button>
                                     </div>
                                     
@@ -58,31 +185,40 @@
                                     </div>
                                     
                                     <div class="collapse" id="collapseInfo{{ $action->id }}">
-                                        <div class="p-3 bg-light rounded-3 border-0 mb-3 mt-3">
-                                            <small class="text-secondary fw-bold d-block mb-1"><i class="bi bi-search me-1"></i> สิ่งที่พบ (Root Cause)</small>
-                                            <div class="text-danger mb-2">{{ $action->root_cause ?? $action->log->correction_action ?? '-' }}</div>
+                                        <div class="p-3 mt-3 rounded-4" style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
+                                            <div class="d-flex align-items-center mb-2">
+                                                <i class="bi bi-search text-danger me-2"></i>
+                                                <small class="fw-bold text-slate-700" style="color: #334155;">สิ่งที่พบ (Root Cause)</small>
+                                            </div>
+                                            <div class="text-danger mb-3 ps-4 border-start border-danger border-2 ms-2 py-1">{{ $action->root_cause ?? $action->log->correction_action ?? '-' }}</div>
                                             
                                             @if($action->log->photo_path)
-                                                <div class="mt-2 mb-3">
-                                                    <small class="text-secondary d-block mb-1"><i class="bi bi-camera me-1"></i> ภาพหลักฐานตอนตรวจพบ:</small>
-                                                    <img src="/storage/{{ $action->log->photo_path }}" class="rounded-3 img-fluid shadow-sm" style="max-height: 160px; object-fit: cover;">
+                                                <div class="mt-2 mb-3 ms-4">
+                                                    <small class="text-secondary d-block mb-2"><i class="bi bi-camera me-1"></i> ภาพหลักฐานตอนตรวจพบ:</small>
+                                                    <img src="/storage/{{ $action->log->photo_path }}" class="rounded-3 img-fluid" style="max-height: 160px; object-fit: cover; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
                                                 </div>
                                             @endif
                                             
                                             @if($action->action_taken)
-                                                <hr class="my-3 border-secondary opacity-25">
-                                                <small class="text-secondary fw-bold d-block mb-1"><i class="bi bi-tools me-1"></i> การแก้ไข (Action Taken)</small>
-                                                <div class="text-success mb-2">{{ $action->action_taken }}</div>
+                                                <hr class="my-3 border-secondary opacity-10">
+                                                <div class="d-flex align-items-center mb-2">
+                                                    <i class="bi bi-tools text-success me-2"></i>
+                                                    <small class="fw-bold text-slate-700" style="color: #334155;">การแก้ไข (Action Taken)</small>
+                                                </div>
+                                                <div class="text-success mb-3 ps-4 border-start border-success border-2 ms-2 py-1">{{ $action->action_taken }}</div>
                                                 
                                                 @if($action->preventive_action)
-                                                    <small class="text-secondary fw-bold d-block mb-1 mt-2"><i class="bi bi-shield-check me-1"></i> มาตรการป้องกัน (Preventive Action)</small>
-                                                    <div class="text-warning-emphasis mb-2">{{ $action->preventive_action }}</div>
+                                                    <div class="d-flex align-items-center mb-2 mt-3">
+                                                        <i class="bi bi-shield-check text-warning me-2"></i>
+                                                        <small class="fw-bold text-slate-700" style="color: #334155;">มาตรการป้องกัน (Preventive Action)</small>
+                                                    </div>
+                                                    <div class="mb-3 ps-4 border-start border-warning border-2 ms-2 py-1" style="color: #b45309;">{{ $action->preventive_action }}</div>
                                                 @endif
                                                 
                                                 @if($action->proof_image)
-                                                    <div class="mt-2">
-                                                        <small class="text-secondary d-block mb-1"><i class="bi bi-camera me-1"></i> ภาพหลักฐานการแก้ไข:</small>
-                                                        <img src="/storage/{{ $action->proof_image }}" class="rounded-3 img-fluid shadow-sm" style="max-height: 160px; object-fit: cover;">
+                                                    <div class="mt-2 ms-4">
+                                                        <small class="text-secondary d-block mb-2"><i class="bi bi-camera me-1"></i> ภาพหลักฐานการแก้ไข:</small>
+                                                        <img src="/storage/{{ $action->proof_image }}" class="rounded-3 img-fluid" style="max-height: 160px; object-fit: cover; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
                                                     </div>
                                                 @endif
                                             @endif
@@ -107,62 +243,35 @@
                                         </div>
                                         <!-- Actions -->
                                         @if($action->status == 'resolved')
-                                            {{-- Close Button Visibility:
-                                                 1. Escalator (Creator)
-                                                 2. Administration (Admin)
-                                                 3. QA Department
-                                                 4. Managers (Level >= 5) -> Can close tickets in their dept
-                                            --}}
                                             @if(auth()->user()->id == $action->escalated_by 
                                                 || auth()->user()->isAdmin() 
                                                 || auth()->user()->isQA()
                                                 || auth()->user()->level >= 5)
-                                                <a href="{{ route('inspection.verification') }}" class="btn btn-outline-success rounded-pill px-4 shadow-sm w-100">
-                                                    <i class="bi bi-box-arrow-up-right me-1"></i> ไปหน้าทวนสอบ (Verify)
+                                                <a href="{{ route('inspection.verification') }}" class="premium-btn-success btn w-100 px-4 py-2">
+                                                    <i class="bi bi-check2-circle me-1"></i> ทวนสอบงาน (Verify)
                                                 </a>
                                             @else
-                                                <span class="badge bg-light text-success border border-success p-2 w-100 w-sm-auto text-center">
-                                                    <i class="bi bi-hourglass-split"></i> รอ QA ตรวจสอบ
+                                                <span class="badge badge-soft-success w-100 py-2 d-flex align-items-center justify-content-center" style="font-size:0.9rem;">
+                                                    <i class="bi bi-hourglass-split me-2"></i> รอ QA ตรวจสอบ
                                                 </span>
                                             @endif
                                         @else
                                             <div class="d-flex flex-column flex-sm-row gap-2 w-100 w-sm-auto">
-                                                {{-- Assign/Re-assign Button:
-                                                     Visible to:
-                                                     1. Managers (Level >= 5) & Admins -> Can always assign/re-assign
-                                                     2. Anyone -> If status is 'Open' (Can claim or assign)
-                                                     
-                                                     Hidden for:
-                                                     - Supervisors/Staff if status is already 'Assigned' (Cannot re-assign assigned tasks)
-                                                --}}
                                                 @if($action->status == 'open' || auth()->user()->level >= 5 || auth()->user()->isAdmin())
-                                                <button class="btn btn-warning rounded-pill px-3 shadow-sm text-dark flex-fill" onclick="openAssignModal({{ $action->id }}, '{{ $action->assigned_to ?? '' }}', '{{ $action->due_date ? $action->due_date->format('Y-m-d') : '' }}')">
-                                                    <i class="bi bi-person-plus-fill me-1"></i> {{ $action->status == 'assigned' ? 'เปลี่ยนคน' : 'มอบหมาย' }}
+                                                <button class="btn border-0 shadow-sm text-dark flex-fill py-2 rounded-3 fw-medium" style="background-color: #fef3c7;" onclick="openAssignModal({{ $action->id }}, '{{ $action->assigned_to ?? '' }}', '{{ $action->due_date ? $action->due_date->format('Y-m-d') : '' }}')">
+                                                    <i class="bi bi-person-plus me-1 text-warning"></i> {{ $action->status == 'assigned' ? 'เปลี่ยนคน' : 'มอบหมาย' }}
                                                 </button>
                                                 @endif
                                                 
-                                                {{-- Resolve Button --}}
-                                                
-                                                @if($action->status == 'assigned' && $action->assigned_to == auth()->id())
-                                                <button class="btn btn-primary rounded-pill px-3 shadow-sm flex-fill" 
+                                                @if(($action->status == 'assigned' && $action->assigned_to == auth()->id()) || $action->status == 'open')
+                                                <button class="premium-btn-primary btn px-4 py-2 flex-fill" 
                                                     data-id="{{ $action->id }}"
                                                     data-title="{{ $action->log->checkpoint->title ?? 'N/A' }}"
                                                     data-target="{{ $action->log->employee->fullname ?? ($action->log->machine->name ?? ($action->log->location->location_name ?? '-')) }}"
                                                     data-cause="{{ $action->root_cause ?? $action->log->correction_action ?? '-' }}"
                                                     data-image="{{ $action->log->photo_path ? '/storage/'.$action->log->photo_path : '' }}"
                                                     onclick="openResolveModal(this)">
-                                                    <i class="bi bi-tools me-1"></i> ดำเนินการ
-                                                </button>
-                                                @elseif($action->status == 'open')
-                                                {{-- Allow resolve directly if open --}}
-                                                <button class="btn btn-primary rounded-pill px-3 shadow-sm flex-fill" 
-                                                    data-id="{{ $action->id }}"
-                                                    data-title="{{ $action->log->checkpoint->title ?? 'N/A' }}"
-                                                    data-target="{{ $action->log->employee->fullname ?? ($action->log->machine->name ?? ($action->log->location->location_name ?? '-')) }}"
-                                                    data-cause="{{ $action->root_cause ?? $action->log->correction_action ?? '-' }}"
-                                                    data-image="{{ $action->log->photo_path ? '/storage/'.$action->log->photo_path : '' }}"
-                                                    onclick="openResolveModal(this)">
-                                                    <i class="bi bi-tools me-1"></i> ดำเนินการ
+                                                    ดำเนินการแก้ไข <i class="bi bi-arrow-right-short ms-1"></i>
                                                 </button>
                                                 @endif
                                             </div>
@@ -185,67 +294,59 @@
 
             <!-- Right Column: History -->
             <div class="col-lg-6">
-                {{-- Same History Code --}}
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-header bg-white border-bottom border-light pt-4 px-4 pb-3">
+                <div class="impeccable-card h-100">
+                    <div class="card-header bg-transparent border-0 pt-4 px-4 pb-0">
                         <div class="d-flex align-items-center">
-                            <div class="bg-success bg-opacity-10 text-success rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 48px; height: 48px;">
-                                <i class="bi bi-check-all fs-4"></i>
+                            <div class="impeccable-header-icon icon-success me-3">
+                                <i class="bi bi-check2-all"></i>
                             </div>
-                            <h5 class="fw-bold text-dark mb-0">ประวัติที่ดำเนินการแล้ว</h5>
+                            <h5 class="fw-bolder text-dark mb-0" style="letter-spacing: -0.02em;">ประวัติที่ดำเนินการแล้ว</h5>
                         </div>
                     </div>
-                    <div class="card-body p-4">
-                        <div class="table-modern table-responsive w-100">
-                            <table class="table table-hover align-middle mb-0 text-nowrap">
+                    <div class="card-body p-0 mt-4">
+                        <div class="table-responsive w-100">
+                            <table class="table modern-table mb-0 w-100">
                                 <thead>
-                                    <tr class="text-secondary" style="font-size: 0.85rem; letter-spacing: 0.5px;">
-                                        <th class="ps-4 fw-semibold text-uppercase">รายการ</th>
-                                        <th class="fw-semibold text-uppercase">วิธีที่แก้ไข (Action Taken)</th>
-                                        <th class="fw-semibold text-uppercase">แก้ไขโดย</th>
-                                        <th class="fw-semibold text-uppercase">วันที่</th>
-                                        <th class="pe-4 text-center fw-semibold text-uppercase">สถานะ / หลักฐาน</th>
+                                    <tr>
+                                        <th class="ps-4">รายการ</th>
+                                        <th>วิธีที่แก้ไข (Action Taken)</th>
+                                        <th>แก้ไขโดย</th>
+                                        <th class="pe-4 text-center">สถานะ</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @forelse($completedActions as $action)
                                         <tr>
-                                            <td class="ps-4" data-label="รายการ">
-                                                <div class="fw-bold small">{{ $action->log->checkpoint->title ?? '-' }}</div>
-                                                <div class="x-small text-muted">{{ $action->log->machine->name ?? ($action->log->location->location_name ?? '-') }}</div>
-                                                @if($action->root_cause)
-                                                    <div class="x-small mt-1 text-muted text-decoration-line-through"><i class="bi bi-bug me-1"></i>สาเหตุ: {{ $action->root_cause }}</div>
-                                                @endif
+                                            <td class="ps-4">
+                                                <div class="fw-bold text-dark">{{ $action->log->checkpoint->title ?? '-' }}</div>
+                                                <div class="small text-muted mt-1"><i class="bi bi-geo-alt me-1"></i>{{ $action->log->machine->name ?? ($action->log->location->location_name ?? '-') }}</div>
                                             </td>
-                                            <td class="small" data-label="วิธีที่แก้ไข">
+                                            <td>
                                                 @if($action->action_taken)
-                                                    <span class="text-dark d-block fw-semibold"><i class="bi bi-tools text-success me-1"></i>{{ $action->action_taken }}</span>
+                                                    <div class="text-success fw-medium"><i class="bi bi-wrench-adjustable text-success me-2"></i>{{ $action->action_taken }}</div>
                                                     @if($action->preventive_action)
-                                                        <div class="mt-1"><span class="badge bg-warning bg-opacity-25 text-dark border border-warning px-2 py-1"><i class="bi bi-shield-check me-1"></i>ป้องกัน: {{ $action->preventive_action }}</span></div>
+                                                        <div class="mt-2 d-inline-flex align-items-center bg-warning bg-opacity-10 text-warning px-2 py-1 rounded" style="font-size: 0.8rem; font-weight: 500;">
+                                                            <i class="bi bi-shield-check me-1"></i> ป้องกัน: {{ $action->preventive_action }}
+                                                        </div>
                                                     @endif
                                                 @else
                                                     <span class="text-muted fst-italic">ไม่ได้บันทึกวิธีแก้ไข</span>
                                                 @endif
                                             </td>
-                                            <td class="small" data-label="แก้ไขโดย">{{ $action->assignee->name ?? $action->escalator->name }}</td>
-                                            <td class="small" data-label="วันที่">
-                                                {{ $action->resolved_at ? $action->resolved_at->format('d/m/Y') : '-' }}
-                                                @if($action->resolved_at)
-                                                    <div class="x-small text-muted mt-1"><i class="bi bi-clock me-1"></i>{{ $action->resolved_at->format('H:i') }} น.</div>
-                                                @endif
+                                            <td>
+                                                <div class="fw-medium text-dark">{{ $action->assignee->name ?? $action->escalator->name }}</div>
+                                                <div class="small text-muted mt-1">{{ $action->resolved_at ? $action->resolved_at->format('d/m/Y H:i') : '-' }}</div>
                                             </td>
-                                            <td class="pe-4 text-center" data-label="สถานะ">
+                                            <td class="pe-4 text-center">
                                                 @if($action->status === 'closed')
-                                                    <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 d-block mb-1"><i class="bi bi-check-circle-fill me-1"></i>Closed</span>
+                                                    <span class="badge badge-soft-success d-inline-flex align-items-center mb-2"><i class="bi bi-check-circle-fill me-1"></i>Closed</span>
                                                 @else
-                                                    <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 d-block mb-1"><i class="bi bi-check-circle-fill me-1"></i>{{ ucfirst($action->status) }}</span>
+                                                    <span class="badge badge-soft-success d-inline-flex align-items-center mb-2"><i class="bi bi-check-circle-fill me-1"></i>{{ ucfirst($action->status) }}</span>
                                                 @endif
                                                 @if($action->proof_image)
-                                                    <button type="button" onclick="openCompletedEvidenceModal('{{ Storage::url($action->proof_image) }}')" class="btn btn-outline-success btn-sm rounded-pill px-2 py-0 btn-evidence-hover w-100 mt-1" style="font-size:0.7rem;">
-                                                        <i class="bi bi-images me-1"></i>ดูรูปหลักฐาน
+                                                    <button type="button" onclick="openCompletedEvidenceModal('{{ Storage::url($action->proof_image) }}')" class="btn btn-light btn-sm rounded-pill w-100 text-secondary border-0" style="font-size:0.75rem; font-weight: 500; background-color: #f1f5f9;">
+                                                        <i class="bi bi-image me-1"></i> รูปหลักฐาน
                                                     </button>
-                                                @else
-                                                    <span class="text-muted x-small d-block mt-1">ไม่มีรูปหลักฐาน</span>
                                                 @endif
                                             </td>
                                         </tr>
