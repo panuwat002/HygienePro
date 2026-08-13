@@ -44,11 +44,12 @@
         <thead>
             <tr>
                 <th style="width: 5%">ลำดับ</th>
-                <th style="width: 15%">วัน-เวลา</th>
-                <th style="width: 15%">แผนก</th>
-                <th style="width: 20%">เป้าหมาย</th>
-                <th style="width: 25%">หัวข้อที่ตก (Defect)</th>
-                <th style="width: 20%">มูลค่าความเสียหาย (บาท)</th>
+                <th style="width: 12%">วัน-เวลา</th>
+                <th style="width: 12%">แผนก</th>
+                <th style="width: 16%">เป้าหมาย</th>
+                <th style="width: 20%">หัวข้อที่ตก (Defect)</th>
+                <th style="width: 20%">การแก้ไข & มาตรการป้องกัน</th>
+                <th style="width: 15%">มูลค่าเสียหาย</th>
             </tr>
         </thead>
         <tbody>
@@ -56,6 +57,9 @@
             @forelse($logs as $log)
                 @php
                     $target = $log->employee ? $log->employee->fullname : ($log->machine ? $log->machine->name : ($log->location ? $log->location->location_name : '-'));
+                    $lossAmt = ($log->correctiveAction && $log->correctiveAction->financial_loss > 0)
+                        ? (float) $log->correctiveAction->financial_loss
+                        : ((float) ($log->checkpoint->default_cost_impact ?? 500));
                 @endphp
                 <tr>
                     <td>{{ $i++ }}</td>
@@ -63,11 +67,22 @@
                     <td class="text-left">{{ $log->session->department->dept_name ?? '-' }}</td>
                     <td class="text-left">{{ $target }}</td>
                     <td class="text-left text-danger">{{ $log->checkpoint->title ?? '-' }}</td>
-                    <td class="text-right text-danger">฿{{ number_format($log->calculated_loss ?? 500, 2) }}</td>
+                    <td class="text-left">
+                        @if($log->correctiveAction && $log->correctiveAction->preventive_action)
+                            <div style="font-weight: bold; color: #b45309;">ป้องกัน: {{ $log->correctiveAction->preventive_action }}</div>
+                        @elseif($log->correctiveAction && $log->correctiveAction->action_taken)
+                            <div>แก้ไข: {{ $log->correctiveAction->action_taken }}</div>
+                        @elseif($log->note)
+                            <div>{{ $log->note }}</div>
+                        @else
+                            -
+                        @endif
+                    </td>
+                    <td class="text-right text-danger">฿{{ number_format($lossAmt, 2) }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="6">ไม่พบข้อมูลความเสียหายประจำเดือนนี้</td>
+                    <td colspan="7">ไม่พบข้อมูลความเสียหายประจำเดือนนี้</td>
                 </tr>
             @endforelse
         </tbody>

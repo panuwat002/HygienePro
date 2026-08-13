@@ -132,7 +132,7 @@
                                 <th>แผนก</th>
                                 <th>เป้าหมาย</th>
                                 <th>หัวข้อที่ตก (Defect)</th>
-                                <th>หมวดหมู่</th>
+                                <th>การแก้ไข & มาตรการป้องกัน</th>
                                 <th class="text-end pe-4">มูลค่าความเสียหาย (THB)</th>
                             </tr>
                         </thead>
@@ -149,12 +149,23 @@
                                     <td class="fw-bold text-dark">{{ $log->session->department->dept_name ?? '-' }}</td>
                                     <td>{{ $target }}</td>
                                     <td class="text-danger fw-bold">{{ $log->checkpoint->title ?? '-' }}</td>
-                                    <td><span class="badge bg-light text-secondary border">{{ $log->checkpoint->category->name ?? 'ทั่วไป' }}</span></td>
+                                    <td>
+                                        @if($log->correctiveAction && $log->correctiveAction->action_taken)
+                                            <div class="small text-success fw-bold"><i class="bi bi-tools me-1"></i>{{ $log->correctiveAction->action_taken }}</div>
+                                        @endif
+                                        @if($log->correctiveAction && $log->correctiveAction->preventive_action)
+                                            <div class="small text-dark mt-1"><span class="badge bg-warning bg-opacity-25 text-dark border border-warning"><i class="bi bi-shield-check me-1"></i>มาตรการป้องกัน: {{ $log->correctiveAction->preventive_action }}</span></div>
+                                        @elseif($log->note)
+                                            <div class="small text-muted">{{ $log->note }}</div>
+                                        @else
+                                            <span class="text-muted small">-</span>
+                                        @endif
+                                    </td>
                                     <td class="text-end pe-4 fw-bold text-danger">฿{{ number_format($lossAmt, 2) }}</td>
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="6" class="text-center py-5 text-muted">ไม่พบข้อมูลความเสียหายตามเงื่อนไขที่เลือก</td>
+                                    <td colspan="7" class="text-center py-5 text-muted">ไม่พบข้อมูลความเสียหายตามเงื่อนไขที่เลือก</td>
                                 </tr>
                             @endforelse
                         </tbody>

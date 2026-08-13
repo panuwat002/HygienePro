@@ -194,8 +194,19 @@
                                 @php
                                     $issues = [];
                                     foreach($data['results'] as $log) {
-                                        if($log->result === 'fail' && $log->note) {
-                                            $issues[] = $log->checkpoint->title . ': ' . $log->note;
+                                        if($log->result === 'fail') {
+                                            $desc = $log->checkpoint->title ?? '';
+                                            if($log->note) {
+                                                $desc .= ': ' . $log->note;
+                                            }
+                                            if($log->correctiveAction && $log->correctiveAction->preventive_action) {
+                                                $desc .= ' [ป้องกัน: ' . $log->correctiveAction->preventive_action . ']';
+                                            } elseif($log->correctiveAction && $log->correctiveAction->action_taken) {
+                                                $desc .= ' [แก้ไข: ' . $log->correctiveAction->action_taken . ']';
+                                            }
+                                            if ($desc) {
+                                                $issues[] = $desc;
+                                            }
                                         }
                                     }
                                 @endphp
