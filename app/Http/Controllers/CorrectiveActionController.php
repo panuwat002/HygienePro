@@ -212,6 +212,12 @@ class CorrectiveActionController extends Controller
             'assigned_to' => auth()->id() // Auto-claim by resolver
         ]);
 
+        if ($action->log) {
+            $action->log->update([
+                'correction_action' => $request->action_taken
+            ]);
+        }
+
         // Loop Engineering: Work is resolved, goes back to QA via Verify page.
         // Removed startApprovalFlow() to break the linear cycle.
 

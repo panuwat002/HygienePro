@@ -206,9 +206,9 @@
                                             </td>
                                             <td class="small" data-label="วิธีที่แก้ไข">
                                                 @if($action->action_taken)
-                                                    <span class="text-dark d-block">{{ $action->action_taken }}</span>
+                                                    <span class="text-dark d-block fw-semibold"><i class="bi bi-tools text-success me-1"></i>{{ $action->action_taken }}</span>
                                                     @if($action->preventive_action)
-                                                        <div class="x-small text-muted mt-1"><i class="bi bi-shield-check me-1"></i>ป้องกัน: {{ $action->preventive_action }}</div>
+                                                        <div class="mt-1"><span class="badge bg-warning bg-opacity-25 text-dark border border-warning px-2 py-1"><i class="bi bi-shield-check me-1"></i>ป้องกัน: {{ $action->preventive_action }}</span></div>
                                                     @endif
                                                 @else
                                                     <span class="text-muted fst-italic">ไม่ได้บันทึกวิธีแก้ไข</span>

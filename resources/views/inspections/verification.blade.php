@@ -626,8 +626,8 @@
                                                                         @endif
 
                                                                         @if($log->correctiveAction->preventive_action)
-                                                                            <div class="mb-1">
-                                                                                <strong class="text-warning-emphasis">มาตรการป้องกัน (Preventive):</strong> {{ $log->correctiveAction->preventive_action }}
+                                                                            <div class="p-2 mt-1 rounded bg-warning bg-opacity-15 border border-warning text-dark">
+                                                                                <strong class="text-warning-emphasis"><i class="bi bi-shield-check me-1"></i>มาตรการป้องกัน (Preventive Action):</strong> {{ $log->correctiveAction->preventive_action }}
                                                                             </div>
                                                                         @endif
 
