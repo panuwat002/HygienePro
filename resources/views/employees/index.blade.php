@@ -39,6 +39,11 @@
                         <button type="button" class="btn btn-outline-info shadow-sm" data-bs-toggle="modal" data-bs-target="#importSchedulesModal" title="Import กะรายวัน">
                             <i class="bi bi-calendar-range"></i><span class="d-none d-sm-inline ms-1">Import กะรายวัน</span>
                         </button>
+                        @if(Auth::user()->department_id)
+                        <a href="{{ route('departments.roster', Auth::user()->department_id) }}" class="btn btn-outline-warning shadow-sm" title="จัดตารางงาน (Roster)">
+                            <i class="bi bi-calendar-week"></i><span class="d-none d-sm-inline ms-1">ตารางงาน (Roster)</span>
+                        </a>
+                        @endif
                         <a href="{{ route('employees.create') }}" class="btn btn-primary-custom shadow-sm" title="เพิ่มพนักงานใหม่">
                             <i class="bi bi-person-plus-fill"></i><span class="d-none d-sm-inline ms-2">เพิ่มพนักงานใหม่</span>
                         </a>
@@ -134,9 +139,26 @@
                                     <td data-label="แผนก" class="text-secondary">{{ $employee->department->dept_name ?? '-' }}</td>
                                     <td data-label="กะ / จุดประจำการ" class="text-center">
                                         <div class="d-flex flex-column gap-1 align-items-center">
-                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle small" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">
-                                                {{ $employee->today_schedule ?? ($employee->shift->shift_name ?? '-') }}
-                                            </span>
+                                            @php
+                                                $todaySch = isset($todaySchedules) ? $todaySchedules->get($employee->id) : null;
+                                            @endphp
+                                            
+                                            @if($todaySch)
+                                                @if($todaySch->is_day_off)
+                                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle small" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;" title="กะวันนี้ (จากตารางงาน)">
+                                                        หยุด (Day Off)
+                                                    </span>
+                                                @else
+                                                    <span class="badge bg-info-subtle text-info border border-info-subtle small" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;" title="กะวันนี้ (จากตารางงาน)">
+                                                        <i class="bi bi-calendar-check me-1"></i>{{ $todaySch->shift->shift_name ?? 'ไม่มีกะ' }}
+                                                    </span>
+                                                @endif
+                                            @else
+                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle small" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;" title="กะหลัก (Default Shift)">
+                                                    {{ $employee->shift->shift_name ?? '-' }}
+                                                </span>
+                                            @endif
+                                            
                                             <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle small" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">{{ $employee->location->location_name ?? '-' }}</span>
                                         </div>
                                     </td>

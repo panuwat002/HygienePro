@@ -2,19 +2,12 @@
     @section('header', 'ตรวจพนักงาน')
 
     @php
-        // Calculate progress percentage (filtered by session's shift, handling both English and Thai DB names)
-        $shiftNames = match($session->shift) {
-            'morning' => ['morning', 'กะเช้า'],
-            'afternoon' => ['afternoon', 'กะบ่าย'],
-            'night' => ['night', 'กะดึก'],
-            default => [$session->shift]
-        };
-        $totalEmployees = $session->department->employees()
-            ->where('is_active', true)
-            ->whereHas('shift', fn($q) => $q->whereIn('shift_name', $shiftNames))
-            ->count();
+        // Calculate progress percentage using target employees for the session's shift(s)
+        $targetEmployees = $session->getTargetEmployees();
+        $totalEmployees = $targetEmployees->count();
         $inspectedCount = $session->logs()->distinct('employee_id')->count();
         $progressPercent = $totalEmployees > 0 ? round(($inspectedCount / $totalEmployees) * 100) : 0;
+        $shiftRemainingCount = max(0, $totalEmployees - $inspectedCount);
     @endphp
 
     <div class="row justify-content-center align-items-center" style="min-height: 70vh;">
@@ -31,7 +24,7 @@
                         @if($session->type === 'personnel')
                             <span class="badge rounded-pill px-3" style="background: var(--primary);">รอบที่ {{ $session->round }}</span>
                         @endif
-                        <small class="d-block mt-1" style="font-size: 0.75rem; color: var(--slate-500);">กะ {{ ucfirst($session->shift) }}</small>
+                        <small class="d-block mt-1" style="font-size: 0.75rem; color: var(--slate-500);">{{ str_starts_with($session->shift_label, 'กะ') ? $session->shift_label : 'กะ ' . $session->shift_label }}</small>
                     </div>
                 </div>
             </div>
@@ -67,13 +60,9 @@
                         <hr class="my-4" style="opacity: 0.2;">
                         
                         {{-- Bulk Pass Button Section --}}
-                        @php
-                            $shiftRemainingCount = $totalEmployees - $inspectedCount;
-                        @endphp
-                        
                         <div class="card border-0 shadow-sm mb-3" style="background: {{ $shiftRemainingCount > 0 ? 'var(--success-soft)' : '#f8f9fa' }}; border-radius: var(--radius-lg); border-left: 4px solid {{ $shiftRemainingCount > 0 ? 'var(--success)' : '#ced4da' }} !important;">
                             <div class="card-body p-3 text-start">
-                                <h6 class="fw-bold mb-1" style="color: {{ $shiftRemainingCount > 0 ? 'var(--success)' : '#6c757d' }};">ตรวจพนักงานกะ{{ $session->shift === 'morning' ? 'เช้า' : 'ดึก' }}ครบแล้วใช่ไหม?</h6>
+                                <h6 class="fw-bold mb-1" style="color: {{ $shiftRemainingCount > 0 ? 'var(--success)' : '#6c757d' }};">ตรวจพนักงาน {{ $session->shift_label }} ครบแล้วใช่ไหม?</h6>
                                 <small class="text-muted d-block mb-3">
                                     @if($shiftRemainingCount > 0)
                                         ระบบจะให้ "ผ่าน" เฉพาะพนักงานในกะปัจจุบันเท่านั้น
@@ -202,7 +191,7 @@
                             <h5 class="fw-bold text-dark">คุณกำลังจะให้ผ่านทั้งหมด</h5>
                             <p class="text-muted mb-0">
                                 พนักงานที่เหลืออีก <strong class="text-success fs-4">{{ $shiftRemainingCount }}</strong> คน
-                                <strong class="text-danger border-bottom border-danger">เฉพาะในกะ{{ $session->shift === 'morning' ? 'เช้า' : 'ดึก' }}</strong><br>
+                                <strong class="text-danger border-bottom border-danger">เฉพาะ {{ $session->shift_label }}</strong><br>
                                 จะถูกบันทึกว่า <strong class="text-success">"ผ่าน"</strong> ทุกหัวข้อตรวจโดยอัตโนมัติ
                             </p>
                         </div>

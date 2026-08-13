@@ -417,6 +417,26 @@ class ReportController extends Controller
             return strcmp($a['info']->fullname ?? $a['info']->fname ?? '', $b['info']->fullname ?? $b['info']->fname ?? ''); // Sort alphabetically by fullname
         });
 
+        // Resolve individual Employee Schedule (Roster) shift for each employee for $date
+        $empIds = array_keys($employeeMatrix);
+        $schedules = \App\Models\EmployeeSchedule::with('shift')
+            ->whereIn('employee_id', $empIds)
+            ->whereDate('date', $date)
+            ->get()
+            ->keyBy('employee_id');
+
+        foreach ($employeeMatrix as $empId => &$data) {
+            $sch = $schedules->get($empId);
+            if ($sch && $sch->shift) {
+                $data['roster_shift'] = $sch->shift->shift_name;
+            } elseif (!empty($data['info']->shift)) {
+                $data['roster_shift'] = $data['info']->shift->shift_name;
+            } else {
+                $data['roster_shift'] = $data['session'] ? $data['session']->shift_label : '-';
+            }
+        }
+        unset($data);
+
         // Collect Signatures (Unique Managers and Supervisors involved)
         $verifierIds = $sessions->flatMap(fn($s) => $s->logs->pluck('verifier_id'))->unique()->filter();
         $approverIds = $sessions->pluck('approved_by')->unique()->filter();
@@ -648,5 +668,86 @@ class ReportController extends Controller
 
         $pdf = Pdf::loadView('reports.pdf.monthly_summary', $data);
         return $pdf->stream("monthly-report-{$month}.pdf");
+    }
+
+    public function moneyReport(Request $request)
+    {
+        $user = auth()->user();
+        $month = $request->input('month', date('Y-m'));
+        $departmentId = $request->input('department_id');
+
+        $startDate = Carbon::parse($month . '-01')->startOfMonth();
+        $endDate = $startDate->copy()->endOfMonth();
+
+        $query = InspectionLog::with(['checkpoint.category', 'session.department', 'correctiveAction'])
+            ->where('result', 'fail')
+            ->whereBetween('inspected_at', [$startDate, $endDate]);
+
+        if ($user->department && $user->department->visibility_type === 'isolated' && !$user->isAdmin()) {
+            $departmentId = $user->department_id;
+            $query->whereHas('session', fn($q) => $q->where('department_id', $departmentId));
+        } elseif ($departmentId) {
+            $query->whereHas('session', fn($q) => $q->where('department_id', $departmentId));
+        }
+
+        $logs = $query->get();
+
+        $totalLoss = 0;
+        $deptLosses = [];
+        $categoryLosses = [];
+
+        foreach ($logs as $log) {
+            $loss = ($log->correctiveAction && $log->correctiveAction->financial_loss > 0)
+                ? (float) $log->correctiveAction->financial_loss
+                : ((float) ($log->checkpoint->default_cost_impact ?? 500));
+
+            $totalLoss += $loss;
+
+            $deptName = $log->session->department->dept_name ?? 'Unassigned';
+            $deptLosses[$deptName] = ($deptLosses[$deptName] ?? 0) + $loss;
+
+            $catName = $log->checkpoint->category->name ?? 'ทั่วไป';
+            $categoryLosses[$catName] = ($categoryLosses[$catName] ?? 0) + $loss;
+        }
+
+        arsort($deptLosses);
+        arsort($categoryLosses);
+
+        $departments = Department::all();
+
+        return view('reports.money', compact('logs', 'month', 'departmentId', 'totalLoss', 'deptLosses', 'categoryLosses', 'departments'));
+    }
+
+    public function exportMoneyPdf(Request $request)
+    {
+        $month = $request->input('month', date('Y-m'));
+        $departmentId = $request->input('department_id');
+
+        $startDate = Carbon::parse($month . '-01')->startOfMonth();
+        $endDate = $startDate->copy()->endOfMonth();
+
+        $query = InspectionLog::with(['checkpoint.category', 'session.department', 'correctiveAction', 'employee', 'location', 'machine'])
+            ->where('result', 'fail')
+            ->whereBetween('inspected_at', [$startDate, $endDate]);
+
+        if ($departmentId) {
+            $query->whereHas('session', fn($q) => $q->where('department_id', $departmentId));
+        }
+
+        $logs = $query->get();
+
+        $totalLoss = 0;
+        foreach ($logs as $log) {
+            $loss = ($log->correctiveAction && $log->correctiveAction->financial_loss > 0)
+                ? (float) $log->correctiveAction->financial_loss
+                : ((float) ($log->checkpoint->default_cost_impact ?? 500));
+            $log->calculated_loss = $loss;
+            $totalLoss += $loss;
+        }
+
+        $pdf = Pdf::loadView('reports.pdf.money_summary', compact('logs', 'month', 'totalLoss', 'departmentId'));
+        $pdf->setPaper('a4', 'landscape');
+
+        return $pdf->stream("money-report-{$month}.pdf");
     }
 }

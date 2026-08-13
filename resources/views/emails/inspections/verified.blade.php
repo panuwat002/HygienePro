@@ -21,7 +21,7 @@
         </tr>
         <tr>
             <td style="padding-bottom: 12px;"><strong style="color: #6b7280; font-size: 14px; text-transform: uppercase;">รอบการตรวจ:</strong></td>
-            <td style="padding-bottom: 12px; color: #1f2937; font-weight: 500;">{{ ucfirst($session->shift) }} (Round {{ $session->round }})</td>
+            <td style="padding-bottom: 12px; color: #1f2937; font-weight: 500;">{{ $session->shift_label }} (Round {{ $session->round }})</td>
         </tr>
         <tr>
             <td><strong style="color: #6b7280; font-size: 14px; text-transform: uppercase;">วันที่ตรวจ:</strong></td>

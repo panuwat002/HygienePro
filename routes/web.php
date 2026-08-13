@@ -35,7 +35,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::patch('/profile/signature', [ProfileController::class, 'updateSignature'])->name('profile.signature');
+    Route::delete('/profile/signature', [ProfileController::class, 'destroySignature'])->name('profile.signature.destroy');
 
+    // Settings
+    Route::get('/settings', [\App\Http\Controllers\SettingsController::class, 'index'])->name('settings.index');
+    Route::post('/settings', [\App\Http\Controllers\SettingsController::class, 'update'])->name('settings.update');
     // Pending Approvals (For all authenticated users that might be approvers)
     Route::get('/approvals/pending', [App\Http\Controllers\ApprovalController::class, 'pending'])->name('approvals.pending');
     Route::post('/approvals/{approval}/approve', [App\Http\Controllers\ApprovalController::class, 'approve'])->name('approvals.approve');
@@ -93,9 +98,11 @@ Route::middleware('auth')->group(function () {
             Route::get('/reports', 'index')->name('reports.index');
             Route::get('/reports/daily', 'daily')->name('reports.daily');
             Route::get('/reports/offenders', 'offenders')->name('reports.offenders');
-            Route::get('/reports/export/pdf', [App\Http\Controllers\ReportController::class, 'exportDailyPdf'])->name('reports.export.pdf');
-            Route::get('/reports/export/fm-qa-22', [App\Http\Controllers\ReportController::class, 'exportFmQa22'])->name('reports.export.fm-qa-22');
-            Route::get('/reports/export/monthly', [App\Http\Controllers\ReportController::class, 'exportMonthlyPdf'])->name('reports.monthly.pdf');
+            Route::get('/reports/money', 'moneyReport')->name('reports.money');
+            Route::get('/reports/export/pdf', 'exportDailyPdf')->name('reports.export.pdf');
+            Route::get('/reports/export/fm-qa-22', 'exportFmQa22')->name('reports.export.fm-qa-22');
+            Route::get('/reports/export/monthly', 'exportMonthlyPdf')->name('reports.monthly.pdf');
+            Route::get('/reports/export/money', 'exportMoneyPdf')->name('reports.money.pdf');
         });
 
         // ==========================================================
@@ -121,6 +128,11 @@ Route::middleware('auth')->group(function () {
         // Group 1.5: Master Data Management
         Route::middleware(['can:manage-master-data'])->group(function () {
             Route::resource('departments', App\Http\Controllers\DepartmentController::class);
+            Route::get('departments/{department}/roster', [\App\Http\Controllers\EmployeeScheduleController::class, 'index'])->name('departments.roster');
+            Route::get('departments/{department}/roster/print', [\App\Http\Controllers\EmployeeScheduleController::class, 'print'])->name('departments.roster.print');
+            Route::post('departments/{department}/roster', [\App\Http\Controllers\EmployeeScheduleController::class, 'store'])->name('departments.roster.store');
+            Route::match(['get', 'post'], 'departments/{department}/roster/export', [\App\Http\Controllers\EmployeeScheduleController::class, 'export'])->name('departments.roster.export');
+            Route::post('departments/{department}/roster/import', [\App\Http\Controllers\EmployeeScheduleController::class, 'import'])->name('departments.roster.import');
             Route::get('departments-export', [App\Http\Controllers\DepartmentController::class, 'export'])->name('departments.export');
             Route::post('departments-import', [App\Http\Controllers\DepartmentController::class, 'import'])->name('departments.import');
             Route::post('locations-bulk-delete', [LocationController::class, 'bulkDelete'])->name('locations.bulk-delete');

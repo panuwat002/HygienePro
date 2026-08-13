@@ -76,7 +76,10 @@
                         </tbody>
                     </table>
                 </div>
-            </div>
+        </div>
+        
+        <div class="mt-4 d-flex justify-content-end">
+            {{ $shifts->links('pagination::bootstrap-5') }}
         </div>
     </div>
 </x-app-layout>

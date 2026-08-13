@@ -258,6 +258,22 @@
                     </div>
                 </div>
 
+                <!-- Money Report Link -->
+                <div class="card shadow-sm border-0 mb-4 rounded-4" style="background-color: #fef2f2;">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="bg-danger bg-opacity-10 p-2 rounded-circle me-3">
+                                <i class="bi bi-currency-dollar text-danger fs-5"></i>
+                            </div>
+                            <h6 class="fw-bold mb-0">Money Report 💰</h6>
+                        </div>
+                        <p class="small text-muted mb-3">ดูรายงานสรุปประเมินมูลค่าความเสียหายและต้นทุนความไม่สอดคล้องประจำเดือน</p>
+                        <a href="{{ route('reports.money') }}" class="btn btn-danger w-100 fw-bold">
+                            <i class="bi bi-bar-chart-line me-1"></i> ดูรายงานมูลค่าความเสียหาย
+                        </a>
+                    </div>
+                </div>
+
                 <!-- Top Offenders Link -->
                 <div class="card shadow-sm border-0 rounded-4">
                     <div class="card-body p-4">

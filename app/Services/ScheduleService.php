@@ -19,20 +19,56 @@ class ScheduleService
      */
     public function getComplianceStatus($schedules, $date)
     {
-        return $schedules->map(function ($schedule) use ($date) {
-            return $this->calculateSingleStatus($schedule, $date);
+        if ($schedules->isEmpty()) {
+            return collect();
+        }
+
+        // Pre-fetch all logs for the given date that match the schedules' targets
+        $locationIds = [];
+        $machineIds = [];
+        
+        foreach ($schedules as $schedule) {
+            if ($schedule->targetable_type === Location::class) {
+                $locationIds[] = $schedule->targetable_id;
+            } elseif ($schedule->targetable_type === Machine::class) {
+                $machineIds[] = $schedule->targetable_id;
+            }
+        }
+
+        // Fetch logs for the specific date window and targets in one query
+        $logs = collect();
+        if (!empty($locationIds) || !empty($machineIds)) {
+            // Include next day to account for cross-midnight schedules
+            $minDate = Carbon::parse($date)->startOfDay();
+            $maxDate = Carbon::parse($date)->addDay()->endOfDay();
+
+            $logQuery = InspectionLog::whereBetween('inspected_at', [$minDate, $maxDate])
+                ->select('id', 'location_id', 'machine_id', 'inspected_at');
+            
+            $logQuery->where(function ($q) use ($locationIds, $machineIds) {
+                if (!empty($locationIds)) {
+                    $q->orWhereIn('location_id', array_unique($locationIds));
+                }
+                if (!empty($machineIds)) {
+                    $q->orWhereIn('machine_id', array_unique($machineIds));
+                }
+            });
+            
+            $logs = $logQuery->get();
+        }
+
+        return $schedules->map(function ($schedule) use ($date, $logs) {
+            return $this->calculateSingleStatusWithLogs($schedule, $date, $logs);
         });
     }
 
     /**
-     * Calculate status for a single schedule.
+     * Calculate status for a single schedule using pre-fetched logs in memory.
      */
-    public function calculateSingleStatus(InspectionSchedule $schedule, $date)
+    public function calculateSingleStatusWithLogs(InspectionSchedule $schedule, $date, $logs)
     {
         $status = 'pending'; // pending, completed, missed, in_progress (if applicable)
         
-        // Define time window for this specific date
-        // start_time/end_time may be Carbon objects (datetime cast) or strings
         $startTime = $schedule->start_time instanceof \Carbon\Carbon 
             ? $schedule->start_time->format('H:i:s') 
             : $schedule->start_time;
@@ -47,20 +83,24 @@ class ScheduleService
             $endDateTime->addDay();
         }
 
-        // Find logs
-        $logQuery = InspectionLog::whereDate('inspected_at', $date);
+        $hasLog = false;
         
-        if ($schedule->targetable_type === Location::class) {
-            $logQuery->where('location_id', $schedule->targetable_id);
-        } elseif ($schedule->targetable_type === Machine::class) {
-            $logQuery->where('machine_id', $schedule->targetable_id);
+        foreach ($logs as $log) {
+            $matchTarget = false;
+            if ($schedule->targetable_type === Location::class && $log->location_id == $schedule->targetable_id) {
+                $matchTarget = true;
+            } elseif ($schedule->targetable_type === Machine::class && $log->machine_id == $schedule->targetable_id) {
+                $matchTarget = true;
+            }
+            
+            if ($matchTarget) {
+                $inspectedAt = Carbon::parse($log->inspected_at);
+                if ($inspectedAt->between($startDateTime, $endDateTime)) {
+                    $hasLog = true;
+                    break;
+                }
+            }
         }
-
-        // Check if ANY log exists within reasonable window or just "today"
-        // Using "Today" broadly for now to be forgiving, or strictly window?
-        // Let's stick to the controller's original logic: Window Check.
-        $hasLog = $logQuery->whereBetween('inspected_at', [$startDateTime, $endDateTime])
-                           ->exists();
 
         if ($hasLog) {
             $status = 'completed';

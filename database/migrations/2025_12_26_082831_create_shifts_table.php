@@ -13,9 +13,12 @@ return new class extends Migration
     {
         Schema::create('shifts', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('department_id')->nullable()->constrained('departments')->onDelete('cascade');
             $table->string('shift_name');
-            $table->time('start_time');
-            $table->time('end_time');
+            $table->string('shift_type')->nullable(); // กะเช้า, กะบ่าย, กะดึก
+            $table->time('start_time')->nullable();
+            $table->time('end_time')->nullable();
+            $table->boolean('is_dayoff')->default(false);
             $table->timestamps();
         });
     }
@@ -25,6 +28,8 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::disableForeignKeyConstraints();
         Schema::dropIfExists('shifts');
+        Schema::enableForeignKeyConstraints();
     }
 };

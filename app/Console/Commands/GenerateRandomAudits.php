@@ -10,7 +10,7 @@ use Illuminate\Console\Command;
 class GenerateRandomAudits extends Command
 {
     protected $signature = 'audit:generate {--week= : ISO week number (defaults to next week)}';
-    protected $description = 'Generate random audit schedule for each department (1 random day Mon-Sat, 1 random shift morning/afternoon)';
+    protected $description = 'Generate random audit schedule for each department (Personnel, Machine, Area)';
 
     public function handle()
     {

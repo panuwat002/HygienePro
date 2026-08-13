@@ -81,6 +81,9 @@
                                     <span class="badge bg-light text-dark border">{{ $dept->employees->count() }} คน</span>
                                 </td>
                                 <td class="text-end pe-4">
+                                    <a href="{{ route('departments.roster', $dept->id) }}" class="btn btn-sm btn-outline-info rounded-circle me-1" title="จัดตารางงาน (Roster)">
+                                        <i class="bi bi-calendar-week"></i>
+                                    </a>
                                     <a href="{{ route('departments.edit', $dept->id) }}" class="btn btn-sm btn-outline-warning rounded-circle me-1" title="แก้ไข">
                                         <i class="bi bi-pencil-fill"></i>
                                     </a>

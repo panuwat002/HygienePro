@@ -158,7 +158,7 @@
                                     <i class="bi bi-building me-1"></i> {{ $department->dept_name }}
                                 </span>
                                 <div class="mt-2 small text-white-50">
-                                    <i class="bi bi-clock me-1"></i> กะ: {{ ucfirst($session->shift) }}
+                                    <i class="bi bi-clock me-1"></i> กะ: {{ $session->shift_label }}
                                 </div>
                             </div>
                         </div>
@@ -413,7 +413,7 @@
                             $targetKey = "{$data->target_type}:{$data->target_id}";
                             $targetUniqueId = str_replace(':', '_', $targetKey);
                             $totalCp = 0;
-                            foreach($data->checkpoints as $cItems) {
+                            foreach(($data->checkpoints ?? []) as $cItems) {
                                 $totalCp += count($cItems);
                             }
                             $hasSaved = count($data->existing_logs) > 0;
@@ -499,7 +499,7 @@
                                             </label>
                                         </div>
                                         <div id="checkpoints_{{ $targetUniqueId }}" class="checkpoints-container {{ $isNoProd ? 'd-none' : '' }}">
-                                        @forelse($data->checkpoints as $categoryName => $items)
+                                        @forelse(($data->checkpoints ?? []) as $categoryName => $items)
                                             <div class="card border-0 shadow-sm rounded-4 mb-3 overflow-hidden border-start border-4 border-primary">
                                                 <div class="card-header bg-white py-2 px-3 border-bottom">
                                                     <h6 class="fw-bold text-dark m-0 small">{{ $categoryName ?: 'ทั่วไป' }}</h6>

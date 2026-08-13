@@ -47,7 +47,7 @@ class CheckOverdueCARs extends Command
         $admins = \App\Models\User::where('level', 10)->get();
         
         foreach ($admins as $admin) {
-            if ($admin->email) {
+            if ($admin->email && $admin->wantsEmailFor('email_car_overdue')) {
                 \Illuminate\Support\Facades\Mail::to($admin->email)->send(new \App\Mail\CAROverdueReport($overdueActions));
             }
         }

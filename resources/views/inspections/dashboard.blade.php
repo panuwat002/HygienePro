@@ -434,6 +434,8 @@
                     <form action="{{ route('inspection.start', $type) }}" method="POST">
                         @csrf
                         <input type="hidden" name="shift" id="selected_shift" value="{{ $currentAutoShift }}">
+                        <!-- Added a hidden container for targets (selected shifts) -->
+                        <div id="selected_targets_container"></div>
                         
                         <div class="mb-4" @if($type !== 'personnel') style="display: none;" @endif>
                             <label for="department_id" class="form-label fw-bold text-muted">เลือกแผนก</label>
@@ -447,7 +449,7 @@
                             </select>
                         </div>
                         {{-- Location Filter for Area/Machine --}}
-                        <div class="mb-4" id="location-filter-container" @if($type === 'personnel') style="display: none;" @endif>
+                        <div class="mb-4 position-relative" id="location-filter-container" style="z-index: 1050; @if($type === 'personnel') display: none; @endif">
                             <label for="location_filter" class="form-label fw-bold text-primary mb-3">
                                 <i class="bi bi-pin-map-fill me-2"></i>เลือกพื้นที่ที่ต้องการตรวจ (Select Location)
                             </label>
@@ -481,20 +483,27 @@
                         </div>
 
                          <div class="mb-4">
-                            <label class="form-label fw-bold text-muted"><i class="bi bi-clock me-1"></i>กะการทำงาน (Shift)</label>
+                            <label class="form-label fw-bold text-muted"><i class="bi bi-clock-history me-1"></i>เวลาปัจจุบันและกะการทำงาน (Real-Time Clock)</label>
                             <div class="shift-indicator {{ $currentAutoShift == 'night' ? 'shift-night-indicator' : '' }} shadow-sm">
-                                <div class="d-flex align-items-center {{ $currentAutoShift == 'night' ? 'shift-night-icon' : 'shift-icon' }}">
+                                <div class="d-flex align-items-center {{ $currentAutoShift == 'night' ? 'shift-night-icon' : 'shift-icon' }}" id="live-clock-icon">
                                     @if($currentAutoShift == 'morning') <i class="bi bi-sun-fill"></i>
+                                    @elseif($currentAutoShift == 'afternoon') <i class="bi bi-brightness-high-fill"></i>
                                     @else <i class="bi bi-moon-stars-fill"></i>
                                     @endif
                                 </div>
                                 <div>
-                                    <h5 class="fw-bold mb-0 text-dark">
-                                        @if($currentAutoShift == 'morning') กะเช้า (Morning)
-                                        @else กะดึก (Night)
-                                        @endif
+                                    <h5 class="fw-bold mb-0 text-dark d-flex align-items-center gap-2">
+                                        <span id="live-clock-display" class="font-monospace text-primary"></span>
+                                        <span id="live-shift-name" class="badge rounded-pill bg-primary bg-opacity-10 text-primary fs-6">
+                                            @if($currentAutoShift == 'morning') กะเช้า (Morning)
+                                            @elseif($currentAutoShift == 'afternoon') กะบ่าย (Afternoon)
+                                            @else กะดึก (Night)
+                                            @endif
+                                        </span>
                                     </h5>
-                                    <small class="text-muted fw-medium">ตรวจสอบด้วยระบบ AI อัจฉริยะ (AI Smart Detected)</small>
+                                    <small class="text-muted fw-medium d-block mt-1">
+                                        <i class="bi bi-globe me-1"></i>เวลาตามโลกจริง (Real Time) • ประเมินกะจากเวลาปัจจุบัน
+                                    </small>
                                 </div>
                             </div>
                          </div>
@@ -510,6 +519,24 @@
                             </div>
                         </div>
                         @endif
+
+                        <!-- Sampling Inspection Toggle (Pillar 2) -->
+                        <div class="card border-0 rounded-4 shadow-sm mb-4 bg-primary bg-opacity-10 border border-primary border-opacity-25">
+                            <div class="card-body p-3">
+                                <div class="form-check form-switch d-flex align-items-center justify-content-between ps-0 mb-0">
+                                    <label class="form-check-label fw-bold text-dark me-3" for="is_sampling_switch">
+                                        <i class="bi bi-dice-5-fill text-primary me-2 fs-5"></i>
+                                        โหมดสุ่มตรวจอัตโนมัติ (Random Sampling Inspection)
+                                        <small class="d-block text-muted fw-normal">ให้ระบบสุ่มเลือกกลุ่มตัวอย่างเป้าหมายโดยอัตโนมัติ (ไร้อคติ)</small>
+                                    </label>
+                                    <input class="form-check-input ms-0" type="checkbox" role="switch" name="is_sampling" id="is_sampling_switch" value="1" onchange="document.getElementById('sample_size_box').style.display = this.checked ? 'block' : 'none';">
+                                </div>
+                                <div id="sample_size_box" class="mt-3" style="display: none;">
+                                    <label for="sample_size" class="form-label small fw-bold text-primary">จำนวนตัวอย่างที่ต้องการสุ่ม (Sample Size)</label>
+                                    <input type="number" name="sample_size" id="sample_size" class="form-control form-control-sm" placeholder="เช่น 10" min="1" max="100">
+                                </div>
+                            </div>
+                        </div>
 
                         <div class="d-grid mt-5">
                             <button type="submit" id="start-session-btn" class="btn btn-primary-custom btn-lg shadow rounded-pill py-3 fs-5 fw-bold pulse-btn">
@@ -532,10 +559,49 @@
         const locationFilter = document.getElementById('location_filter');
         const locationFilterContainer = document.getElementById('location-filter-container');
 
+        // Live Real-Time Clock Updater
+        function updateLiveClock() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            
+            const clockEl = document.getElementById('live-clock-display');
+            if (clockEl) {
+                clockEl.textContent = `${hours}:${minutes}:${seconds} น.`;
+            }
+
+            const h = now.getHours();
+            let shiftName = '';
+            let iconHtml = '';
+            if (h >= 6 && h < 13) {
+                shiftName = 'กะเช้า (Morning)';
+                iconHtml = '<i class="bi bi-sun-fill"></i>';
+            } else if (h >= 13 && h < 19) {
+                shiftName = 'กะบ่าย (Afternoon)';
+                iconHtml = '<i class="bi bi-brightness-high-fill"></i>';
+            } else {
+                shiftName = 'กะดึก (Night)';
+                iconHtml = '<i class="bi bi-moon-stars-fill"></i>';
+            }
+
+            const shiftBadgeEl = document.getElementById('live-shift-name');
+            if (shiftBadgeEl) {
+                shiftBadgeEl.textContent = shiftName;
+            }
+            const iconEl = document.getElementById('live-clock-icon');
+            if (iconEl) {
+                iconEl.innerHTML = iconHtml;
+            }
+        }
+
+        updateLiveClock();
+        setInterval(updateLiveClock, 1000);
+
         // 2. Fetch Data Function
         let currentLocations = []; // Store locations globally for filtering
 
-        function fetchStats() {
+        window.fetchStats = function fetchStats() {
             let deptId = 'all';
             if ('{{ $type }}' === 'personnel') {
                 deptId = deptSelect.value;
@@ -546,12 +612,19 @@
             }
 
             const shiftInput = document.getElementById('selected_shift');
-            const shiftVal = shiftInput ? shiftInput.value : '';
+            let shiftVal = shiftInput ? shiftInput.value : '';
+            
+            // For personnel, send all selected shifts as an array
+            let url = `/inspection/summary/{{ $type }}/${deptId}?shift=${shiftVal}`;
+            if ('{{ $type }}' === 'personnel' && typeof selectedShiftsArray !== 'undefined') {
+                const queryParams = selectedShiftsArray.map(s => `shifts[]=${encodeURIComponent(s)}`).join('&');
+                url = `/inspection/summary/{{ $type }}/${deptId}?${queryParams}`;
+            }
 
             // Loading state
             overviewContainer.classList.remove('d-none');
             cardsContainer.innerHTML = '<div class="col-12 text-center py-4" style="column-span: all; -webkit-column-span: all;"><div class="spinner-border text-primary" role="status"></div><p class="mt-2 text-muted">กำลังโหลดข้อมูล...</p></div>';
-            fetch(`/inspection/summary/{{ $type }}/${deptId}?shift=${shiftVal}`)
+            fetch(url)
                 .then(response => response.json())
                 .then(data => {
                     if(data.success) {
@@ -571,7 +644,6 @@
                             // Reset filter to empty (forcing selection)
                             locationFilter.value = ""; 
                             
-                            // Don't render locations yet for Area/Machine
                              cardsContainer.innerHTML = `
                                 <div class="col-12 py-5 text-center animate-in" style="column-span: all; -webkit-column-span: all; background: linear-gradient(135deg, #f8faff 0%, #eef2f9 100%); border-radius: 20px; border: 2px dashed #cdd7e5; transition: all 0.3s ease;">
                                     <div class="d-inline-flex align-items-center justify-content-center bg-white shadow-sm rounded-circle mb-4 animate-float" style="width: 80px; height: 80px; transition: transform 0.3s ease; cursor: pointer;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">
@@ -582,12 +654,16 @@
                                 </div>
                              `;
                         } else {
-                            // For Personnel, render the summary card directly
                             renderLocations(currentLocations);
                         }
                         
-                        // Handle Session UI
-                        refreshSessionUI(data);
+                        if(data.session_exists) {
+                            refreshSessionUI(data);
+                        } else {
+                            refreshSessionUI(null);
+                        }
+                        
+                        updateSubmitButton();
                     } else {
                         const errorMsg = data.message || 'ไม่สามารถโหลดข้อมูลได้';
                         const errDiv = document.createElement('div');
@@ -607,36 +683,20 @@
                 });
         }
 
-        // 3. Event Listeners
         if('{{ $type }}' === 'personnel') {
-            deptSelect.addEventListener('change', fetchStats);
+            deptSelect.addEventListener('change', window.fetchStats);
         } else {
-            fetchStats(); 
-            // Location Filter Change Event
-            if (locationFilter) {
+            if(locationFilter) {
                 locationFilter.addEventListener('change', function() {
                     const selectedLocId = this.value;
-                    
                     if (!selectedLocId) return;
-
-                    let filtered = [];
-                    if (selectedLocId === 'all') {
-                        filtered = currentLocations;
-                    } else {
-                        // filtered = currentLocations.filter(loc => loc.id == selectedLocId); // loose comparison for string/int types
-                        // Actually, renderLocations expects array.
-                        // But wait, if we filter from JS array, we don't need to depend on DOM elements being present/hidden.
-                        // We can just re-render.
-                        filtered = currentLocations.filter(loc => loc.id == selectedLocId);
-                    }
+                    let filtered = selectedLocId === 'all' ? currentLocations : currentLocations.filter(loc => loc.id == selectedLocId);
                     renderLocations(filtered);
                 });
             }
+            window.fetchStats(); 
         }
-        
-        // Removed old shiftInputs logic
 
-        // 4. Render Logic with Progress
         function renderLocations(locations) {
             cardsContainer.innerHTML = '';
             
@@ -654,7 +714,6 @@
                 const opacityClass = hasEmployees ? '' : 'opacity-75';
                 const animDelay = (index * 0.05).toFixed(2);
                 
-                // Progress Logic
                 let progressBadge = '';
                 if('{{ $type }}' === 'personnel') {
                     if(hasEmployees) {
@@ -667,7 +726,6 @@
                         progressBadge = `<span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill px-3 py-1 shadow-sm">ไม่มีพนักงาน</span>`;
                     }
                 } else if ('{{ $type }}' === 'machine') {
-                    // Machine inspection style
                     let totalMachines = 0;
                     let inspectedMachines = 0;
                     let noProductionMachines = 0;
@@ -689,7 +747,6 @@
                         progressBadge = `<span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill">ยังไม่ตรวจ (${totalMachines} เครื่อง)</span>`;
                     }
                 } else {
-                    // Area inspection style
                     if(inspected > 0) {
                         if (loc.is_no_production) {
                             progressBadge = `<span class="badge bg-secondary text-light rounded-pill"><i class="bi bi-dash-circle me-1"></i>งดใช้งาน</span>`;
@@ -701,11 +758,8 @@
                     }
                 }
 
-                // Machine/Area Selection Logic (Area Mode Only)
-                // Machine/Area Selection Logic
                 let areaSelectionHtml = '';
                 if ('{{ $type }}' === 'area') {
-                     // Area Mode: Show ONLY Location (General Area)
                     const isAreaInspected = loc.inspected_count > 0;
                     if (isAreaInspected) {
                         if (loc.is_no_production) {
@@ -716,15 +770,9 @@
                     } else {
                         const hasCheckpoints = loc.has_checkpoints;
                         const areaTargetId = `target_loc_${loc.id}`;
-                        
                         const disabledAttr = hasCheckpoints ? '' : 'disabled';
-                        const labelClass = hasCheckpoints 
-                            ? (isAreaInspected ? 'btn-outline-success' : 'btn-outline-primary')
-                            : 'btn-outline-secondary text-muted bg-light border-0';
-                        
-                        const statusIcon = hasCheckpoints
-                            ? (isAreaInspected ? '<i class="bi bi-check-circle-fill me-1 text-success"></i>' : '<i class="bi bi-circle check-box-icon"></i>')
-                            : '<span class="badge bg-secondary text-light">ไม่มีจุดตรวจ</span>';
+                        const labelClass = hasCheckpoints ? (isAreaInspected ? 'btn-outline-success' : 'btn-outline-primary') : 'btn-outline-secondary text-muted bg-light border-0';
+                        const statusIcon = hasCheckpoints ? (isAreaInspected ? '<i class="bi bi-check-circle-fill me-1 text-success"></i>' : '<i class="bi bi-circle check-box-icon"></i>') : '<span class="badge bg-secondary text-light">ไม่มีจุดตรวจ</span>';
     
                         areaSelectionHtml += `
                             <div class="mt-2 selection-menu">
@@ -741,20 +789,14 @@
                         `;
                     }
                 } else if ('{{ $type }}' === 'machine') {
-                    // Machine Mode: show machines + "ตรวจพื้นที่ทั่วไป" if the location
-                    // itself carries area-type checkpoints (floors, walls, ceiling, etc.).
-                    // The tab label promises "พื้นที่/เครื่องจักร" so both belong here.
                     let visibleMachines = 0;
                     let machineListHtml = '';
 
-                    // General Area target for this location (loc:X)
                     if (loc.has_area_checkpoints) {
                         const areaTargetId = `target_loc_${loc.id}`;
                         if (loc.area_inspected) {
                             visibleMachines++;
-                            const areaBadge = loc.area_no_production
-                                ? '<span class="badge bg-secondary text-light"><i class="bi bi-dash-circle me-1"></i>ไม่ได้ใช้งาน</span>'
-                                : '<span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>ตรวจแล้ว</span>';
+                            const areaBadge = loc.area_no_production ? '<span class="badge bg-secondary text-light"><i class="bi bi-dash-circle me-1"></i>ไม่ได้ใช้งาน</span>' : '<span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>ตรวจแล้ว</span>';
                             machineListHtml += `
                                 <div class="selection-menu">
                                     <div class="form-check p-0">
@@ -858,23 +900,28 @@
                 const isCurrentShift = loc.is_current_shift || false;
                 const shiftValue = String(loc.id).replace('shift_', '');
                 
-                const selectedShiftInput = document.getElementById('selected_shift');
-                const isSelected = selectedShiftInput && selectedShiftInput.value === shiftValue;
+                // For personnel, we now check targets[] inputs or a javascript array.
+                // We'll determine selection via a class 'selected' added by our JS.
+                const pointerStyle = '{{ $type }}' === 'personnel' ? 'cursor: pointer;' : '';
+                const clickHandler = '{{ $type }}' === 'personnel' ? `onclick="toggleShift('${shiftValue}', '${loc.id}', this)"` : '';
+
+                // We won't set cardBorderStyle based on isSelected at render time for personnel, 
+                // because we'll rely on our toggleShift JS to maintain the visual state across re-renders.
+                // Wait, if it re-renders, we NEED to know if it's selected.
+                // We'll read from our new global array 'selectedShiftsArray'.
+                const isSelected = (typeof selectedShiftsArray !== 'undefined' && selectedShiftsArray.includes(shiftValue));
                 
                 const cardBorderStyle = isSelected 
                     ? 'border: 2px solid rgba(59,130,246,1) !important; background: linear-gradient(to right, rgba(59,130,246,0.05), transparent);' 
                     : (isCurrentShift ? 'border: 2px solid rgba(59,130,246,0.5) !important; background: linear-gradient(to right, rgba(59,130,246,0.02), transparent);' : '');
                 
-                const currentShiftBadge = isCurrentShift 
-                    ? '<span class="badge bg-primary bg-opacity-10 text-primary border border-primary rounded-pill px-2 py-1 ms-2" style="font-size:0.65rem;"><i class="bi bi-star-fill me-1"></i>กะปัจจุบัน</span>' 
-                    : '';
-                    
                 const selectedBadge = isSelected
                     ? '<i class="bi bi-check-circle-fill text-primary ms-auto fs-5 selected-badge"></i>'
                     : '';
-
-                const clickHandler = '{{ $type }}' === 'personnel' ? `onclick="selectShift('${shiftValue}', '${loc.id}')"` : '';
-                const pointerStyle = '{{ $type }}' === 'personnel' ? 'cursor: pointer;' : '';
+                    
+                const currentShiftBadge = isCurrentShift 
+                    ? '<span class="badge bg-primary bg-opacity-10 text-primary border border-primary rounded-pill px-2 py-1 ms-2" style="font-size:0.65rem;"><i class="bi bi-star-fill me-1"></i>กะปัจจุบัน</span>' 
+                    : '';
 
                 const html = `
                 <div class="masonry-item location-card-col mb-3 animate-stagger" data-location-id="${loc.id}" style="animation-delay: ${animDelay}s">
@@ -940,13 +987,15 @@
         }
 
         function updateSubmitButton() {
-            if ('{{ $type }}' === 'personnel') return; // Only for area mode
             const submitButton = document.getElementById('start-session-btn');
             if (!submitButton) return;
 
             const selectedCount = document.querySelectorAll('.target-checkbox:checked').length;
-            if (selectedCount > 0) {
-                submitButton.innerHTML = `เริ่มการตรวจสอบ (${selectedCount} รายการ) <i class="bi bi-arrow-right ms-2"></i>`;
+            const personnelSelectedCount = ('{{ $type }}' === 'personnel' && typeof selectedShiftsArray !== 'undefined') ? selectedShiftsArray.length : 0;
+            
+            if (selectedCount > 0 || personnelSelectedCount > 0) {
+                const totalSelected = selectedCount + personnelSelectedCount;
+                submitButton.innerHTML = `เริ่มการตรวจสอบ (${totalSelected} รายการ) <i class="bi bi-arrow-right ms-2"></i>`;
                 submitButton.classList.replace('btn-primary-custom', 'btn-success');
                 submitButton.classList.remove('btn-warning');
             } else {
@@ -963,7 +1012,9 @@
             if (!submitButton) return;
 
             const selectedCount = document.querySelectorAll('.target-checkbox:checked').length;
-            if (selectedCount > 0) {
+            const personnelSelectedCount = ('{{ $type }}' === 'personnel' && typeof selectedShiftsArray !== 'undefined') ? selectedShiftsArray.length : 0;
+            
+            if (selectedCount > 0 || personnelSelectedCount > 0) {
                 updateSubmitButton();
                 return;
             }
@@ -1010,43 +1061,57 @@
             });
         };
 
-        window.selectShift = function(shiftValue, locationId) {
-            const hiddenInput = document.getElementById('selected_shift');
-            if (hiddenInput && hiddenInput.value !== shiftValue) {
-                hiddenInput.value = shiftValue;
-                
-                // Update styling for all cards
-                document.querySelectorAll('.shift-card').forEach(card => {
-                    card.style.border = '2px solid transparent';
-                    card.style.background = '';
-                    const badge = card.querySelector('.selected-badge');
-                    if (badge) badge.remove();
+        // Initialize shift arrays on DOM load
+        window.selectedShiftsArray = [document.getElementById('selected_shift')?.value].filter(Boolean);
+        
+        window.updateSelectedTargetsInputs = function() {
+            const container = document.getElementById('selected_targets_container');
+            if (container) {
+                container.innerHTML = '';
+                selectedShiftsArray.forEach(shiftVal => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'targets[]';
+                    input.value = 'shift:' + shiftVal; 
+                    container.appendChild(input);
                 });
-                
-                // Set styling for selected card
-                const selectedCardCol = document.querySelector(`.location-card-col[data-location-id="${locationId}"] .shift-card`);
-                if (selectedCardCol) {
-                    selectedCardCol.style.border = '2px solid rgba(59,130,246,1)';
-                    selectedCardCol.style.setProperty('border', '2px solid rgba(59,130,246,1)', 'important');
-                    selectedCardCol.style.background = 'linear-gradient(to right, rgba(59,130,246,0.05), transparent)';
-                    
-                    const h6 = selectedCardCol.querySelector('h6');
+            }
+        };
+
+        window.updateSelectedTargetsInputs();
+
+        window.toggleShift = function(shiftValue, locationId, cardElement) {
+            const index = selectedShiftsArray.indexOf(shiftValue);
+            if (index > -1) {
+                selectedShiftsArray.splice(index, 1);
+            } else {
+                selectedShiftsArray.push(shiftValue);
+            }
+            
+            window.updateSelectedTargetsInputs();
+            updateSubmitButton(); // update button count
+
+            // Visual feedback instantly before fetch
+            if (cardElement) {
+                const isNowSelected = selectedShiftsArray.includes(shiftValue);
+                if (isNowSelected) {
+                    cardElement.style.border = '2px solid rgba(59,130,246,1)';
+                    cardElement.style.setProperty('border', '2px solid rgba(59,130,246,1)', 'important');
+                    cardElement.style.background = 'linear-gradient(to right, rgba(59,130,246,0.05), transparent)';
+                    const h6 = cardElement.querySelector('h6');
                     if (h6 && !h6.querySelector('.selected-badge')) {
                         h6.insertAdjacentHTML('beforeend', '<i class="bi bi-check-circle-fill text-primary ms-auto fs-5 selected-badge"></i>');
                     }
+                } else {
+                    cardElement.style.border = '2px solid transparent';
+                    cardElement.style.background = '';
+                    const badge = cardElement.querySelector('.selected-badge');
+                    if (badge) badge.remove();
                 }
-                
-                // Call fetchStats to update inspected numbers for the selected shift
-                if (typeof fetchStats === 'function') {
-                    // Update location-cards container with loading without destroying layout
-                    const cardsContainer = document.getElementById('location-cards');
-                    if (cardsContainer) {
-                        // Optionally show loading, but fetchStats handles it.
-                        // Wait, fetchStats will wipe the cards and re-render them!
-                        // That's fine because it will render with the new shift value and isSelected will be true.
-                    }
-                    fetchStats();
-                }
+            }
+
+            if (typeof window.fetchStats === 'function') {
+                window.fetchStats();
             }
         };
     </script>
@@ -1056,6 +1121,7 @@
         </div>
     </div>
     @if(isset($currentSession) && $type === 'personnel' && isset($remainingList) && $remainingList->isNotEmpty())
+        @push('modals')
         {{-- Bulk Pass Confirmation Modal --}}
         <div class="modal fade" id="bulkPassModal" tabindex="-1" aria-labelledby="bulkPassModalLabel" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
@@ -1100,5 +1166,6 @@
                 </div>
             </div>
         </div>
+        @endpush
     @endif
 </x-app-layout>

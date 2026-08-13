@@ -16,6 +16,13 @@
                     <p class="small fw-bold text-secondary mb-2">ลายเซ็นต์ปัจจุบัน:</p>
                     <img src="{{ asset('storage/' . $user->signature_path) }}" alt="Current Signature" class="border bg-white shadow-sm rounded" style="max-height: 96px;">
                 </div>
+                <form method="post" action="{{ route('profile.signature.destroy') }}" class="m-0" onsubmit="return confirm('คุณแน่ใจหรือไม่ว่าต้องการลบลายเซ็นต์นี้?');">
+                    @csrf
+                    @method('delete')
+                    <button type="submit" class="btn btn-outline-danger btn-sm fw-bold rounded-pill">
+                        <i class="bi bi-trash"></i> ลบลายเซ็นต์
+                    </button>
+                </form>
             </div>
         @endif
 
@@ -104,6 +111,10 @@
                 backgroundColor: 'rgba(255, 255, 255, 1)',
                 penColor: 'rgb(0, 0, 0)'
             });
+
+            // Set canvas size correctly for different screen scales (desktop/mobile)
+            window.addEventListener("resize", resizeCanvas);
+            resizeCanvas();
 
             document.getElementById('clear-signature').addEventListener('click', function () {
                 signaturePad.clear();

@@ -23,7 +23,8 @@ class CorrectiveAction extends Model
         'assigned_at',
         'resolved_at',
         'closed_at',
-        'due_date'
+        'due_date',
+        'financial_loss',
     ];
 
     protected $casts = [
@@ -33,7 +34,33 @@ class CorrectiveAction extends Model
         'closed_at' => 'datetime',
         'due_date' => 'datetime',
         'ai_tags' => 'array',
+        'financial_loss' => 'decimal:2',
     ];
+
+    /**
+     * Get SLA Status: 'normal', 'near_due' (within 6 hrs), 'overdue'
+     */
+    public function getSlaStatusAttribute(): string
+    {
+        if ($this->status === 'closed' || $this->status === 'resolved' || $this->approval_status === 'approved') {
+            return 'normal';
+        }
+
+        if (!$this->due_date) {
+            return 'normal';
+        }
+
+        $now = now();
+        if ($now->gt($this->due_date)) {
+            return 'overdue';
+        }
+
+        if ($now->diffInHours($this->due_date, false) <= 6) {
+            return 'near_due';
+        }
+
+        return 'normal';
+    }
 
     public function log()
     {

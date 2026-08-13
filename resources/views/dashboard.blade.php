@@ -27,37 +27,48 @@
                     <div class="rounded-circle d-flex align-items-center justify-content-center shadow-sm position-relative z-1" style="width: 56px; height: 56px; background: linear-gradient(135deg, #f59e0b, #fbbf24);">
                         <i class="bi bi-shield-exclamation text-white fs-4"></i>
                     </div>
-                    <div class="position-absolute top-0 start-0 w-100 h-100 rounded-circle" style="background: #f59e0b; animation: ripple 2s infinite ease-out; z-index: 0;"></div>
+                    <div class="position-absolute top-0 start-0 w-100 h-100 rounded-circle" style="background: var(--hygiene-warning); animation: ripple 2s infinite ease-out; z-index: 0;"></div>
                 </div>
                 <div class="flex-grow-1">
                     <div class="d-flex align-items-center mb-2">
-                        <h5 class="fw-bold text-warning-emphasis mb-0 me-2" style="color: #b45309 !important;">🎯 ภารกิจสุ่มตรวจวันนี้ (Random Audit Required)</h5>
-                        <span class="badge rounded-pill shadow-sm" style="background-color: #f59e0b; animation: pulse 2s infinite;">
+                        <h5 class="fw-bold text-warning-emphasis mb-0 me-2" style="color: #b45309 !important;"><i class="bi bi-bullseye me-1"></i> ภารกิจสุ่มตรวจวันนี้ (Random Audit Required)</h5>
+                        <span class="badge rounded-pill shadow-sm" style="background-color: var(--hygiene-warning); animation: pulse 2s infinite;">
                             {{ $todayAudits->count() }} แผนก
                         </span>
                     </div>
-                    <p class="text-muted mb-3 small">ระบบได้สุ่มเลือกให้คุณลงไปสุ่มตรวจพนักงาน <strong>5-10 คน</strong> ในแผนกด้านล่าง เพื่อ Cross-check ผลการตรวจ</p>
+                    <p class="text-muted mb-3 small">ระบบได้สุ่มเลือกให้คุณลงไปสุ่มตรวจพนักงาน เครื่องจักร และพื้นที่ ของแผนกด้านล่าง เพื่อ Cross-check ผลการตรวจแบบรวบยอด</p>
                     
-                    <div class="row g-2">
+                    <div class="row g-3">
                         @foreach($todayAudits as $audit)
-                        <div class="col-md-6">
-                            <div class="d-flex align-items-center p-3 bg-white rounded-3 border shadow-sm" style="transition: transform 0.3s ease; cursor: pointer;" onmouseover="this.style.transform='translateX(5px)'" onmouseout="this.style.transform='translateX(0)'">
-                                <div class="me-3">
-                                    <div class="rounded-circle bg-warning bg-opacity-10 d-flex align-items-center justify-content-center" style="width: 42px; height: 42px;">
-                                        <i class="bi bi-building fs-5" style="color: #f59e0b;"></i>
+                        <div class="col-12">
+                            <div class="d-flex flex-column flex-md-row align-items-md-center p-3 bg-white rounded-3 border shadow-sm hover-translate-right" style="cursor: pointer;">
+                                <div class="d-flex align-items-center mb-3 mb-md-0 me-md-4">
+                                    <div class="me-3">
+                                        <div class="rounded-circle bg-warning bg-opacity-10 d-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
+                                            <i class="bi bi-building fs-4" style="color: var(--hygiene-warning);"></i>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h6 class="fw-bold mb-0 text-dark fs-5">{{ $audit->department->dept_name ?? 'Unknown' }}</h6>
+                                        <small class="text-muted">
+                                            <i class="bi bi-clock me-1"></i>กะ{{ $audit->shift === 'morning' ? 'เช้า' : 'บ่าย' }}
+                                            <span class="mx-1">•</span>
+                                            <i class="bi bi-people me-1"></i>สุ่ม {{ $audit->sample_size }} คน
+                                        </small>
                                     </div>
                                 </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="fw-bold mb-0 text-dark">{{ $audit->department->dept_name ?? 'Unknown' }}</h6>
-                                    <small class="text-muted">
-                                        <i class="bi bi-clock me-1"></i>กะ{{ $audit->shift === 'morning' ? 'เช้า' : 'บ่าย' }}
-                                        <span class="mx-1">•</span>
-                                        <i class="bi bi-people me-1"></i>สุ่ม {{ $audit->sample_size }} คน
-                                    </small>
+                                
+                                <div class="d-flex flex-wrap gap-2 ms-md-auto">
+                                    <a href="{{ route('inspection.dashboard', 'personnel') }}" class="btn btn-sm rounded-pill px-3 shadow-sm fw-bold text-primary bg-primary bg-opacity-10 border-0 btn-hover-primary">
+                                        <i class="bi bi-people-fill me-1"></i>ตรวจพนักงาน
+                                    </a>
+                                    <a href="{{ route('inspection.dashboard', 'machine') }}" class="btn btn-sm rounded-pill px-3 shadow-sm fw-bold text-info bg-info bg-opacity-10 border-0 btn-hover-info">
+                                        <i class="bi bi-gear-wide-connected me-1"></i>ตรวจเครื่องจักร
+                                    </a>
+                                    <a href="{{ route('inspection.area.bulk', $audit->department_id) }}" class="btn btn-sm rounded-pill px-3 shadow-sm fw-bold text-success bg-success bg-opacity-10 border-0 btn-hover-success">
+                                        <i class="bi bi-geo-alt-fill me-1"></i>ตรวจพื้นที่
+                                    </a>
                                 </div>
-                                <a href="{{ route('inspection.dashboard', 'personnel') }}" class="btn btn-sm rounded-pill px-3 shadow-sm fw-bold text-white" style="background-color: #f59e0b; transition: all 0.3s;" onmouseover="this.style.backgroundColor='#d97706'; this.style.transform='scale(1.05)'" onmouseout="this.style.backgroundColor='#f59e0b'; this.style.transform='scale(1)'">
-                                    <i class="bi bi-play-fill me-1"></i>เริ่มตรวจ
-                                </a>
                             </div>
                         </div>
                         @endforeach
@@ -104,7 +115,7 @@
                             <p class="text-muted mb-2 small fw-semibold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.08em;">รอทวนสอบ</p>
                             <h2 class="fw-bold mb-0 text-dark" style="font-size: 1.75rem; line-height: 1;">{{ $pendingVerificationCount }}</h2>
                         </div>
-                        <div class="d-flex align-items-center justify-content-center rounded-3" style="width: 52px; height: 52px; background: #fef3c7;">
+                        <div class="d-flex align-items-center justify-content-center rounded-3" style="width: 52px; height: 52px; background: var(--hygiene-warning-soft);">
                             <i class="bi bi-shield-exclamation" style="font-size: 1.4rem; color: var(--hygiene-warning);"></i>
                         </div>
                     </div>
@@ -123,7 +134,7 @@
                                 <p class="text-muted mb-2 small fw-semibold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.08em;">สั่งแก้ไขใหม่</p>
                                 <h2 class="fw-bold mb-0 text-dark" style="font-size: 1.75rem; line-height: 1;">{{ $recleanCount }}</h2>
                             </div>
-                            <div class="d-flex align-items-center justify-content-center rounded-3" style="width: 52px; height: 52px; background: #fee2e2;">
+                            <div class="d-flex align-items-center justify-content-center rounded-3" style="width: 52px; height: 52px; background: var(--hygiene-danger-soft);">
                                 <i class="bi bi-arrow-counterclockwise" style="font-size: 1.4rem; color: var(--hygiene-danger);"></i>
                             </div>
                         </div>
@@ -167,7 +178,7 @@
         </div>
         <div class="card-body p-4 pt-3">
             <div class="table-responsive">
-                <table class="table table-borderless align-middle mb-0">
+                <table class="table table-borderless align-middle mb-0 text-nowrap">
                     <thead class="bg-light text-muted small text-uppercase rounded-3">
                         <tr>
                             <th class="ps-3 rounded-start">ผู้ตรวจ</th>
@@ -181,7 +192,7 @@
                     <tbody>
                         @foreach($activeSessions as $activeSess)
                         <tr class="border-bottom border-light">
-                            <td class="ps-3 py-3">
+                            <td class="ps-3 py-3" data-label="ผู้ตรวจ">
                                 <div class="d-flex align-items-center">
                                     <div class="rounded-circle bg-light d-flex justify-content-center align-items-center me-2 text-primary fw-bold" style="width:36px; height:36px;">
                                         {{ Str::upper(substr($activeSess->inspector->name ?? 'U', 0, 1)) }}
@@ -189,7 +200,7 @@
                                     <span class="fw-bold text-dark">{{ $activeSess->inspector->name ?? 'Unknown' }}</span>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="ประเภท">
                                 @if($activeSess->type === 'personnel')
                                     <span class="badge bg-primary bg-opacity-10 text-primary rounded px-2 py-1"><i class="bi bi-people-fill me-1"></i>พนักงาน</span>
                                 @elseif($activeSess->type === 'machine')
@@ -198,16 +209,16 @@
                                     <span class="badge bg-success bg-opacity-10 text-success rounded px-2 py-1"><i class="bi bi-geo-alt-fill me-1"></i>พื้นที่</span>
                                 @endif
                             </td>
-                            <td>
+                            <td data-label="แผนก">
                                 <span class="fw-medium text-dark">{{ $activeSess->department->dept_name ?? 'รวมทั้งหมด' }}</span>
                             </td>
-                            <td>
+                            <td data-label="กะ / รอบ">
                                 <div>
                                     <span class="fw-medium">กะ{{ $activeSess->shift === 'morning' ? 'เช้า' : ($activeSess->shift === 'afternoon' ? 'บ่าย' : 'ดึก') }}</span>
                                     <span class="badge bg-secondary ms-1">รอบ {{ $activeSess->round }}</span>
                                 </div>
                             </td>
-                            <td class="text-center">
+                            <td class="text-center" data-label="เวลาเริ่ม">
                                 <span class="text-muted small"><i class="bi bi-clock me-1"></i>{{ $activeSess->created_at->format('H:i') }} น.</span>
                                 @php
                                     $hoursDiff = $activeSess->created_at->diffInHours(now());
@@ -216,7 +227,7 @@
                                     <br><span class="badge bg-danger mt-1" style="font-size: 0.65rem;">นานเกินไป ({{ $hoursDiff }} ชม.)</span>
                                 @endif
                             </td>
-                            <td class="text-end pe-3">
+                            <td class="text-end pe-3" data-label="จัดการ">
                                 <form action="{{ route('inspection.finish', $activeSess->id) }}" method="POST" class="d-inline" onsubmit="return confirm('ยืนยันการปิดรอบนี้? ระบบจะทำการสรุปยอดและเปลี่ยนสถานะเป็นเสร็จสิ้นทันที');">
                                     @csrf
                                     <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-3 shadow-sm" title="บังคับปิดรอบการตรวจนี้">
@@ -252,7 +263,7 @@
         </div>
         <div class="card-body p-4 pt-3">
             <div class="table-responsive">
-                <table class="table table-borderless align-middle mb-0">
+                <table class="table table-borderless align-middle mb-0 text-nowrap">
                     <thead class="bg-light text-muted small text-uppercase rounded-3">
                         <tr>
                             <th class="ps-3 rounded-start">งาน</th>
@@ -308,11 +319,11 @@
             <div class="card h-100">
                 <div class="card-header bg-transparent border-0 p-4 pb-0 d-flex justify-content-between align-items-center">
                     <h5 class="fw-bold mb-0"><i class="bi bi-list-columns-reverse me-2 text-primary"></i>กิจกรรมการตรวจล่าสุด</h5>
-                    <a href="{{ route('inspection.verification') }}" class="btn btn-sm btn-light rounded-pill px-3 shadow-sm fw-semibold">ดูทังหมด</a>
+                    <a href="{{ route('inspection.verification') }}" class="btn btn-sm btn-light rounded-pill px-3 shadow-sm fw-semibold">ดูทั้งหมด</a>
                 </div>
                 <div class="card-body p-4">
                     <div class="table-responsive">
-                        <table class="table table-hover table-borderless align-middle mb-0">
+                        <table class="table table-hover table-borderless align-middle mb-0 text-nowrap">
                             <thead class="bg-light text-muted small text-uppercase">
                                 <tr>
                                     <th class="ps-3 rounded-start">เป้าหมาย & เช็คพอยต์</th>
@@ -495,7 +506,7 @@
     @endif
 
     @push('scripts')
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha384-kHW+A5jFiy/x4/8RjQx1F5KjGZ5+J8I0Z/gB6n3y5lM2J4O0T6M1XvDqjF9t7Z/C" crossorigin="anonymous"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Setup default font for charts

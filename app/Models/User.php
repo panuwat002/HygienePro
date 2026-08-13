@@ -51,7 +51,39 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'notification_preferences' => 'array',
         ];
+    }
+
+    /**
+     * Check if the user wants to receive an email for a specific event.
+     * Default for noisy events is false (opt-in).
+     * Default for critical events (CARs) is true (opt-out).
+     */
+    public function wantsEmailFor(string $event): bool
+    {
+        $prefs = $this->notification_preferences ?? [];
+
+        // Define default settings
+        $defaults = [
+            'email_session_started' => false,
+            'email_session_finished_pass' => false,
+            'email_session_finished_fail' => true,
+            'email_order_reclean' => false,
+            'email_session_verified' => false,
+            'email_car_new' => true,
+            'email_car_resolved' => true,
+            'email_car_closed' => true,
+            'email_car_overdue' => true,
+        ];
+
+        // If the user has specifically configured it, use their setting
+        if (array_key_exists($event, $prefs)) {
+            return (bool) $prefs[$event];
+        }
+
+        // Otherwise use the default
+        return $defaults[$event] ?? true;
     }
 
     public function department()

@@ -13,7 +13,7 @@
                     </div>
                     <div class="text-end">
                         <span class="badge rounded-pill px-3" style="background: var(--primary);">รอบที่ {{ $session->round }}</span>
-                        <small class="d-block mt-1" style="font-size: 0.75rem; color: var(--slate-500);">กะ {{ ucfirst($session->shift) }}</small>
+                        <small class="d-block mt-1" style="font-size: 0.75rem; color: var(--slate-500);">{{ str_starts_with($session->shift_label, 'กะ') ? $session->shift_label : 'กะ ' . $session->shift_label }}</small>
                     </div>
                 </div>
             </div>
@@ -221,7 +221,7 @@
             @php
                 // Count employees strictly in the current shift that haven't been inspected
                 $shiftRemainingCount = 0;
-                $currentShiftGroupName = 'เป้าหมายกะปัจจุบัน (' . ucfirst($session->shift) . ')';
+                $currentShiftGroupName = 'เป้าหมายกะปัจจุบัน (' . $session->shift_label . ')';
                 
                 if ($grouped->has($currentShiftGroupName)) {
                     foreach($grouped[$currentShiftGroupName] as $emp) {
@@ -243,7 +243,7 @@
                 <div class="card border-0 shadow-sm mb-4 animate-in animate-in-delay-3" style="background: {{ $shiftRemainingCount > 0 ? 'var(--success-soft)' : '#f8f9fa' }}; border-radius: var(--radius-lg); border-left: 4px solid {{ $shiftRemainingCount > 0 ? 'var(--success)' : '#ced4da' }} !important;">
                     <div class="card-body p-3 d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="fw-bold mb-0" style="color: {{ $shiftRemainingCount > 0 ? 'var(--success)' : '#6c757d' }};">ตรวจพนักงานกะ{{ $session->shift === 'morning' ? 'เช้า' : ($session->shift === 'afternoon' ? 'บ่าย' : 'ดึก') }}ครบแล้วใช่ไหม?</h6>
+                            <h6 class="fw-bold mb-0" style="color: {{ $shiftRemainingCount > 0 ? 'var(--success)' : '#6c757d' }};">ตรวจพนักงาน {{ $session->shift_label }} ครบแล้วใช่ไหม?</h6>
                             <small class="text-muted">
                                 @if($shiftRemainingCount > 0)
                                     ระบบจะให้ "ผ่าน" เฉพาะพนักงานในกะปัจจุบันเท่านั้น
@@ -290,6 +290,7 @@
     </div>
 
     @if($shiftRemainingCount > 0)
+        @push('modals')
         {{-- Bulk Pass Confirmation Modal --}}
         <div class="modal fade" id="bulkPassModal" tabindex="-1" aria-labelledby="bulkPassModalLabel" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
@@ -308,7 +309,7 @@
                             <h5 class="fw-bold text-dark">คุณกำลังจะให้ผ่านทั้งหมด</h5>
                             <p class="text-muted mb-0">
                                 พนักงานที่เหลืออีก <strong class="text-success fs-4">{{ $shiftRemainingCount }}</strong> คน
-                                <strong class="text-danger border-bottom border-danger">เฉพาะในกะ{{ $session->shift === 'morning' ? 'เช้า' : ($session->shift === 'afternoon' ? 'บ่าย' : 'ดึก') }}</strong><br>
+                                <strong class="text-danger border-bottom border-danger">เฉพาะ {{ $session->shift_label }}</strong><br>
                                 จะถูกบันทึกว่า <strong class="text-success">"ผ่าน"</strong> ทุกหัวข้อตรวจโดยอัตโนมัติ
                             </p>
                         </div>
@@ -333,6 +334,7 @@
                 </div>
             </div>
         </div>
+        @endpush
     @endif
 
     @push('scripts')

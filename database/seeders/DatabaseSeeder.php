@@ -112,5 +112,10 @@ class DatabaseSeeder extends Seeder
             'qr_code_hash' => 'hash_somsri_002',
             'is_active' => true
         ]);
+
+        // 5. Call Shift Seeder
+        $this->call([
+            ShiftSeeder::class,
+        ]);
     }
 }

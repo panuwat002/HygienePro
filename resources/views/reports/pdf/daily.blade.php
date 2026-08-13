@@ -149,12 +149,12 @@
             <table>
                 <thead>
                     <tr>
-                        <th rowspan="2" style="width: 5%">ลำดับ</th>
-                        <th rowspan="2" style="width: 15%">ชื่อ - สกุล</th>
-                        <th rowspan="2" style="width: 8%">แผนก</th>
-                        <th rowspan="2" style="width: 7%">กะ</th>
+                        <th rowspan="2" style="width: 3.5%">ลำดับ</th>
+                        <th rowspan="2" style="width: 22%">ชื่อ - สกุล</th>
+                        <th rowspan="2" style="width: 6.5%">แผนก</th>
+                        <th rowspan="2" style="width: 12%">กะ</th>
                         <th colspan="{{ count($personCheckpoints) }}">รายการตรวจ (Checkpoints)</th>
-                        <th rowspan="2" style="width: 10%">หมายเหตุ</th>
+                        <th rowspan="2" style="width: 8%">หมายเหตุ</th>
                     </tr>
                     <tr>
                         @foreach($personCheckpoints as $checkpoint)
@@ -169,15 +169,9 @@
                             <td class="text-left">{{ $data['info']->fullname ?? $data['info']->fname }}</td>
                             <td>{{ $data['session']->department->dept_name ?? $data['info']->department->dept_name ?? '-' }}</td>
                             @php
-                                $shiftName = strtolower($data['session']->shift ?? $data['info']->shift->shift_name ?? '-');
-                                $thaiShift = match($shiftName) {
-                                    'morning' => 'กะเช้า',
-                                    'afternoon' => 'กะบ่าย',
-                                    'night' => 'กะดึก',
-                                    default => $shiftName,
-                                };
+                                $thaiShift = $data['roster_shift'] ?? ($data['session'] ? $data['session']->shift_label : '-');
                             @endphp
-                            <td>{{ $thaiShift }}</td>
+                            <td style="white-space: nowrap; font-size: 8.5px;">{{ $thaiShift }}</td>
                             
                             @foreach($personCheckpoints as $checkpoint)
                                 <td>

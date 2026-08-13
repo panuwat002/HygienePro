@@ -29,7 +29,11 @@ class CARClosedNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['database', 'mail'];
+        $channels = ['database'];
+        if (method_exists($notifiable, 'wantsEmailFor') && $notifiable->wantsEmailFor('email_car_closed')) {
+            $channels[] = 'mail';
+        }
+        return $channels;
     }
 
     /**

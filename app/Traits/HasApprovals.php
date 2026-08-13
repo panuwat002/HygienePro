@@ -21,30 +21,34 @@ trait HasApprovals
                             ->where('is_active', true)
                             ->first();
 
-        if ($flow && $flow->steps()->count() > 0) {
-            // Update the model status if it has an approval_status column
-            if (in_array('approval_status', $this->getFillable()) || \Schema::hasColumn($this->getTable(), 'approval_status')) {
-                $this->update(['approval_status' => 'pending']);
-            }
-
-            $departmentId = method_exists($this, 'getApprovalDepartmentId') ? $this->getApprovalDepartmentId() : ($this->department_id ?? null);
-            $requesterId = method_exists($this, 'getApprovalRequesterId') ? $this->getApprovalRequesterId() : (auth()->id() ?? null);
-
-            return ApprovalRequest::updateOrCreate(
-                [
-                    'approvable_type' => get_class($this),
-                    'approvable_id' => $this->id,
-                ],
-                [
-                    'approval_flow_id' => $flow->id,
-                    'department_id' => $departmentId,
-                    'requester_id' => $requesterId,
-                    'current_step_order' => 1,
-                    'status' => 'pending',
-                ]
-            );
+        if (!$flow) {
+            throw new \Exception("Active ApprovalFlow not found for model: " . get_class($this));
         }
 
-        return null;
+        if ($flow->steps()->count() === 0) {
+            throw new \Exception("ApprovalFlow '{$flow->name}' has no defined steps.");
+        }
+
+        // Update the model status if it has an approval_status column
+        if (in_array('approval_status', $this->getFillable()) || \Schema::hasColumn($this->getTable(), 'approval_status')) {
+            $this->update(['approval_status' => 'pending']);
+        }
+
+        $departmentId = method_exists($this, 'getApprovalDepartmentId') ? $this->getApprovalDepartmentId() : ($this->department_id ?? null);
+        $requesterId = method_exists($this, 'getApprovalRequesterId') ? $this->getApprovalRequesterId() : (auth()->id() ?? null);
+
+        return ApprovalRequest::updateOrCreate(
+            [
+                'approvable_type' => get_class($this),
+                'approvable_id' => $this->id,
+            ],
+            [
+                'approval_flow_id' => $flow->id,
+                'department_id' => $departmentId,
+                'requester_id' => $requesterId,
+                'current_step_order' => 1,
+                'status' => 'pending',
+            ]
+        );
     }
 }

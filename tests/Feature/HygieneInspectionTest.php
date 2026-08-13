@@ -242,6 +242,7 @@ test('escalated corrective action closing automatically approves corresponding l
     $response = $this->post(route('corrective.resolve'), [
         'action_id' => $car->id,
         'action_taken' => 'ซ่อมเปลี่ยนกระเบื้องเรียบร้อยแล้ว',
+        'preventive_action' => 'ตรวจสอบกระเบื้องอย่างสม่ำเสมอ',
         'proof_image' => $proof
     ]);
 

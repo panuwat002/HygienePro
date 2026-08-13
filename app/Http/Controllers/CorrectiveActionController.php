@@ -74,11 +74,25 @@ class CorrectiveActionController extends Controller
         
         $oldAssignee = $action->assigned_to;
         
+        $dueDate = $request->due_date ? \Carbon\Carbon::parse($request->due_date) : $action->due_date;
+        if ($request->filled('due_preset')) {
+            $presetMap = [
+                '2h' => now()->addHours(2),
+                '1d' => now()->addDay(),
+                '3d' => now()->addDays(3),
+                '7d' => now()->addDays(7),
+            ];
+            if (isset($presetMap[$request->due_preset])) {
+                $dueDate = $presetMap[$request->due_preset];
+            }
+        }
+
         $action->update([
             'assigned_to' => $request->assigned_to,
             'assigned_at' => now(),
             'status' => 'assigned',
-            'due_date' => $request->due_date ?? $action->due_date
+            'due_date' => $dueDate,
+            'financial_loss' => $request->input('financial_loss', $action->financial_loss),
         ]);
 
         // Manual Activity Log
@@ -97,7 +111,7 @@ class CorrectiveActionController extends Controller
         // Email Notification
         try {
             $recipient = \App\Models\User::find($request->assigned_to);
-            if ($recipient && $recipient->email) {
+            if ($recipient && $recipient->email && $recipient->wantsEmailFor('email_car_new')) {
                 \Illuminate\Support\Facades\Mail::to($recipient->email)->send(new \App\Mail\NewCAREscalated($action));
             }
         } catch (\Exception $e) {
@@ -156,7 +170,7 @@ class CorrectiveActionController extends Controller
             $emails = [];
             foreach ($recipients as $recipient) {
                 $recipient->notify(new \App\Notifications\NewCARNotification($action));
-                if ($recipient->email) {
+                if ($recipient->email && $recipient->wantsEmailFor('email_car_new')) {
                     $emails[] = $recipient->email;
                 }
             }

@@ -52,6 +52,13 @@ class EmployeeController extends Controller
 
         $employees = $query->orderBy('department_id')->paginate(20);
         
+        // Fetch today's schedule (Roster) for these paginated employees
+        $todaySchedules = \App\Models\EmployeeSchedule::with('shift')
+            ->where('date', now()->startOfDay())
+            ->whereIn('employee_id', $employees->pluck('id'))
+            ->get()
+            ->keyBy('employee_id');
+
         $departments = Department::all(); // View might need all for filtering if global
         // Optimizing departments list for Isolated users? Maybe just show theirs.
         if ($scopeDeptId) {
@@ -61,7 +68,7 @@ class EmployeeController extends Controller
         $shifts = \App\Models\Shift::all();
         $locations = \App\Models\Location::all();
 
-        return view('employees.index', compact('employees', 'departments', 'shifts', 'locations'));
+        return view('employees.index', compact('employees', 'departments', 'shifts', 'locations', 'todaySchedules', 'scopeDeptId'));
     }
 
     public function create()

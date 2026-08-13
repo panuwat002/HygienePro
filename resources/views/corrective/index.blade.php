@@ -183,8 +183,8 @@
                          <h5 class="fw-bold text-success mb-0"><i class="bi bi-check-all me-2"></i>ประวัติที่ดำเนินการแล้ว</h5>
                     </div>
                     <div class="card-body p-4">
-                        <div class="table-modern">
-                            <table class="table table-hover align-middle mb-0">
+                        <div class="table-modern table-responsive w-100">
+                            <table class="table table-hover align-middle mb-0 text-nowrap">
                                 <thead>
                                     <tr>
                                         <th class="ps-4">รายการ</th>
@@ -195,40 +195,55 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach($completedActions as $action)
+                                    @forelse($completedActions as $action)
                                         <tr>
                                             <td class="ps-4" data-label="รายการ">
                                                 <div class="fw-bold small">{{ $action->log->checkpoint->title ?? '-' }}</div>
                                                 <div class="x-small text-muted">{{ $action->log->machine->name ?? ($action->log->location->location_name ?? '-') }}</div>
                                                 @if($action->root_cause)
-                                                    <div class="x-small mt-1" style="color:#b45309;"><i class="bi bi-exclamation-triangle me-1"></i>สาเหตุ: {{ $action->root_cause }}</div>
+                                                    <div class="x-small mt-1 text-muted text-decoration-line-through"><i class="bi bi-bug me-1"></i>สาเหตุ: {{ $action->root_cause }}</div>
                                                 @endif
                                             </td>
                                             <td class="small" data-label="วิธีที่แก้ไข">
                                                 @if($action->action_taken)
-                                                    <span class="text-dark">{{ $action->action_taken }}</span>
+                                                    <span class="text-dark d-block">{{ $action->action_taken }}</span>
+                                                    @if($action->preventive_action)
+                                                        <div class="x-small text-muted mt-1"><i class="bi bi-shield-check me-1"></i>ป้องกัน: {{ $action->preventive_action }}</div>
+                                                    @endif
                                                 @else
                                                     <span class="text-muted fst-italic">ไม่ได้บันทึกวิธีแก้ไข</span>
                                                 @endif
                                             </td>
                                             <td class="small" data-label="แก้ไขโดย">{{ $action->assignee->name ?? $action->escalator->name }}</td>
-                                            <td class="small" data-label="วันที่">{{ $action->resolved_at ? $action->resolved_at->format('d/m/Y') : '-' }}</td>
+                                            <td class="small" data-label="วันที่">
+                                                {{ $action->resolved_at ? $action->resolved_at->format('d/m/Y') : '-' }}
+                                                @if($action->resolved_at)
+                                                    <div class="x-small text-muted mt-1"><i class="bi bi-clock me-1"></i>{{ $action->resolved_at->format('H:i') }} น.</div>
+                                                @endif
+                                            </td>
                                             <td class="pe-4 text-center" data-label="สถานะ">
                                                 @if($action->status === 'closed')
-                                                    <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 d-block mb-1">Closed</span>
+                                                    <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 d-block mb-1"><i class="bi bi-check-circle-fill me-1"></i>Closed</span>
                                                 @else
-                                                    <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 d-block mb-1">{{ ucfirst($action->status) }}</span>
+                                                    <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 d-block mb-1"><i class="bi bi-check-circle-fill me-1"></i>{{ ucfirst($action->status) }}</span>
                                                 @endif
                                                 @if($action->proof_image)
-                                                    <a href="{{ Storage::url($action->proof_image) }}" target="_blank" class="btn btn-outline-success btn-sm rounded-pill px-2 py-0" style="font-size:0.7rem;">
-                                                        <i class="bi bi-image me-1"></i>ดูรูปหลักฐาน
-                                                    </a>
+                                                    <button type="button" onclick="openCompletedEvidenceModal('{{ Storage::url($action->proof_image) }}')" class="btn btn-outline-success btn-sm rounded-pill px-2 py-0 btn-evidence-hover w-100 mt-1" style="font-size:0.7rem;">
+                                                        <i class="bi bi-images me-1"></i>ดูรูปหลักฐาน
+                                                    </button>
                                                 @else
                                                     <span class="text-muted x-small d-block mt-1">ไม่มีรูปหลักฐาน</span>
                                                 @endif
                                             </td>
                                         </tr>
-                                    @endforeach
+                                    @empty
+                                        <tr>
+                                            <td colspan="5" class="text-center py-5 text-muted border-0">
+                                                <i class="bi bi-inbox fs-1 mb-2 d-block text-secondary opacity-50"></i>
+                                                ยังไม่มีประวัติการดำเนินการ
+                                            </td>
+                                        </tr>
+                                    @endforelse
                                 </tbody>
                             </table>
                         </div>
@@ -330,6 +345,19 @@
             </div>
         </div>
     </div>
+    <!-- Evidence Modal -->
+    <div class="modal fade" id="evidenceModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content rounded-4 border-0 shadow-lg bg-transparent">
+                <div class="modal-header border-0 pb-0 position-absolute top-0 end-0 z-3">
+                    <button type="button" class="btn-close btn-close-white bg-dark p-2 m-2 rounded-circle shadow" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-0 text-center">
+                    <img id="evidenceModalImg" src="" class="img-fluid rounded-4 shadow-lg w-100" alt="Evidence Image">
+                </div>
+            </div>
+        </div>
+    </div>
     @endpush
 
     @push('scripts')
@@ -382,6 +410,11 @@
             }
 
             new bootstrap.Modal(document.getElementById('resolveModal')).show();
+        }
+
+        function openCompletedEvidenceModal(imageUrl) {
+            document.getElementById('evidenceModalImg').src = imageUrl;
+            new bootstrap.Modal(document.getElementById('evidenceModal')).show();
         }
     </script>
     @endpush

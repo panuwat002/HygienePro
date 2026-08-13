@@ -19,12 +19,12 @@ class InspectionService
     /**
      * Start or Retrieve an active Inspection Session.
      */
-    public function startSession(User $user, int $departmentId, string $type, bool $forceNew = false, string $manualShift = null): InspectionSession
+    public function startSession(User $user, int $departmentId, string $type, bool $forceNew = false, string $manualShift = null, bool $isSampling = false, ?int $sampleSize = null): InspectionSession
     {
         $shift = $manualShift ?? \App\Models\Shift::detectCurrent();
-        $today = now()->toDateString();
+        $today = now()->hour < 6 ? now()->subDay()->toDateString() : now()->toDateString();
 
-        $session = DB::transaction(function () use ($user, $departmentId, $type, $today, $shift, $forceNew) {
+        $session = DB::transaction(function () use ($user, $departmentId, $type, $today, $shift, $forceNew, $isSampling, $sampleSize) {
             $session = InspectionSession::where('department_id', $departmentId)
                 ->whereDate('inspection_date', $today)
                 ->where('shift', $shift)
@@ -41,6 +41,9 @@ class InspectionService
                     if ($session->status === 'paused') {
                         $session->update(['status' => 'in_progress']);
                     }
+                    if ($isSampling) {
+                        $session->update(['is_sampling' => true, 'sample_size' => $sampleSize]);
+                    }
                     return $session;
                 }
             }
@@ -55,6 +58,8 @@ class InspectionService
                 'status' => 'in_progress',
                 'type' => $type,
                 'round' => $nextRound,
+                'is_sampling' => $isSampling,
+                'sample_size' => $sampleSize,
             ]);
         });
 
@@ -283,11 +288,16 @@ class InspectionService
 
     public function shiftEndAt(InspectionSession $session): ?\Illuminate\Support\Carbon
     {
-        $names = match (strtolower((string) $session->shift)) {
+        // Support multiple shifts (e.g. "morning,afternoon")
+        $shiftsArr = explode(',', (string) $session->shift);
+        // Get the last shift for ending time determination
+        $lastShift = trim(end($shiftsArr));
+
+        $names = match (strtolower($lastShift)) {
             'morning'   => ['morning', 'กะเช้า'],
             'afternoon' => ['afternoon', 'กะบ่าย'],
             'night'     => ['night', 'กะดึก'],
-            default     => [(string) $session->shift],
+            default     => [$lastShift],
         };
 
         $shift = \App\Models\Shift::whereIn('shift_name', $names)->first();
@@ -330,7 +340,7 @@ class InspectionService
             foreach ($supervisors as $supervisor) {
                 // Send in-app database notification individually
                 $supervisor->notify(new \App\Notifications\InspectionStartedNotification($session));
-                if ($supervisor->email) {
+                if ($supervisor->email && $supervisor->wantsEmailFor('email_session_started')) {
                     $emails[] = $supervisor->email;
                 }
             }
@@ -354,22 +364,26 @@ class InspectionService
                 ->get()
                 ->filter(fn($u) => $u->isQA());
 
+            $stats = [
+                'total' => $session->logs()->count(),
+                'pass' => $session->logs()->where('result', 'pass')->count(),
+                'fail' => $session->logs()->where('result', 'fail')->count(),
+            ];
+
+            // Determine which event type this is
+            $eventName = $stats['fail'] > 0 ? 'email_session_finished_fail' : 'email_session_finished_pass';
+
             $emails = [];
             foreach ($supervisors as $supervisor) {
                 // Send in-app database notification individually if needed
                 // $supervisor->notify(new \App\Notifications\InspectionFinishedNotification($session));
-                if ($supervisor->email) {
+                if ($supervisor->email && $supervisor->wantsEmailFor($eventName)) {
                     $emails[] = $supervisor->email;
                 }
             }
 
             // Send ONE grouped email to all supervisors
             if (count($emails) > 0) {
-                $stats = [
-                    'total' => $session->logs()->count(),
-                    'pass' => $session->logs()->where('status', 'pass')->count(),
-                    'fail' => $session->logs()->whereIn('status', ['fail', 'reclean'])->count(),
-                ];
                 \Illuminate\Support\Facades\Mail::to($emails)->send(new \App\Mail\InspectionSessionFinished($session, $stats));
             }
             
@@ -552,20 +566,9 @@ class InspectionService
                 return 0;
             }
 
-            // 2. Get employees in this department + matching shift (Shift Filtering)
-            $shiftNames = match($session->shift) {
-                'morning' => ['morning', 'กะเช้า'],
-                'afternoon' => ['afternoon', 'กะบ่าย'],
-                'night' => ['night', 'กะดึก'],
-                default => [$session->shift]
-            };
-            $targetEmployeeIds = \App\Models\Employee::where('department_id', $session->department_id)
-                ->where('is_active', true)
-                ->whereHas('shift', function ($q) use ($shiftNames) {
-                    $q->whereIn('shift_name', $shiftNames);
-                })
-                ->pluck('id')
-                ->toArray();
+            // 2. Get employees in this department + matching shift (Shift Filtering using getTargetEmployees)
+            $targetEmployees = $session->getTargetEmployees();
+            $targetEmployeeIds = $targetEmployees->pluck('id')->toArray();
 
             if (empty($targetEmployeeIds)) {
                 return 0;

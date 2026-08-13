@@ -57,6 +57,27 @@
     --sidebar-active: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.15) 100%);
     --sidebar-active-border: linear-gradient(180deg, #3b82f6, #8b5cf6);
 
+    // Hygiene aliases (backward compatibility)
+    --hygiene-bg: var(--slate-100);
+    --hygiene-surface: #ffffff;
+    --hygiene-surface-hover: var(--slate-50);
+    --hygiene-primary: var(--primary);
+    --hygiene-primary-hover: var(--primary-hover);
+    --hygiene-primary-soft: var(--primary-soft);
+    --hygiene-success: var(--success);
+    --hygiene-success-soft: var(--success-soft);
+    --hygiene-warning: var(--warning);
+    --hygiene-danger: var(--danger);
+    --hygiene-text-main: var(--slate-800);
+    --hygiene-text-heading: var(--slate-900);
+    --hygiene-text-muted: var(--slate-600);
+    --hygiene-border: var(--slate-300);
+    --hygiene-border-light: var(--slate-50);
+    --font-sans: 'Inter', 'IBM Plex Sans Thai', -apple-system, sans-serif;
+    --shadow-soft: var(--shadow-sm);
+    --shadow-float: var(--shadow-lg);
+    --transition-smooth: var(--transition-base);
+
     // Spacing & Radius
     --radius-sm: 8px;
     --radius-md: 12px;
@@ -1368,4 +1389,127 @@ a {
 .spinner-border-sm {
     width: 1rem;
     height: 1rem;
+}
+
+// ==========================================================
+// ACCESSIBILITY ENHANCEMENTS
+// ==========================================================
+
+// Respect user's motion preferences
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.15s !important;
+    }
+    
+    .animate-in, .animate-fade, .animate-slide-down,
+    .animate-slide-up, .animate-scale-in { 
+        animation: none !important; 
+        opacity: 1 !important; 
+    }
+    
+    .animate-float, .animate-pulse-glow, .animate-spin-slow,
+    .animate-breathe { 
+        animation: none !important; 
+    }
+    
+    .stat-card:hover, .quick-action:hover, .card:hover,
+    .summary-stat-card:hover { 
+        transform: none !important; 
+    }
+}
+
+// Global focus indicators for keyboard navigation
+:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+button:focus-visible, a:focus-visible, .btn:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px var(--primary-glow);
+}
+
+// ==========================================================
+// LAYOUT OVERRIDES (Migrated from app.blade.php)
+// ==========================================================
+
+/* Modern Mobile Tables - Hygiene Clean Upgrade */
+.table-modern thead { background: var(--hygiene-bg); }
+.table-modern th { font-weight: 600; color: var(--hygiene-text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid var(--hygiene-border) !important; padding: 1rem !important; }
+.table-modern td { padding: 1rem !important; vertical-align: middle; border-bottom: 1px solid var(--hygiene-border-light) !important; font-size: 0.95rem; transition: background var(--transition-smooth); color: var(--hygiene-text-main) !important; }
+.table-modern tr:hover td { background: var(--hygiene-bg); }
+.table-modern tr:last-child td { border-bottom: none !important; }
+
+@media (max-width: 767.98px) {
+    .table-modern { background: transparent !important; border: none !important; box-shadow: none !important; }
+    .table-modern .table-responsive { border: none !important; overflow-x: visible !important; }
+    .table-modern table { display: block !important; background: transparent !important; }
+    .table-modern thead { display: none !important; }
+    .table-modern tbody { display: block !important; }
+    .table-modern tr { display: block !important; background: var(--hygiene-surface) !important; border-radius: var(--radius-md) !important; padding: 1.25rem !important; margin-bottom: 1.25rem !important; box-shadow: var(--shadow-soft) !important; border: 1px solid var(--hygiene-border) !important; }
+    .table-modern td { display: flex !important; justify-content: space-between !important; align-items: center !important; border-bottom: 1px solid var(--hygiene-border-light) !important; padding: 0.75rem 0 !important; text-align: right !important; width: 100% !important; min-height: 48px; color: var(--hygiene-text-main) !important; }
+    .table-modern td:first-child { justify-content: flex-start !important; text-align: left !important; font-weight: 600 !important; font-size: 1.05rem !important; border-bottom: 1px dashed var(--hygiene-border) !important; padding-bottom: 0.875rem !important; margin-bottom: 0.25rem !important; color: var(--hygiene-text-heading) !important; }
+    .table-modern td:last-child { border-bottom: none !important; padding-top: 0.875rem !important; margin-top: 0.25rem !important; justify-content: flex-end !important; }
+    .table-modern td::before { content: attr(data-label); font-weight: 600; color: var(--hygiene-text-muted); font-size: 0.75rem; text-transform: uppercase; text-align: left !important; margin-right: 1rem; display: inline-block; font-family: var(--font-sans); letter-spacing: 0.05em; }
+    .table-modern td:first-child::before, .table-modern td:last-child::before { display: none !important; }
+    
+    /* Empty State Fix */
+    .table-modern td[colspan] { justify-content: center !important; text-align: center !important; flex-direction: column; padding: 2.5rem 1rem !important; border-bottom: none !important; }
+    .table-modern td[colspan]::before { display: none !important; }
+    .table-modern td[colspan] i { font-size: 3rem; margin-bottom: 1rem; color: var(--hygiene-border); }
+}
+/* Fix Dropdown stacking in tables */
+.table-modern thead th:first-child { border-top-left-radius: var(--radius-lg); }
+.table-modern thead th:last-child { border-top-right-radius: var(--radius-lg); }
+.table-modern .dropdown { position: static !important; }
+.table-modern .dropdown-menu { z-index: 1050; }
+
+/* Sidebar Collapse Fixes */
+body.sb-collapsed .brand-wrapper { display: none !important; }
+body.sb-collapsed .sidebar-heading { justify-content: center !important; }
+body:not(.sb-collapsed) #sidebar-toggle-desktop { margin-right: 0.5rem !important; margin-left: auto !important; }
+/* Layout Width Fix for Scaling & Responsive Tables */
+html, body { max-width: 100vw; overflow-x: hidden; }
+#wrapper { width: 100%; max-width: 100%; }
+#page-content-wrapper { flex: 1 1 auto; min-width: 0 !important; width: auto !important; margin-left: 270px; }
+@media (max-width: 992px) { #page-content-wrapper { margin-left: 0; } }
+body.sb-collapsed #page-content-wrapper { margin-left: 72px; }
+
+// ==========================================================
+// DASHBOARD UTILITIES (Replacing inline JS)
+// ==========================================================
+.hover-translate-right {
+    transition: transform 0.3s ease;
+    &:hover { transform: translateX(5px); }
+}
+
+.btn-hover-primary {
+    transition: all 0.3s ease;
+    &:hover {
+        background-color: var(--primary) !important;
+        color: white !important;
+        opacity: 1 !important;
+    }
+}
+
+.btn-hover-info {
+    transition: all 0.3s ease;
+    &:hover {
+        background-color: var(--info) !important;
+        color: white !important;
+        opacity: 1 !important;
+    }
+}
+
+.btn-hover-success {
+    transition: all 0.3s ease;
+    &:hover {
+        background-color: var(--success) !important;
+        color: white !important;
+        opacity: 1 !important;
+    }
 }

@@ -60,7 +60,7 @@
                                         <td>
                                             <div class="fw-bold">{{ $session->department->dept_name ?? 'N/A' }}</div>
                                             <div class="small text-muted">
-                                                <i class="bi bi-clock"></i> กะ: {{ ucfirst($session->shift) }}
+                                                <i class="bi bi-clock"></i> กะ: {{ $session->shift_label }}
                                             </div>
                                             <div class="small text-muted" style="font-size: 0.75rem;">ID: {{ $session->id }}</div>
                                         </td>

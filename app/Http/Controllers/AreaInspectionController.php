@@ -129,6 +129,10 @@ class AreaInspectionController extends Controller
                     ->with('category')
                     ->get()
                     ->groupBy('category.name');
+            } else {
+                // Skip unknown target types (e.g. 'shift:night') that are metadata,
+                // not inspectable targets — they have no checkpoints to render.
+                continue;
             }
 
             // Existing logs for this target

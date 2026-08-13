@@ -20,7 +20,7 @@
     <tbody>
         @foreach($sessions as $session)
         <tr style="border-bottom: 1px solid #f3f4f6;">
-            <td style="font-weight: 500; color: #1f2937;">{{ $session->shift }}</td>
+            <td style="font-weight: 500; color: #1f2937;">{{ $session->shift_label }}</td>
             <td style="color: #4b5563;">{{ $session->department->dept_name ?? 'N/A' }}</td>
             <td style="color: #4b5563;">{{ $session->inspector->name ?? 'N/A' }}</td>
             <td style="color: #f59e0b; font-weight: bold;">{{ $session->logs->whereNull('verification_status')->count() }}</td>

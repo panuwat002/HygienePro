@@ -187,14 +187,13 @@ class SchedulesImport implements ToCollection
                         }
                     }
                     
-                    // Update default shift for Employee based on first valid working day
-                    if ($startTime && $endTime && !$firstShiftFound) {
+                    // Extract times for Daily Schedule logging
+                    if ($startTime && $endTime) {
                         $shift = \App\Models\Shift::where('start_time', $startTime)
                             ->where('end_time', $endTime)
                             ->first();
                             
                         if (!$shift) {
-                            // Smart match: Find shift that covers the start_time
                             $timeStr = Carbon::parse($startTime)->format('H:i:s');
                             $shift = \App\Models\Shift::where(function ($q) use ($timeStr) {
                                 $q->where('start_time', '<=', $timeStr)->where('end_time', '>=', $timeStr);
@@ -206,12 +205,8 @@ class SchedulesImport implements ToCollection
                                   });
                             })->first();
                         }
-                        
-                        if ($shift) {
-                            $employee->shift_id = $shift->id;
-                            $employee->save();
-                            $firstShiftFound = true;
-                        }
+                        // Note: We deliberately do NOT save this shift as the employee's default shift
+                        // to prevent overwriting their master data.
                     }
                 }
 
@@ -222,6 +217,7 @@ class SchedulesImport implements ToCollection
                         'date' => $date->format('Y-m-d'),
                     ],
                     [
+                        'shift_id' => isset($shift) && $shift ? $shift->id : null,
                         'start_time' => $startTime,
                         'end_time' => $endTime,
                         'is_day_off' => $isDayOff,

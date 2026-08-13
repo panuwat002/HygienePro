@@ -14,54 +14,13 @@
 
     <!-- Bootstrap Icons CDN -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    
-    <!-- SweetAlert2 -->
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
     <!-- Scripts -->
     @vite(['resources/sass/app.scss', 'resources/js/app.js'])
     
     <!-- HygienePro Clean Theme Overrides -->
-    <link rel="stylesheet" href="{{ asset('css/hygiene-theme.css') }}?v={{ time() }}">
+    <link rel="stylesheet" href="{{ asset('css/hygiene-theme.css') }}?v={{ file_exists(public_path('css/hygiene-theme.css')) ? filemtime(public_path('css/hygiene-theme.css')) : time() }}">
     
-    <style>
-        /* Modern Mobile Tables - Hygiene Clean Upgrade */
-        .table-modern thead { background: var(--hygiene-bg); }
-        .table-modern th { font-weight: 600; color: var(--hygiene-text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid var(--hygiene-border) !important; padding: 1rem !important; }
-        .table-modern td { padding: 1rem !important; vertical-align: middle; border-bottom: 1px solid var(--hygiene-border-light) !important; font-size: 0.95rem; transition: background var(--transition-smooth); color: var(--hygiene-text-main) !important; }
-        .table-modern tr:hover td { background: var(--hygiene-bg); }
-        .table-modern tr:last-child td { border-bottom: none !important; }
 
-        @media (max-width: 767.98px) {
-            .table-modern { background: transparent !important; border: none !important; box-shadow: none !important; }
-            .table-modern .table-responsive { border: none !important; overflow-x: visible !important; }
-            .table-modern table { display: block !important; background: transparent !important; }
-            .table-modern thead { display: none !important; }
-            .table-modern tbody { display: block !important; }
-            .table-modern tr { display: block !important; background: var(--hygiene-surface) !important; border-radius: var(--radius-md) !important; padding: 1.25rem !important; margin-bottom: 1.25rem !important; box-shadow: var(--shadow-soft) !important; border: 1px solid var(--hygiene-border) !important; }
-            .table-modern td { display: flex !important; justify-content: space-between !important; align-items: center !important; border-bottom: 1px solid var(--hygiene-border-light) !important; padding: 0.75rem 0 !important; text-align: right !important; width: 100% !important; min-height: 48px; color: var(--hygiene-text-main) !important; }
-            .table-modern td:first-child { justify-content: flex-start !important; text-align: left !important; font-weight: 600 !important; font-size: 1.05rem !important; border-bottom: 1px dashed var(--hygiene-border) !important; padding-bottom: 0.875rem !important; margin-bottom: 0.25rem !important; color: var(--hygiene-text-heading) !important; }
-            .table-modern td:last-child { border-bottom: none !important; padding-top: 0.875rem !important; margin-top: 0.25rem !important; justify-content: flex-end !important; }
-            .table-modern td::before { content: attr(data-label); font-weight: 600; color: var(--hygiene-text-muted); font-size: 0.75rem; text-transform: uppercase; text-align: left !important; margin-right: 1rem; display: inline-block; font-family: var(--font-sans); letter-spacing: 0.05em; }
-            .table-modern td:first-child::before, .table-modern td:last-child::before { display: none !important; }
-            
-            /* Empty State Fix */
-            .table-modern td[colspan] { justify-content: center !important; text-align: center !important; flex-direction: column; padding: 2.5rem 1rem !important; border-bottom: none !important; }
-            .table-modern td[colspan]::before { display: none !important; }
-            .table-modern td[colspan] i { font-size: 3rem; margin-bottom: 1rem; color: var(--hygiene-border); }
-        }
-        /* Fix Dropdown stacking in tables */
-        .table-responsive, .table-modern { overflow: visible !important; }
-        .table-modern thead th:first-child { border-top-left-radius: var(--radius-lg); }
-        .table-modern thead th:last-child { border-top-right-radius: var(--radius-lg); }
-        .table-modern .dropdown { position: static !important; }
-        .table-modern .dropdown-menu { z-index: 1050; }
-        
-        /* Sidebar Collapse Fixes */
-        body.sb-collapsed .brand-wrapper { display: none !important; }
-        body.sb-collapsed .sidebar-heading { justify-content: center !important; }
-        body:not(.sb-collapsed) #sidebar-toggle-desktop { margin-right: 0.5rem !important; margin-left: auto !important; }
-    </style>
     @stack('styles')
 </head>
 <body>
@@ -82,13 +41,13 @@
                     </div>
                 </div>
                 <!-- Mobile Toggle (Collapse) -->
-                <button class="btn btn-link text-white d-lg-none p-0 me-2" id="sidebar-toggle-mobile" onclick="toggleSidebar()" style="position: relative; z-index: 1051; cursor: pointer; min-width: 44px; min-height: 44px;">
-                    <i class="bi bi-chevron-bar-left" style="font-size: 1.5rem;"></i>
+                <button class="btn btn-link text-white d-lg-none p-0 me-2" id="sidebar-toggle-mobile" onclick="toggleSidebar()" aria-label="เปิด/ปิดเมนู" style="position: relative; z-index: 1051; cursor: pointer; min-width: 44px; min-height: 44px;">
+                    <i class="bi bi-chevron-bar-left" style="font-size: 1.5rem;" aria-hidden="true"></i>
                 </button>
                 
                 <!-- Desktop Toggle (Collapse) -->
-                <button class="btn btn-link text-white d-none d-lg-block p-0 mx-auto" id="sidebar-toggle-desktop" onclick="toggleDesktopSidebar()">
-                    <i class="bi bi-list" style="font-size: 1.5rem;"></i>
+                <button class="btn btn-link text-white d-none d-lg-block p-0 mx-auto" id="sidebar-toggle-desktop" onclick="toggleDesktopSidebar()" aria-label="ย่อ/ขยายเมนู">
+                    <i class="bi bi-list" style="font-size: 1.5rem;" aria-hidden="true"></i>
                 </button>
             </div>
             
@@ -260,12 +219,17 @@
                             </div>
                         </a>
                         
-                        <form method="POST" action="{{ route('logout') }}">
-                            @csrf
-                            <button type="submit" class="btn btn-link text-white-50 p-0 text-decoration-none" title="Logout">
-                                <i class="bi bi-box-arrow-right fs-5"></i>
-                            </button>
-                        </form>
+                        <div class="d-flex align-items-center">
+                            <a href="{{ route('settings.index') }}" class="text-white-50 p-0 text-decoration-none me-3" title="Settings" aria-label="ตั้งค่า">
+                                <i class="bi bi-gear fs-5" aria-hidden="true"></i>
+                            </a>
+                            <form method="POST" action="{{ route('logout') }}" class="mb-0">
+                                @csrf
+                                <button type="submit" class="btn btn-link text-white-50 p-0 text-decoration-none" title="Logout" aria-label="ออกจากระบบ">
+                                    <i class="bi bi-box-arrow-right fs-5" aria-hidden="true"></i>
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -277,8 +241,8 @@
             <nav class="navbar navbar-expand-lg navbar-light glass-nav py-2 py-md-3 px-3 px-md-4">
                 <div class="d-flex align-items-center w-100 justify-content-between">
                     <div class="d-flex align-items-center gap-3">
-                <button class="btn btn-light d-lg-none rounded-circle p-2 shadow-sm border" id="menu-toggle" onclick="toggleSidebar()" style="cursor: pointer; z-index: 9999;">
-                            <i class="bi bi-list fs-4"></i>
+                <button class="btn btn-light d-lg-none rounded-circle p-2 shadow-sm border" id="menu-toggle" onclick="toggleSidebar()" aria-label="เปิด/ปิดเมนู" style="cursor: pointer; z-index: 9999;">
+                            <i class="bi bi-list fs-4" aria-hidden="true"></i>
                         </button>
                         <h2 class="fw-bold mb-0 text-dark" style="font-size:clamp(1rem, 4vw, 1.5rem); line-height:1.3;">@yield('header')</h2>
                     </div>
@@ -293,8 +257,8 @@
 
                         <!-- Notification Bell (Bootstrap) -->
                         <div class="dropdown">
-                            <button class="btn btn-white border rounded-circle position-relative p-2" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="width: 40px; height: 40px;">
-                                <i class="bi bi-bell"></i>
+                            <button class="btn btn-white border rounded-circle position-relative p-2" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="การแจ้งเตือน" style="width: 40px; height: 40px;">
+                                <i class="bi bi-bell" aria-hidden="true"></i>
                                 @if(Auth::check() && Auth::user()->unreadNotifications->count() > 0)
                                     <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-white p-1" style="font-size: 0.65rem;">
                                         {{ Auth::user()->unreadNotifications->count() }}
@@ -339,32 +303,12 @@
                         </div>
 
                         <div class="dropdown">
-                            <button class="btn btn-white border rounded-pill px-3 py-1" type="button">
-                                <span class="flag-icon">🇹🇭</span> ไทย
+                            <button class="btn btn-white border rounded-pill px-3 py-1" type="button" aria-label="เลือกภาษา">
+                                <span class="flag-icon" aria-hidden="true">🇹🇭</span> ไทย
                             </button>
                         </div>
                     </div>
 
-    <script>
-        function markAsRead(id, link) {
-            fetch(`/notifications/${id}/read`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                    'Content-Type': 'application/json'
-                }
-            }).then(() => {
-                if(link && link !== '#') {
-                    window.location.href = link;
-                } else {
-                    window.location.reload();
-                }
-            }).catch(error => {
-                console.error('Error marking as read:', error);
-                if(link && link !== '#') window.location.href = link;
-            });
-        }
-    </script>
                 </div>
             </nav>
 
@@ -454,7 +398,6 @@
             });
 
             // 2. SweetAlert2 Confirmation
-            // 2. SweetAlert2 Confirmation
             window.confirmAction = function(element, message = 'คุณแน่ใจหรือไม่?', confirmBtnText = 'ยืนยัน', icon = 'warning') {
                 // Find the closest form from the clicked element (button)
                 const form = element.closest('form');
@@ -517,6 +460,30 @@
             });
         });
     </script>
+    <script>
+        function markAsRead(id, link) {
+            fetch(`/notifications/${id}/read`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Content-Type': 'application/json'
+                }
+            }).then(() => {
+                if(link && link !== '#') {
+                    window.location.href = link;
+                } else {
+                    window.location.reload();
+                }
+            }).catch(error => {
+                console.error('Error marking as read:', error);
+                if(link && link !== '#') window.location.href = link;
+            });
+        }
+    </script>
+    
+    <!-- Third-party Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+    
     @stack('modals')
     @stack('scripts')
 </body>

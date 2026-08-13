@@ -87,8 +87,8 @@
             <!-- Table Section (Desktop) -->
             <div class="card bg-white rounded-4 overflow-hidden d-none d-md-block">
                 <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0" style="min-width: 800px;">
+                    <div class="table-responsive w-100">
+                        <table class="table table-hover align-middle mb-0 text-nowrap">
                             <thead class="bg-light border-bottom">
                                 <tr>
                                     @if($activeTab === 'pending' || $activeTab === 'completed')
@@ -98,7 +98,7 @@
                                         </div>
                                     </th>
                                     @endif
-                                    <th class="{{ $activeTab === 'pending' ? 'ps-2' : 'ps-4' }} py-3 text-muted fw-bold" style="width: 110px;">วัน-เวลา</th>
+                                    <th class="{{ $activeTab === 'pending' ? 'ps-2' : 'ps-4' }} py-3 text-muted fw-bold">วัน-เวลา</th>
                                     <th class="py-3 text-muted fw-bold">รอบ/กะ</th> 
                                     <th class="py-3 text-muted fw-bold">รายการตรวจ (Item)</th>
                                     <th class="py-3 text-muted fw-bold">แผนก/พื้นที่</th>
@@ -127,7 +127,7 @@
                                     <td>
                                         <div class="d-flex flex-column">
                                             <span class="badge bg-light text-dark mb-1 border">รอบที่ {{ $group->round }}</span>
-                                            <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">{{ $group->shift }}</span>
+                                            <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">{{ $group->shift_label ?? $group->shift }}</span>
                                         </div>
                                     </td>
                                     <td>

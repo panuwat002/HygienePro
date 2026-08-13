@@ -104,4 +104,21 @@ class ProfileController extends Controller
 
         return Redirect::route('profile.edit')->with('status', 'signature-updated');
     }
+
+    /**
+     * Delete the user's electronic signature.
+     */
+    public function destroySignature(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        if ($user->signature_path && \Illuminate\Support\Facades\Storage::disk('public')->exists($user->signature_path)) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($user->signature_path);
+        }
+
+        $user->signature_path = null;
+        $user->save();
+
+        return Redirect::route('profile.edit')->with('status', 'signature-deleted');
+    }
 }

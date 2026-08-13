@@ -9,7 +9,17 @@ class ShiftController extends Controller
 {
     public function index()
     {
-        $shifts = Shift::withCount('employees')->get();
+        $user = auth()->user();
+        $query = Shift::withCount('employees')->with('department');
+        
+        if ($user && !$user->isAdmin() && !$user->hasGlobalVisibility()) {
+            $query->where(function($q) use ($user) {
+                $q->where('department_id', $user->department_id)
+                  ->orWhereNull('department_id');
+            });
+        }
+        
+        $shifts = $query->paginate(10);
         return view('shifts.index', compact('shifts'));
     }
 
@@ -26,7 +36,13 @@ class ShiftController extends Controller
             'end_time' => 'required',
         ]);
 
-        Shift::create($request->all());
+        $data = $request->all();
+        $user = auth()->user();
+        if ($user && !$user->isAdmin() && !$user->hasGlobalVisibility()) {
+            $data['department_id'] = $user->department_id;
+        }
+
+        Shift::create($data);
 
         return redirect()->route('shifts.index')->with('success', 'Shift created successfully.');
     }

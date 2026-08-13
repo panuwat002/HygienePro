@@ -21,6 +21,7 @@ class Checkpoint extends Model
         'sort_order',
         'image_good',
         'image_bad',
+        'default_cost_impact',
     ];
 
     protected $casts = [
