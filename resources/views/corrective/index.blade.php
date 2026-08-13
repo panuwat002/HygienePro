@@ -6,18 +6,23 @@
             <!-- Left Column: Pending Actions -->
             <div class="col-lg-6">
                 <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-header bg-white border-0 pt-4 px-4 pb-0">
+                    <div class="card-header bg-white border-bottom border-light pt-4 px-4 pb-3">
                         <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="fw-bold text-danger mb-0"><i class="bi bi-exclamation-octagon me-2"></i>สิ่งที่ต้องดำเนินการ</h5>
-                                <div class="text-muted small mt-1">รายการที่ต้องแก้ไข หรือถูกส่งมอบหมายมา</div>
+                            <div class="d-flex align-items-center">
+                                <div class="bg-danger bg-opacity-10 text-danger rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 48px; height: 48px;">
+                                    <i class="bi bi-exclamation-octagon fs-4"></i>
+                                </div>
+                                <div>
+                                    <h5 class="fw-bold text-dark mb-0">สิ่งที่ต้องดำเนินการ</h5>
+                                    <div class="text-muted small mt-1">รายการที่ต้องแก้ไข หรือถูกส่งมอบหมายมา</div>
+                                </div>
                             </div>
-                            <span class="badge bg-danger rounded-pill">{{ $openActions->count() }}</span>
+                            <span class="badge bg-danger rounded-pill px-3 py-2 shadow-sm fs-6">{{ $openActions->count() }}</span>
                         </div>
                     </div>
                     <div class="card-body p-3 p-md-4">
                         @forelse($openActions as $action)
-                            <div class="card mb-3 border-0 shadow-sm rounded-4">
+                            <div class="card mb-3 border-0 shadow-sm rounded-4 overflow-hidden" style="border-left: 4px solid #dc3545 !important; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 .5rem 1rem rgba(0,0,0,.15)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 .125rem .25rem rgba(0,0,0,.075)'">
                                 <div class="card-body p-3">
                                     <div class="d-flex justify-content-between align-items-center mb-2">
                                         <div>
@@ -166,9 +171,12 @@
                                 </div>
                             </div>
                         @empty
-                            <div class="text-center py-5 text-muted">
-                                <i class="bi bi-check-circle fs-1 mb-2 d-block text-success opacity-50"></i>
-                                ไม่มีรายการที่ต้องแก้ไข
+                            <div class="text-center py-5">
+                                <div class="bg-success bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+                                    <i class="bi bi-check-lg fs-1 text-success"></i>
+                                </div>
+                                <h5 class="fw-bold text-dark">ยอดเยี่ยม! ไม่มีรายการตกค้าง</h5>
+                                <p class="text-muted small">คุณเคลียร์งานที่ต้องแก้ไขทั้งหมดเรียบร้อยแล้ว</p>
                             </div>
                         @endforelse
                     </div>
@@ -179,19 +187,24 @@
             <div class="col-lg-6">
                 {{-- Same History Code --}}
                 <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-header bg-white border-0 pt-4 px-4 pb-0">
-                         <h5 class="fw-bold text-success mb-0"><i class="bi bi-check-all me-2"></i>ประวัติที่ดำเนินการแล้ว</h5>
+                    <div class="card-header bg-white border-bottom border-light pt-4 px-4 pb-3">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-success bg-opacity-10 text-success rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 48px; height: 48px;">
+                                <i class="bi bi-check-all fs-4"></i>
+                            </div>
+                            <h5 class="fw-bold text-dark mb-0">ประวัติที่ดำเนินการแล้ว</h5>
+                        </div>
                     </div>
                     <div class="card-body p-4">
                         <div class="table-modern table-responsive w-100">
                             <table class="table table-hover align-middle mb-0 text-nowrap">
                                 <thead>
-                                    <tr>
-                                        <th class="ps-4">รายการ</th>
-                                        <th>วิธีที่แก้ไข (Action Taken)</th>
-                                        <th>แก้ไขโดย</th>
-                                        <th>วันที่</th>
-                                        <th class="pe-4 text-center">สถานะ / หลักฐาน</th>
+                                    <tr class="text-secondary" style="font-size: 0.85rem; letter-spacing: 0.5px;">
+                                        <th class="ps-4 fw-semibold text-uppercase">รายการ</th>
+                                        <th class="fw-semibold text-uppercase">วิธีที่แก้ไข (Action Taken)</th>
+                                        <th class="fw-semibold text-uppercase">แก้ไขโดย</th>
+                                        <th class="fw-semibold text-uppercase">วันที่</th>
+                                        <th class="pe-4 text-center fw-semibold text-uppercase">สถานะ / หลักฐาน</th>
                                     </tr>
                                 </thead>
                                 <tbody>
