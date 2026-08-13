@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
@@ -100,7 +100,7 @@
 
     <div class="section">
         <div class="section-title">Top 5 ผู้ที่ต้องเฝ้าระวัง (Top Offenders)</div>
-        @if(count($topOffenders) > 0)
+        @if(!empty($topOffenders) && count($topOffenders) > 0)
             <table>
                 <thead>
                     <tr>

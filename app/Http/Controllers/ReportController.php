@@ -657,6 +657,24 @@ class ReportController extends Controller
             $targetType = 'machine';
         }
 
+        $topOffendersRaw = (clone $query)->where('result', 'fail');
+        if ($targetType === 'person') {
+            $topOffendersRaw = $topOffendersRaw->whereNotNull('employee_id')
+                ->join('employees', 'inspection_logs.employee_id', '=', 'employees.id')
+                ->select(\Illuminate\Support\Facades\DB::raw("CONCAT(COALESCE(employees.fname, ''), ' ', COALESCE(employees.lname, '')) as target_name"), \Illuminate\Support\Facades\DB::raw('count(*) as total'))
+                ->groupBy('employees.id', 'target_name');
+        } else {
+            $topOffendersRaw = $topOffendersRaw->whereNotNull('machine_id')
+                ->join('machines', 'inspection_logs.machine_id', '=', 'machines.id')
+                ->select('machines.name as target_name', \Illuminate\Support\Facades\DB::raw('count(*) as total'))
+                ->groupBy('machines.id', 'machines.name');
+        }
+
+        $topOffenders = $topOffendersRaw->orderByDesc('total')
+            ->limit(5)
+            ->pluck('total', 'target_name')
+            ->toArray();
+
         $data = [
             'month' => $month,
             'targetType' => $targetType,
@@ -664,6 +682,7 @@ class ReportController extends Controller
             'totalInspections' => $totalInspections,
             'totalFails' => $totalFails,
             'topDefects' => $topDefects,
+            'topOffenders' => $topOffenders,
         ];
 
         $pdf = Pdf::loadView('reports.pdf.monthly_summary', $data);
