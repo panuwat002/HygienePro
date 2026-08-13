@@ -657,14 +657,14 @@ class ReportController extends Controller
             $targetType = 'machine';
         }
 
-        $topOffendersRaw = (clone $query)->where('result', 'fail');
+        $topOffendersRaw = (clone $query)->where('inspection_logs.result', 'fail');
         if ($targetType === 'person') {
-            $topOffendersRaw = $topOffendersRaw->whereNotNull('employee_id')
+            $topOffendersRaw = $topOffendersRaw->whereNotNull('inspection_logs.employee_id')
                 ->join('employees', 'inspection_logs.employee_id', '=', 'employees.id')
                 ->select(\Illuminate\Support\Facades\DB::raw("CONCAT(COALESCE(employees.fname, ''), ' ', COALESCE(employees.lname, '')) as target_name"), \Illuminate\Support\Facades\DB::raw('count(*) as total'))
                 ->groupBy('employees.id', 'target_name');
         } else {
-            $topOffendersRaw = $topOffendersRaw->whereNotNull('machine_id')
+            $topOffendersRaw = $topOffendersRaw->whereNotNull('inspection_logs.machine_id')
                 ->join('machines', 'inspection_logs.machine_id', '=', 'machines.id')
                 ->select('machines.name as target_name', \Illuminate\Support\Facades\DB::raw('count(*) as total'))
                 ->groupBy('machines.id', 'machines.name');
