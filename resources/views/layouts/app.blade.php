@@ -482,8 +482,38 @@
     </script>
     
     <!-- Third-party Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
+    <!-- Global Session Notification (SweetAlert2 Toast) -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const Toast = Swal.mixin({
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 3000,
+                timerProgressBar: true,
+                didOpen: (toast) => {
+                    toast.addEventListener('mouseenter', Swal.stopTimer)
+                    toast.addEventListener('mouseleave', Swal.resumeTimer)
+                }
+            });
+
+            @if(session('success'))
+                Toast.fire({ icon: 'success', title: '{!! addslashes(session('success')) !!}' });
+            @endif
+            @if(session('error'))
+                Toast.fire({ icon: 'error', title: '{!! addslashes(session('error')) !!}' });
+            @endif
+            @if(session('warning'))
+                Toast.fire({ icon: 'warning', title: '{!! addslashes(session('warning')) !!}' });
+            @endif
+            @if(session('info') || session('status'))
+                Toast.fire({ icon: 'info', title: '{!! addslashes(session('info') ?? session('status')) !!}' });
+            @endif
+        });
+    </script>
+
     @stack('modals')
     @stack('scripts')
 </body>

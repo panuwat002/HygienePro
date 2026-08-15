@@ -30,7 +30,7 @@
             </div>
 
             <!-- Ready State with Progress Ring -->
-            <div id="scan-ready-state" class="card border-0 shadow-sm text-center py-5" style="border-radius: var(--radius-xl);">
+            <div id="scan-ready-state" class="card border-0 shadow-sm text-center py-5 {{ $shiftRemainingCount == 0 && $totalEmployees > 0 ? 'd-none' : '' }}" style="border-radius: var(--radius-xl);">
                 <div class="card-body">
                     <!-- Progress Ring -->
                     <div class="progress-ring-container mb-4">
@@ -73,10 +73,18 @@
                                     @endif
                                 </small>
                                 
-                                @if($shiftRemainingCount > 0)
-                                    <button type="button" class="btn btn-success rounded-pill fw-bold shadow-sm w-100" data-bs-toggle="modal" data-bs-target="#bulkPassModal">
-                                        <i class="bi bi-check-all me-1"></i> ผ่านทุกคนที่เหลือ ({{ $shiftRemainingCount }})
-                                    </button>
+                                @if($session->is_sampling)
+                                    <div class="text-center w-100">
+                                        <span class="badge bg-danger rounded-pill px-3 py-2 w-100 shadow-sm">
+                                            <i class="bi bi-shield-lock me-1"></i> โหมดสุ่มตรวจ: ปิดการใช้งาน Pass All
+                                        </span>
+                                    </div>
+                                @elseif($shiftRemainingCount > 0)
+                                    @if(Auth::user()->isSupervisor() || Auth::user()->isAdmin() || Auth::user()->isQA())
+                                        <button type="button" class="btn btn-success rounded-pill fw-bold shadow-sm w-100" data-bs-toggle="modal" data-bs-target="#bulkPassModal">
+                                            <i class="bi bi-check-all me-1"></i> ผ่านทุกคนที่เหลือ ({{ $shiftRemainingCount }})
+                                        </button>
+                                    @endif
                                 @elseif($totalEmployees == 0)
                                     <button type="button" class="btn btn-secondary rounded-pill fw-bold shadow-sm w-100" disabled>
                                         <i class="bi bi-dash-circle me-1"></i> ไม่มีพนักงานในกะนี้
@@ -108,7 +116,7 @@
             </div>
 
             <!-- Summary State (Hidden by default, shown after Bulk Pass) -->
-            <div id="summary-state" class="card border-0 shadow-sm text-center py-5 d-none" style="border-radius: var(--radius-xl); background: var(--success-soft); border: 2px solid var(--success) !important;">
+            <div id="summary-state" class="card border-0 shadow-sm text-center py-5 {{ $shiftRemainingCount == 0 && $totalEmployees > 0 ? '' : 'd-none' }}" style="border-radius: var(--radius-xl); background: var(--success-soft); border: 2px solid var(--success) !important;">
                 <div class="card-body">
                     <div class="mb-4">
                         <i class="bi bi-check-circle-fill text-success" style="font-size: 5rem;"></i>
@@ -123,7 +131,7 @@
                         <a href="{{ route('inspection.browse', $session->id) }}" class="btn btn-outline-success btn-lg flex-fill py-3 fw-bold rounded-pill">
                             <i class="bi bi-search me-1"></i> ทบทวนข้อมูล
                         </a>
-                        <button type="button" class="btn btn-success btn-lg flex-fill py-3 fw-bold rounded-pill shadow-sm" onclick="confirmFinishSession(this)">
+                        <button type="button" class="btn btn-success btn-lg flex-fill py-3 fw-bold rounded-pill shadow-sm" onclick="submitFinishSessionDirectly(this)">
                             <i class="bi bi-check2-circle me-2"></i> จบงาน (Finish Job)
                         </button>
                     </div>
@@ -146,7 +154,7 @@
             </div>
 
             <!-- Mode Toggle -->
-            <div class="card border-0 shadow-sm mt-3" style="border-radius: var(--radius-lg);">
+            <div id="mode-toggle-container" class="card border-0 shadow-sm mt-3 {{ $shiftRemainingCount == 0 && $totalEmployees > 0 ? 'd-none' : '' }}" style="border-radius: var(--radius-lg);">
                 <div class="card-body py-3 px-4">
                     <div class="d-flex gap-2">
                         <button class="btn btn-primary btn-sm flex-fill text-center" disabled>
@@ -160,7 +168,7 @@
             </div>
 
             <!-- Manual Input (Fallback) -->
-            <div class="text-center mt-3">
+            <div id="manual-input-container" class="text-center mt-3 {{ $shiftRemainingCount == 0 && $totalEmployees > 0 ? 'd-none' : '' }}">
                 <button class="btn btn-link text-decoration-none" style="color: var(--slate-400);" onclick="toggleManualInput()">
                     <small>สแกนไม่ได้? กรอกรหัสพนักงาน</small>
                 </button>
@@ -206,7 +214,7 @@
                         <button type="button" class="btn btn-light rounded-pill flex-grow-1 fw-bold" data-bs-dismiss="modal">
                             <i class="bi bi-x-lg me-1"></i> ยกเลิก
                         </button>
-                        <form id="bulkPassForm" action="{{ route('inspection.bulk-pass', $session->id) }}" method="POST" class="flex-grow-1 m-0">
+                        <form id="bulkPassForm" action="{{ route('inspection.bulk-pass', $session->id) }}" method="POST" class="flex-grow-1 m-0 no-loading">
                             @csrf
                             <button type="submit" class="btn btn-success w-100 rounded-pill fw-bold shadow-sm">
                                 <i class="bi bi-check-all me-1"></i> ยืนยัน ผ่านทุกคน ({{ $shiftRemainingCount }} คน)
@@ -450,6 +458,12 @@
             }
         });
 
+        function submitFinishSessionDirectly(btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> กำลังบันทึก...';
+            document.getElementById('finish-session-form').submit();
+        }
+
         function toggleManualInput() {
             Swal.fire({
                 title: 'กรอกรหัสพนักงาน',
@@ -499,37 +513,8 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        // Close Modal
-                        let myModalEl = document.getElementById('bulkPassModal');
-                        let modal = bootstrap.Modal.getInstance(myModalEl);
-                        if (modal) {
-                            modal.hide();
-                        } else {
-                            // Fallback
-                            myModalEl.classList.remove('show');
-                            document.body.classList.remove('modal-open');
-                            const backdrops = document.querySelectorAll('.modal-backdrop');
-                            backdrops.forEach(b => b.remove());
-                        }
-                        
-                        // Hide UI elements
-                        document.getElementById('scan-ready-state').classList.add('d-none');
-                        const scannerContainer = document.getElementById('scanner-container');
-                        if (scannerContainer) scannerContainer.classList.add('d-none');
-                        
-                        // Hide Fallbacks and Toggles
-                        const fallbacks = document.querySelectorAll('.text-center.mt-3, .card.border-0.shadow-sm.mt-3');
-                        fallbacks.forEach(el => el.classList.add('d-none'));
-                        
-                        // Show Summary UI
-                        const summaryState = document.getElementById('summary-state');
-                        if (summaryState) {
-                            summaryState.classList.remove('d-none');
-                            // Add a tiny animation class if available in their stack
-                            summaryState.style.animation = 'fadeIn 0.5s ease-in-out';
-                        }
-                        
-                        Swal.close();
+                        // Reload the page so that Blade variables ($inspectedCount) update
+                        window.location.reload();
                     } else {
                         Swal.fire('ข้อผิดพลาด', data.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล', 'error');
                     }

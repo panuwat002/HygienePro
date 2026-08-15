@@ -129,28 +129,39 @@ class InspectionController extends Controller
             $totalFail = (clone $todayBase)->where('result', 'fail')->count();
             $passRate = ($totalPass + $totalFail) > 0 ? round(($totalPass / ($totalPass + $totalFail)) * 100) : 100;
             
-            return compact('inspectionsToday', 'pendingVerificationCount', 'recleanCount', 'passRate');
+            // Calculate Monthly Pass Rate for the big Hygiene Index dial
+            $monthlyBase = InspectionLog::where('inspected_at', '>=', now()->startOfMonth());
+            $applyScope($monthlyBase);
+            $monthlyTotalPass = (clone $monthlyBase)->where('result', 'pass')->count();
+            $monthlyTotalFail = (clone $monthlyBase)->where('result', 'fail')->count();
+            $monthlyPassRate = ($monthlyTotalPass + $monthlyTotalFail) > 0 ? round(($monthlyTotalPass / ($monthlyTotalPass + $monthlyTotalFail)) * 100) : 100;
+
+            return compact('inspectionsToday', 'pendingVerificationCount', 'recleanCount', 'passRate', 'monthlyPassRate');
         });
 
         $inspectionsToday = $dailyStats['inspectionsToday'];
         $pendingVerificationCount = $dailyStats['pendingVerificationCount'];
         $recleanCount = $dailyStats['recleanCount'];
         $passRate = $dailyStats['passRate'];
+        $monthlyPassRate = $dailyStats['monthlyPassRate'];
         if ($debugMark) $debugMark('§1-4 dailyStats(cached)');
 
         // 5. Recent Activity
         $recentLogsCacheKey = "dashboard_recent_logs_" . ($scopeDeptId ?? 'all');
         $recentLogs = \Illuminate\Support\Facades\Cache::remember($recentLogsCacheKey, 60, function () use ($applyScope) {
-            $recentQuery = InspectionLog::with(['employee', 'location', 'machine', 'checkpoint', 'session.inspector'])
-                ->orderBy('id', 'desc')
-                ->take(80);
+        $recentQuery = InspectionLog::with(['employee', 'location', 'machine', 'checkpoint', 'session.inspector', 'correctiveAction'])
+            ->orderBy('id', 'desc')
+            ->take(150); // Increased take to ensure enough unique sessions
             
-            return $applyScope($recentQuery)
-                ->get()
-                ->unique(function($log) {
-                     return $log->session_id . '-' . ($log->employee_id ?? $log->machine_id ?? $log->location_id);
-                })
-                ->take(5);
+            $logs = $applyScope($recentQuery)->get();
+            
+            return $logs->groupBy(function($log) {
+                return $log->session_id . '-' . ($log->employee_id ?? $log->machine_id ?? $log->location_id);
+            })->map(function($groupLogs) {
+                // Loop Engineering: Prioritize 'fail' log for display if any exists in the session
+                $failLog = $groupLogs->firstWhere('result', 'fail');
+                return $failLog ? $failLog : $groupLogs->first();
+            })->take(5)->values();
         });
         if ($debugMark) $debugMark('§5 recentLogs(cached)');
 
@@ -267,6 +278,7 @@ class InspectionController extends Controller
             'pendingVerificationCount',
             'recleanCount',
             'passRate',
+            'monthlyPassRate',
             'recentLogs',
             'totalCars',
             'carsByDept',
@@ -1030,8 +1042,23 @@ class InspectionController extends Controller
         $shiftNames = $resolved['shift_names'];
 
         $targetEmployeesList = $session->getTargetEmployees();
+
+        // Loop Engineering: Filter out employees who were ALREADY inspected TODAY BEFORE this session started.
+        // This ensures Random Audit only picks fresh people, but keeps the list locked because logs created
+        // DURING this session won't be filtered out (their created_at is > session->created_at).
+        $previouslyInspectedIds = \App\Models\InspectionLog::whereDate('inspected_at', $session->inspection_date)
+            ->where('created_at', '<', $session->created_at)
+            ->pluck('employee_id')
+            ->unique()
+            ->toArray();
+
+        $targetEmployeesList = $targetEmployeesList->filter(function($emp) use ($previouslyInspectedIds) {
+            return !in_array($emp->id, $previouslyInspectedIds);
+        });
+
         if ($session->is_sampling && $session->sample_size > 0) {
-            $targetEmployeesList = $targetEmployeesList->shuffle()->take($session->sample_size);
+            // Seed the shuffle with the session ID so the target list is locked for this session
+            $targetEmployeesList = $targetEmployeesList->sortBy('id')->values()->shuffle($session->id)->take($session->sample_size);
         }
         $targetEmployeeIdsMap = array_flip($targetEmployeesList->pluck('id')->toArray());
 
@@ -1069,6 +1096,9 @@ class InspectionController extends Controller
 
         // All IDs that are either done or absent across ALL sessions today are considered "completed" for progress bar
         $completedIds = array_unique(array_merge($inspectedIds, $absentIds));
+
+        // Get failed IDs across all sessions today (or just current)
+        $failedIds = $allTodayLogs->where('result', 'fail')->pluck('employee_id')->unique()->toArray();
 
         // Fetch employees with pending Re-cleans
         $pendingRecleanEmployeeIds = InspectionLog::where('verification_status', 'reclean')
@@ -1112,11 +1142,12 @@ class InspectionController extends Controller
 
         // Progress stats
         $inspectedCount = count(array_intersect($allEmployeeIds, $completedIds));
+        $failedCount = count(array_intersect($allEmployeeIds, $failedIds));
         $progressPercent = $totalEmployees > 0 ? round(($inspectedCount / $totalEmployees) * 100) : 0;
 
         return view('inspections.browse', compact(
-            'session', 'grouped', 'inspectedIds', 'inspectedCurrentIds', 'absentIds', 'search',
-            'totalEmployees', 'inspectedCount', 'progressPercent', 'showAll',
+            'session', 'grouped', 'inspectedIds', 'inspectedCurrentIds', 'absentIds', 'failedIds', 'search',
+            'totalEmployees', 'inspectedCount', 'failedCount', 'progressPercent', 'showAll',
             'pendingRecleanEmployeeIds', 'inspectedOtherShiftIds'
         ));
     }
@@ -1188,6 +1219,14 @@ class InspectionController extends Controller
     public function bulkPassPersonnel(InspectionSession $session, Request $request)
     {
         $this->authorizeSessionOwner($session);
+
+        if (!Auth::user()->isSupervisor() && !Auth::user()->isAdmin() && !Auth::user()->isQA()) {
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json(['success' => false, 'message' => 'ไม่มีสิทธิ์ใช้งานฟังก์ชันนี้ (Unauthorized)'], 403);
+            }
+            return redirect()->route('inspection.dashboard', $session->type)
+                ->with('error', 'คุณไม่มีสิทธิ์ใช้งานฟังก์ชัน Pass All');
+        }
 
         if ($session->isLocked()) {
             if ($request->wantsJson() || $request->ajax()) {
@@ -1415,6 +1454,8 @@ class InspectionController extends Controller
 
             // Pre-process images and correction actions
             $isFirstLog = true;
+            $failedItems = [];
+
             foreach ($request->logs as $checkpointId => $data) {
                 // Validation for Fail actions
                 if ($data['result'] === 'fail') {
@@ -1426,6 +1467,12 @@ class InspectionController extends Controller
                          $cpTitle = Checkpoint::find($checkpointId)?->title ?? 'รายการที่ไม่ผ่าน';
                          return back()->with('error', "กรุณาถ่ายรูปหลักฐาน (Evidence Photo) สำหรับ: $cpTitle");
                     }
+                    
+                    $cpTitle = Checkpoint::find($checkpointId)?->title ?? 'รายการที่ไม่ผ่าน';
+                    $failedItems[] = [
+                        'title' => $cpTitle,
+                        'correction' => $data['correction']
+                    ];
                 }
 
                 $photoPath = null;
@@ -1464,6 +1511,19 @@ class InspectionController extends Controller
         }
 
         $employee = Employee::find($request->employee_id);
+
+        if (!empty($failedItems)) {
+            try {
+                \Illuminate\Support\Facades\Notification::route(\App\Channels\LineMessagingChannel::class, '')
+                    ->notify(new \App\Notifications\InspectionFailedLineNotification(
+                        $employee->fullname,
+                        $session->department->dept_name ?? 'ไม่ระบุ',
+                        $failedItems
+                    ));
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('LINE Failed Notification Error: ' . $e->getMessage());
+            }
+        }
 
         // Auto-update employee's master shift to match the latest inspected session's shift
         $shiftModel = \App\Models\Shift::whereRaw('LOWER(shift_name) = ?', [strtolower($session->shift)])->first();
@@ -1566,21 +1626,25 @@ class InspectionController extends Controller
 
         $logs = $query->get();
 
-        // Pre-calculate which employees failed to group them together
-        $failedEmployeeIdsInSession = collect($logs)->where('result', 'fail')->pluck('employee_id')->unique()->filter()->values()->toArray();
+        // Pre-calculate which employees failed to group them together (session-specific)
+        $failedEmployeeIdsPerSession = collect($logs)->where('result', 'fail')
+            ->groupBy('session_id')
+            ->map(function($sessionLogs) {
+                return $sessionLogs->pluck('employee_id')->unique()->filter()->values()->toArray();
+            })->toArray();
 
-        $groupedInspections = $logs->groupBy(function($log) use ($failedEmployeeIdsInSession) {
+        $groupedInspections = $logs->groupBy(function($log) use ($failedEmployeeIdsPerSession) {
             if ($log->employee_id) {
-                $statusType = in_array($log->employee_id, $failedEmployeeIdsInSession) ? 'failed' : 'passed';
-                return $log->session_id . '_personnel_' . $statusType;
+                // Loop Engineering: Group all personnel logs by session ONLY.
+                // Do not split by statusType or verifyGroup, so that all logs for a session 
+                // stay together in a single card, regardless of pass/fail mix.
+                return $log->session_id . '_personnel';
             } else {
                 $locId = $log->location_id ?? ($log->machine->location_id ?? 'unknown');
                 
-                // แยกกลุ่มตามสถานะการตรวจสอบ (รอดำเนินการ vs สั่งแก้ไข)
-                // เพื่อให้รายการผ่าน (pending) ไปอยู่แท็บรอทวนสอบ และรายการไม่ผ่าน (reclean) ไปอยู่แท็บสั่งแก้ไข
-                $statusType = ($log->verification_status === 'reclean') ? 'failed' : 'passed';
-                
-                return $log->session_id . '_loc_' . $locId . '_' . $statusType;
+                // Loop Engineering: Group all area/machine logs by session and location ONLY.
+                // Do not split by statusType, so passed and failed machines in the same room stay together.
+                return $log->session_id . '_loc_' . $locId;
             }
         });
 
@@ -1665,17 +1729,22 @@ class InspectionController extends Controller
                 $employeeCount = $logsInGroup->pluck('employee_id')->unique()->count();
                 $isFailedGroup = $logsInGroup->contains('result', 'fail');
                 
+                $isAutoVerifiedGroup = $logsInGroup->every(fn($l) => in_array($l->verification_status, ['auto_verified', 'approved', 'verified']));
+
                 $name = "ตรวจพนักงาน จำนวน {$employeeCount} คน";
                 if ($isFailedGroup) {
                     $name .= " (พบข้อบกพร่อง)";
+                } elseif ($isAutoVerifiedGroup) {
+                    $name .= " (ผ่านอัตโนมัติ)";
                 } else {
-                    $name .= " (ผ่านทั้งหมด)";
+                    $name .= " (รอทวนสอบทั้งหมด)";
                 }
 
                 $subtext = $firstLog->session->department->dept_name ?? '-';
                 
                 $statusType = $isFailedGroup ? 'failed' : 'passed';
-                $modalId = 'sess_personnel_' . $firstLog->session_id . '_' . $statusType;
+                $verifyGroup = $isAutoVerifiedGroup ? 'verified' : 'pending';
+                $modalId = 'sess_personnel_' . $firstLog->session_id . '_' . $statusType . '_' . $verifyGroup;
                 
                 $imagePath = null;
                 $employee = null; // Unset so UI treats it as a group
@@ -1727,15 +1796,15 @@ class InspectionController extends Controller
                 }
             }
 
-            // Determine Group Status Priority: Approved > Auto-verified > Re-clean > Pending > Verified
+            // Determine Group Status Priority: Approved > Auto-verified > Pending > Re-clean > Verified
             if ($isGroupApproved) {
                 $groupStatus = 'approved';
             } elseif ($isGroupAutoVerified) {
                 $groupStatus = 'auto_verified';
-            } elseif ($hasReclean) {
-                $groupStatus = 'reclean';
             } elseif ($hasPending) {
                 $groupStatus = 'pending'; 
+            } elseif ($hasReclean) {
+                $groupStatus = 'reclean';
             } else {
                 $groupStatus = 'verified';
             }
@@ -1753,6 +1822,7 @@ class InspectionController extends Controller
                 'shift' => $shiftLabel,
                 'round' => $round,
                 'session_id' => $session->id, // Important for Approval
+                'is_sampling' => $session->is_sampling ?? false, // Loop Engineering: Flag to identify random audit
                 'date' => $logsInGroup->max('inspected_at')?->format('d/m/Y') ?? '-',
                 'time' => $logsInGroup->max('inspected_at')?->format('H:i') ?? '-',
                 'status' => $status,

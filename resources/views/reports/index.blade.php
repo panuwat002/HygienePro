@@ -183,17 +183,31 @@
                 </div>
             </div>
 
-            <!-- Recurring Areas (12 Cols) -->
-            <div class="col-12">
+            <!-- Recurring Areas & Personnel (2x 6 Cols) -->
+            <div class="col-lg-6">
                 <div class="glass-card p-4">
                     <div class="d-flex align-items-center justify-content-between mb-3">
                         <div>
-                            <h6 class="fw-bold mb-0 text-slate-800 fs-5"><i class="bi bi-bar-chart-steps text-amber-600 me-2"></i>พื้นที่และเครื่องจักรที่พบปัญหาบ่อย (Recurring Areas)</h6>
+                            <h6 class="fw-bold mb-0 text-slate-800 fs-5"><i class="bi bi-geo-alt-fill text-amber-600 me-2"></i>พื้นที่และเครื่องจักรที่พบปัญหาบ่อย (Recurring Areas)</h6>
                             <small class="text-muted">อันดับจุดตรวจสอบที่ต้องเฝ้าระวังการเกิดซ้ำ</small>
                         </div>
                     </div>
                     <div class="chart-container-responsive" style="height: 220px;">
                         <canvas id="areaChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-6">
+                <div class="glass-card p-4">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div>
+                            <h6 class="fw-bold mb-0 text-slate-800 fs-5"><i class="bi bi-people-fill text-rose-500 me-2"></i>พนักงานที่พบปัญหาบ่อย (Recurring Personnel)</h6>
+                            <small class="text-muted">อันดับพนักงานที่มีข้อบกพร่องสะสมสูงสุด</small>
+                        </div>
+                    </div>
+                    <div class="chart-container-responsive" style="height: 220px;">
+                        <canvas id="personnelChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -413,6 +427,7 @@
             const trendValues = {!! json_encode($trendValues) !!};
             
             const areaData = {!! json_encode($recurringAreas) !!};
+            const personnelData = {!! json_encode($recurringPersonnel) !!};
             const defectData = {!! json_encode($commonDefects) !!};
 
             // Toggle machine filter group
@@ -517,6 +532,36 @@
                             label: 'จำนวนครั้งที่ไม่ผ่าน',
                             data: areaData.map(d => d.count),
                             backgroundColor: '#f59e0b',
+                            borderRadius: 6,
+                            barThickness: 16
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            x: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { stepSize: 1 } },
+                            y: { grid: { display: false } }
+                        }
+                    }
+                });
+            }
+
+            // 4. Problem Personnel (Bar - Horizontal)
+            const personnelCtx = document.getElementById('personnelChart');
+            if (personnelCtx) {
+                new Chart(personnelCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: personnelData.map(d => d.label),
+                        datasets: [{
+                            label: 'จำนวนครั้งที่ไม่ผ่าน',
+                            data: personnelData.map(d => d.count),
+                            backgroundColor: '#f43f5e',
                             borderRadius: 6,
                             barThickness: 16
                         }]

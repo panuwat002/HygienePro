@@ -346,15 +346,20 @@ class AreaInspectionController extends Controller
 
             $locationId = null;
             $machineId = null;
+            $targetName = 'พื้นที่/เครื่องจักร';
 
             if ($type === 'loc') {
                 $locationId = $targetId;
+                $targetName = \App\Models\Location::find($locationId)?->location_name ?? 'พื้นที่';
             } else {
                 $machine = \App\Models\Machine::find($targetId);
                 if (!$machine) continue;
                 $machineId = $targetId;
                 $locationId = $machine->location_id;
+                $targetName = $machine->name;
             }
+
+            $failedItemsForTarget = [];
 
             foreach ($results as $checkpointId => $result) {
                 if (!$result) continue;
@@ -379,6 +384,11 @@ class AreaInspectionController extends Controller
                         $cpTitle = $checkpointTitles[$checkpointId] ?? 'รายการที่ไม่ผ่าน';
                         throw new BulkValidationException("กรุณาถ่ายรูปหลักฐาน (Evidence Photo) สำหรับ: $cpTitle");
                     }
+                    
+                    $failedItemsForTarget[] = [
+                        'title' => $checkpointTitles[$checkpointId] ?? 'รายการที่ไม่ผ่าน',
+                        'correction' => $note
+                    ];
                 }
                 
                 $logData = [
@@ -477,6 +487,24 @@ class AreaInspectionController extends Controller
                     ]);
                 }
             }
+            
+            if (!empty($failedItemsForTarget)) {
+                $pendingCarNotifications[] = [
+                    // Only used as a hack to pass through this existing array, but instead we just dispatch to LINE
+                    [], null
+                ];
+                
+                try {
+                    \Illuminate\Support\Facades\Notification::route(\App\Channels\LineMessagingChannel::class, '')
+                        ->notify(new \App\Notifications\InspectionFailedLineNotification(
+                            $targetName,
+                            $session->department->dept_name ?? 'ไม่ระบุ',
+                            $failedItemsForTarget
+                        ));
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::error('LINE Failed Notification Error (Area): ' . $e->getMessage());
+                }
+            }
         }
     }
 
@@ -525,12 +553,9 @@ class AreaInspectionController extends Controller
 
         // Check for Force Finish or Natural Completion
         if ($remainingCount === 0 || $request->input('save_action') === 'finish') {
-            $session->update([
-                'status' => 'completed',
-            ]);
-            // Fix #7: One summary notification of every auto-CAR opened during
-            // this session, instead of one bell entry per fail.
-            app(\App\Services\InspectionService::class)->notifyManagersOfSessionCars($session);
+            // Use InspectionService to handle completion tasks (including LINE notification)
+            app(\App\Services\InspectionService::class)->finishSession($session);
+            
             $msg = 'บันทึกผลเรียบร้อยและจบงานแล้ว (Session Completed)';
             if ($request->wantsJson()) return response()->json(['success' => true, 'message' => $msg]);
             return redirect()->route('inspection.dashboard', $session->type)

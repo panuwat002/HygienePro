@@ -137,8 +137,9 @@ class CorrectiveActionController extends Controller
         $defaultDueHours = 24;
         $dueDate = $request->due_date ? \Carbon\Carbon::parse($request->due_date) : now()->addHours($defaultDueHours);
 
-        $action = \App\Models\CorrectiveAction::create([
+        $action = \App\Models\CorrectiveAction::updateOrCreate([
             'inspection_log_id' => $log->id,
+        ], [
             'status' => $assigneeId ? 'assigned' : 'open',
             'escalated_by' => auth()->id(),
             'root_cause' => $request->note,

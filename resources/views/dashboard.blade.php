@@ -59,13 +59,13 @@
                                 </div>
                                 
                                 <div class="d-flex flex-wrap gap-2 ms-md-auto">
-                                    <a href="{{ route('inspection.dashboard', 'personnel') }}" class="btn btn-sm rounded-pill px-3 shadow-sm fw-bold text-primary bg-primary bg-opacity-10 border-0 btn-hover-primary">
+                                    <a href="{{ route('inspection.dashboard', 'personnel') }}?is_sampling=1" class="btn btn-sm rounded-pill px-3 shadow-sm fw-bold text-primary bg-primary bg-opacity-10 border-0 btn-hover-primary">
                                         <i class="bi bi-people-fill me-1"></i>ตรวจพนักงาน
                                     </a>
-                                    <a href="{{ route('inspection.dashboard', 'machine') }}" class="btn btn-sm rounded-pill px-3 shadow-sm fw-bold text-info bg-info bg-opacity-10 border-0 btn-hover-info">
+                                    <a href="{{ route('inspection.dashboard', 'machine') }}?is_sampling=1" class="btn btn-sm rounded-pill px-3 shadow-sm fw-bold text-info bg-info bg-opacity-10 border-0 btn-hover-info">
                                         <i class="bi bi-gear-wide-connected me-1"></i>ตรวจเครื่องจักร
                                     </a>
-                                    <a href="{{ route('inspection.area.bulk', $audit->department_id) }}" class="btn btn-sm rounded-pill px-3 shadow-sm fw-bold text-success bg-success bg-opacity-10 border-0 btn-hover-success">
+                                    <a href="{{ route('inspection.area.bulk', $audit->department_id) }}?is_sampling=1" class="btn btn-sm rounded-pill px-3 shadow-sm fw-bold text-success bg-success bg-opacity-10 border-0 btn-hover-success">
                                         <i class="bi bi-geo-alt-fill me-1"></i>ตรวจพื้นที่
                                     </a>
                                 </div>
@@ -341,7 +341,14 @@
                                         <td class="ps-3 py-2">
                                             <div class="d-flex align-items-center">
                                                 <div>
-                                                    <span class="d-block fw-bold text-dark">{{ $targetName }}</span>
+                                                    <span class="d-block fw-bold text-dark">
+                                                        {{ $targetName }}
+                                                        @if($log->session->is_sampling ?? false)
+                                                            <span class="badge bg-warning text-dark border border-warning border-opacity-50 ms-1 fw-normal" style="font-size: 0.65rem;" title="เกิดจากการสุ่มตรวจ">
+                                                                <i class="bi bi-shuffle"></i> สุ่ม
+                                                            </span>
+                                                        @endif
+                                                    </span>
                                                     <small class="text-muted text-truncate d-inline-block" style="max-width: 200px;">{{ $log->checkpoint->title }}</small>
                                                 </div>
                                             </div>
@@ -350,7 +357,13 @@
                                             @if($log->result === 'pass')
                                                 <span class="fw-semibold text-success small"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem; vertical-align: text-top;"></i> ผ่าน</span>
                                             @elseif($log->result === 'fail')
-                                                <span class="fw-semibold text-danger small"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem; vertical-align: text-top;"></i> ไม่ผ่าน</span>
+                                                @if($log->correctiveAction && in_array($log->correctiveAction->status, ['verified', 'closed']))
+                                                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1 rounded-pill" title="ได้รับการแก้ไขและตรวจสอบแล้ว">
+                                                        <i class="bi bi-check-circle-fill me-1"></i> แก้ไขแล้ว
+                                                    </span>
+                                                @else
+                                                    <span class="fw-semibold text-danger small"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem; vertical-align: text-top;"></i> ไม่ผ่าน</span>
+                                                @endif
                                             @else
                                                 <span class="fw-semibold text-secondary small"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem; vertical-align: text-top;"></i> ไม่มา</span>
                                             @endif
@@ -359,7 +372,14 @@
                                             <span class="fw-medium text-dark small">{{ $log->session->inspector->name ?? '-' }}</span>
                                         </td>
                                         <td class="text-end pe-3 text-muted small fw-medium">
-                                            {{ $log->inspected_at->format('H:i') }} น.
+                                            @if($log->inspected_at->isToday())
+                                                {{ $log->inspected_at->format('H:i') }} น.
+                                            @else
+                                                <div class="d-flex flex-column align-items-end">
+                                                    <span>{{ $log->inspected_at->format('d/m/Y') }}</span>
+                                                    <span style="font-size: 0.65rem;">{{ $log->inspected_at->format('H:i') }} น.</span>
+                                                </div>
+                                            @endif
                                         </td>
                                     </tr>
                                 @empty
@@ -392,11 +412,11 @@
                             <circle cx="60" cy="60" r="54" fill="none" class="text-light" stroke="currentColor" stroke-width="8"></circle>
                             <!-- Progress Circle -->
                             <circle cx="60" cy="60" r="54" fill="none" class="text-success" stroke="currentColor" stroke-width="8" stroke-linecap="round" 
-                                    stroke-dasharray="339.29" stroke-dashoffset="{{ 339.29 * (1 - ($passRate/100)) }}" 
+                                    stroke-dasharray="339.29" stroke-dashoffset="{{ 339.29 * (1 - ($monthlyPassRate/100)) }}" 
                                     style="transform: rotate(-90deg); transform-origin: 50% 50%;"></circle>
                         </svg>
                         <div class="position-absolute top-50 start-50 translate-middle">
-                            <h3 class="fw-bold mb-0 text-dark">{{ $passRate }}%</h3>
+                            <h3 class="fw-bold mb-0 text-dark">{{ $monthlyPassRate }}%</h3>
                         </div>
                     </div>
                 </div>
@@ -506,7 +526,7 @@
     @endif
 
     @push('scripts')
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha384-kHW+A5jFiy/x4/8RjQx1F5KjGZ5+J8I0Z/gB6n3y5lM2J4O0T6M1XvDqjF9t7Z/C" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Setup default font for charts
@@ -515,7 +535,7 @@
 
             // 1. CAR by Department (Bar Chart)
             const deptEl = document.getElementById('carDeptChart');
-            if (deptEl) {
+            if (deptEl && typeof Chart !== 'undefined') {
                 const ctxDept = deptEl.getContext('2d');
                 new Chart(ctxDept, {
                     type: 'bar',
@@ -559,7 +579,7 @@
 
             // 2. SLA Status (Doughnut)
             const slaEl = document.getElementById('carSlaChart');
-            if (slaEl) {
+            if (slaEl && typeof Chart !== 'undefined') {
                 const ctxSla = slaEl.getContext('2d');
                 new Chart(ctxSla, {
                     type: 'doughnut',
@@ -594,7 +614,7 @@
             // 3. AI Insights (Doughnut)
             @if(isset($aiTagCounts) && $aiTagCounts->isNotEmpty())
             const aiEl = document.getElementById('aiInsightsChart');
-            if (aiEl) {
+            if (aiEl && typeof Chart !== 'undefined') {
                 const ctxAi = aiEl.getContext('2d');
                 new Chart(ctxAi, {
                     type: 'doughnut',

@@ -78,17 +78,47 @@ class InspectionService
         if ($session->status === 'completed') {
             return; // Already done
         }
-
-        // Apply Random Verification Logic before completing
-        $this->applyRandomVerification($session);
-
+        
         $session->update([
             'status' => 'completed',
         ]);
 
+        // Auto-Escalation for Random Audits
+        if ($session->is_sampling) {
+            $totalInspected = $session->logs()->distinct('employee_id')->count();
+            if ($totalInspected > 0) {
+                // Count employees who have at least one fail log
+                $failedEmployeesCount = $session->logs()
+                    ->where('result', 'fail')
+                    ->distinct('employee_id')
+                    ->count();
+
+                $failRate = ($failedEmployeesCount / $totalInspected) * 100;
+                // If fail rate > 20%, trigger auto-escalation
+                if ($failRate > 20) {
+                    $this->triggerRandomAuditEscalation($session, $failRate, $failedEmployeesCount, $totalInspected);
+                }
+            }
+        }
+
         $this->notifySupervisorsFinished($session);
         // Fix #7: One consolidated bell entry for all CARs opened this session.
         $this->notifyManagersOfSessionCars($session);
+        
+        // --- LINE Notification Integration ---
+        try {
+            $stats = [
+                'total' => $session->logs()->count(),
+                'pass' => $session->logs()->where('result', 'pass')->count(),
+                'fail' => $session->logs()->where('result', 'fail')->count(),
+            ];
+            $randomAssigned = $session->logs()->whereNull('verification_status')->count();
+            
+            \Illuminate\Support\Facades\Notification::route(\App\Channels\LineMessagingChannel::class, '')
+                ->notify(new \App\Notifications\SessionSummaryLineNotification($session, $stats, $randomAssigned));
+        } catch (\Exception $e) {
+            \Log::error('LINE Notify Error on Finish Session: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -129,101 +159,51 @@ class InspectionService
     }
 
     /**
-     * Apply Automated Random Verification.
-     * Auto-verify 90% of passed targets, leaving 10% (and all failed targets) for manual verification.
+     * Trigger auto-escalation for failed random audits.
+     * Creates a Re-check session for the entire department and notifies managers.
      */
-    protected function applyRandomVerification(InspectionSession $session): void
+    protected function triggerRandomAuditEscalation(InspectionSession $session, float $failRate, int $failedEmployeesCount, int $totalInspected): void
     {
-        $logs = \App\Models\InspectionLog::where('session_id', $session->id)
-                    ->whereNull('verification_status')
-                    ->get();
+        // 1. Create a Re-check InspectionSession for the entire department (NOT sampling)
+        $recheckSession = InspectionSession::create([
+            'department_id' => $session->department_id,
+            'inspection_date' => now()->toDateString(),
+            'shift' => $session->shift,
+            'inspector_id' => $session->inspector_id, // Assigned to the same QA Sup initially, or null if it should be unassigned
+            'status' => 'in_progress',
+            'type' => $session->type,
+            'round' => $session->round + 1,
+            'is_sampling' => false,
+            'sample_size' => null,
+            'is_audit' => false,
+        ]);
+
+        // 2. Determine recipients: Department Managers (Level 5+) and QA Managers
+        $managers = \App\Models\User::where('department_id', $session->department_id)
+            ->where('level', '>=', 5)
+            ->get();
+            
+        $qaManagers = \App\Models\User::where('role', 'manager')
+            ->whereHas('department', function($q) {
+                $q->where('dept_code', 'QA');
+            })
+            ->get();
+            
+        $recipients = $managers->merge($qaManagers)->unique('id');
+        $emails = $recipients->pluck('email')->filter()->toArray();
+
+        // 3. Send Email
+        if (count($emails) > 0) {
+            \Illuminate\Support\Facades\Mail::to($emails)->send(new \App\Mail\RandomAuditEscalationMail($session, $recheckSession, $failRate, $failedEmployeesCount, $totalInspected));
+        }
         
-        if ($logs->isEmpty()) return;
-
-        // Group logs by target (employee, machine, or location)
-        $targets = $logs->groupBy(function($log) {
-            if ($log->employee_id) return 'e_' . $log->employee_id;
-            if ($log->machine_id) return 'm_' . $log->machine_id;
-            return 'l_' . ($log->location_id ?? 0);
-        });
-
-        $passedTargets = [];
-
-        foreach ($targets as $targetKey => $targetLogs) {
-            // If the target has ANY failed log, we skip auto-verification (MUST be manually verified)
-            $hasFail = $targetLogs->contains('result', 'fail');
-            if (!$hasFail) {
-                $passedTargets[] = $targetKey;
-            }
+        // 4. Send In-App Notification
+        foreach ($recipients as $recipient) {
+            $recipient->notify(new \App\Notifications\RandomAuditEscalationNotification($session, $recheckSession, $failRate, $failedEmployeesCount, $totalInspected));
         }
-
-        $totalPassed = count($passedTargets);
-        if ($totalPassed > 0) {
-            // Smart Auto-Verification (Risk-Based Sampling)
-            $highRiskTargets = [];
-            $lowRiskTargets = [];
-
-            // Query failures in the last 30 days for these targets
-            $thirtyDaysAgo = now()->subDays(30);
-            
-            foreach ($passedTargets as $tKey) {
-                $type = substr($tKey, 0, 1);
-                $id = substr($tKey, 2);
-
-                $query = \App\Models\InspectionLog::where('result', 'fail')
-                    ->where('inspected_at', '>=', $thirtyDaysAgo);
-
-                if ($type === 'e') {
-                    $query->where('employee_id', $id);
-                } elseif ($type === 'm') {
-                    $query->where('machine_id', $id);
-                } else {
-                    $query->where('location_id', $id);
-                }
-
-                if ($query->exists()) {
-                    $highRiskTargets[] = $tKey;
-                } else {
-                    $lowRiskTargets[] = $tKey;
-                }
-            }
-
-            // High risk targets are NEVER auto-verified.
-            // Low risk targets get 90% auto-verified (10% manual verification).
-            $targetsToAutoVerify = [];
-            $verifyCount = 0;
-            
-            $totalLowRisk = count($lowRiskTargets);
-            if ($totalLowRisk > 0) {
-                $verifyCount = (int) ceil($totalLowRisk * 0.10);
-                shuffle($lowRiskTargets);
-                
-                // The ones beyond the $verifyCount will be Auto-Verified
-                $targetsToAutoVerify = array_slice($lowRiskTargets, $verifyCount);
-            }
-            
-            if (count($targetsToAutoVerify) > 0) {
-                $logIdsToAutoVerify = [];
-                foreach ($targetsToAutoVerify as $tKey) {
-                    $logIdsToAutoVerify = array_merge($logIdsToAutoVerify, $targets[$tKey]->pluck('id')->toArray());
-                }
-
-                \App\Models\InspectionLog::whereIn('id', $logIdsToAutoVerify)->update([
-                    'verification_status' => 'auto_verified',
-                    'verified_at' => now(),
-                    'verification_comment' => 'สุ่มทวนสอบ: ผ่านการอนุมัติอัตโนมัติ (Smart Auto-verified)',
-                ]);
-
-                // Notify Inspector
-                if ($session->inspector) {
-                    $session->inspector->notify(new \App\Notifications\SmartAutoVerifiedNotification(count($logIdsToAutoVerify)));
-                }
-
-                \Illuminate\Support\Facades\Log::info("Smart Auto-verified " . count($targetsToAutoVerify) . " low-risk targets for session {$session->id}. High risk: " . count($highRiskTargets) . ". Kept {$verifyCount} low-risk targets for manual verification.");
-            }
-        }
+        
+        \Log::info("Random Audit Auto-Escalation triggered for Session {$session->id}. Fail Rate: {$failRate}%. Recheck Session {$recheckSession->id} created.");
     }
-
     /**
      * Auto-close inspection sessions left open past their shift end + grace period.
      * Idempotent and fail-safe. Returns the number of sessions closed.
@@ -553,6 +533,10 @@ class InspectionService
 
         if ($session->type !== 'personnel') {
             throw ValidationException::withMessages(['session' => 'Bulk Pass is only available for personnel inspections.']);
+        }
+
+        if ($session->is_sampling) {
+            throw ValidationException::withMessages(['session' => 'Bulk Pass is disabled during Random Audits. Please inspect employees individually.']);
         }
 
         return DB::transaction(function () use ($session) {

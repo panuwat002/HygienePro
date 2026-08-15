@@ -251,11 +251,21 @@
                                     </ul>
 
                                     {{-- Bulk Pass Button --}}
-                                    <div class="p-3 bg-light border-top">
-                                        <button type="button" class="btn btn-success w-100 rounded-pill fw-bold shadow-sm py-2" data-bs-toggle="modal" data-bs-target="#bulkPassModal" id="bulkPassTrigger">
-                                            <i class="bi bi-check-all me-2 fs-5"></i> ผ่านทุกคนที่เหลือ (Pass All Remaining) — {{ $remainingCount }} คน
-                                        </button>
-                                    </div>
+                                    @if(!$currentSession->is_sampling)
+                                        @if(Auth::user()->isSupervisor() || Auth::user()->isAdmin() || Auth::user()->isQA())
+                                            <div class="p-3 bg-light border-top">
+                                                <button type="button" class="btn btn-success w-100 rounded-pill fw-bold shadow-sm py-2" data-bs-toggle="modal" data-bs-target="#bulkPassModal" id="bulkPassTrigger">
+                                                    <i class="bi bi-check-all me-2 fs-5"></i> ผ่านทุกคนที่เหลือ (Pass All Remaining) — {{ $remainingCount }} คน
+                                                </button>
+                                            </div>
+                                        @endif
+                                    @else
+                                        <div class="p-3 bg-light border-top text-center">
+                                            <span class="badge bg-danger rounded-pill px-3 py-2">
+                                                <i class="bi bi-shield-lock me-1"></i> โหมดสุ่มตรวจ (Random Audit): ปิดการใช้งานปุ่ม Pass All
+                                            </span>
+                                        </div>
+                                    @endif
                                 </div>
                             </div>
 
@@ -433,7 +443,7 @@
                 <div class="card-body p-4 p-md-5">
                     <form action="{{ route('inspection.start', $type) }}" method="POST">
                         @csrf
-                        <input type="hidden" name="shift" id="selected_shift" value="{{ $currentAutoShift }}">
+                        <input type="hidden" name="shift" id="selected_shift" value="{{ $type !== 'personnel' ? $currentAutoShift : '' }}">
                         <!-- Added a hidden container for targets (selected shifts) -->
                         <div id="selected_targets_container"></div>
                         
@@ -521,22 +531,24 @@
                         @endif
 
                         <!-- Sampling Inspection Toggle (Pillar 2) -->
+                        @if(Auth::user()->isSupervisor() || Auth::user()->isAdmin())
                         <div class="card border-0 rounded-4 shadow-sm mb-4 bg-primary bg-opacity-10 border border-primary border-opacity-25">
                             <div class="card-body p-3">
                                 <div class="form-check form-switch d-flex align-items-center justify-content-between ps-0 mb-0">
                                     <label class="form-check-label fw-bold text-dark me-3" for="is_sampling_switch">
-                                        <i class="bi bi-dice-5-fill text-primary me-2 fs-5"></i>
-                                        โหมดสุ่มตรวจอัตโนมัติ (Random Sampling Inspection)
-                                        <small class="d-block text-muted fw-normal">ให้ระบบสุ่มเลือกกลุ่มตัวอย่างเป้าหมายโดยอัตโนมัติ (ไร้อคติ)</small>
+                                        <i class="bi bi-shuffle text-primary me-2 fs-5"></i>
+                                        โหมดสุ่มตรวจ (Random Audit)
+                                        <small class="d-block text-muted fw-normal">ปิดใช้งานปุ่ม Pass All และตรวจสอบแบบเจาะลึก</small>
                                     </label>
-                                    <input class="form-check-input ms-0" type="checkbox" role="switch" name="is_sampling" id="is_sampling_switch" value="1" onchange="document.getElementById('sample_size_box').style.display = this.checked ? 'block' : 'none';">
+                                    <input class="form-check-input ms-0" type="checkbox" role="switch" name="is_sampling" id="is_sampling_switch" value="1" onchange="document.getElementById('sample_size_box').style.display = this.checked ? 'block' : 'none';" {{ request('is_sampling') ? 'checked' : '' }}>
                                 </div>
-                                <div id="sample_size_box" class="mt-3" style="display: none;">
-                                    <label for="sample_size" class="form-label small fw-bold text-primary">จำนวนตัวอย่างที่ต้องการสุ่ม (Sample Size)</label>
+                                <div id="sample_size_box" class="mt-3" style="{{ request('is_sampling') ? 'display: block;' : 'display: none;' }}">
+                                    <label for="sample_size" class="form-label small fw-bold text-primary">จำนวนพนักงานที่ต้องการสุ่มตรวจ (Sample Size)</label>
                                     <input type="number" name="sample_size" id="sample_size" class="form-control form-control-sm" placeholder="เช่น 10" min="1" max="100">
                                 </div>
                             </div>
                         </div>
+                        @endif
 
                         <div class="d-grid mt-5">
                             <button type="submit" id="start-session-btn" class="btn btn-primary-custom btn-lg shadow rounded-pill py-3 fs-5 fw-bold pulse-btn">

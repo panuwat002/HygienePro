@@ -125,9 +125,14 @@
                                         <div class="small">{{ $group->time }}</div>
                                     </td>
                                     <td>
-                                        <div class="d-flex flex-column">
-                                            <span class="badge bg-light text-dark mb-1 border">รอบที่ {{ $group->round }}</span>
+                                        <div class="d-flex flex-column gap-1">
+                                            <span class="badge bg-light text-dark border">รอบที่ {{ $group->round }}</span>
                                             <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">{{ $group->shift_label ?? $group->shift }}</span>
+                                            @if($group->is_sampling ?? false)
+                                                <span class="badge bg-warning text-dark border border-warning border-opacity-50 shadow-sm" title="เซสชันนี้เกิดจากการสุ่มตรวจ">
+                                                    <i class="bi bi-shuffle me-1"></i>สุ่มตรวจ
+                                                </span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td>
@@ -329,6 +334,9 @@
                                 <span class="badge bg-white border text-secondary fw-normal x-small"><i class="bi bi-calendar3 me-1"></i>{{ $group->date }} {{ $group->time }}</span>
                                 <span class="badge bg-white border text-secondary fw-normal x-small">รอบ {{ $group->round }}</span>
                                 <span class="badge bg-white border text-secondary fw-normal x-small">{{ $group->shift }}</span>
+                                @if($group->is_sampling ?? false)
+                                    <span class="badge bg-warning text-dark border border-warning fw-normal x-small" title="สุ่มตรวจ"><i class="bi bi-shuffle me-1"></i>สุ่มตรวจ</span>
+                                @endif
                             </div>
                             @if(!$group->findings->isEmpty())
                                 <small class="text-danger fw-bold x-small"><i class="bi bi-exclamation-circle me-1"></i>{{ $group->findings->count() }} ข้อผิดพลาด</small>
@@ -429,7 +437,14 @@
                                 <h5 class="fw-bold mb-1 text-break lh-sm">{{ $group->name }}</h5>
                                 <div class="text-muted small lh-1">
                                     <div class="mb-1">{{ $group->subtext }}</div>
-                                    <div>{{ $group->shift }} (รอบที่ {{ $group->round }})</div>
+                                    <div>
+                                        {{ $group->shift }} (รอบที่ {{ $group->round }})
+                                        @if($group->is_sampling ?? false)
+                                            <span class="badge bg-warning text-dark border border-warning border-opacity-50 ms-1" title="เซสชันนี้เกิดจากการสุ่มตรวจ">
+                                                <i class="bi bi-shuffle me-1"></i>สุ่มตรวจ
+                                            </span>
+                                        @endif
+                                    </div>
                                 </div>
                             </div>
                             <div class="text-start text-sm-end mt-2 mt-sm-0 w-100 w-sm-auto">

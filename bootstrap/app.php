@@ -14,6 +14,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'matrix' => \App\Http\Middleware\EnsureMatrixPermission::class,
         ]);
+        
+        $middleware->validateCsrfTokens(except: [
+            '/webhook/line',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

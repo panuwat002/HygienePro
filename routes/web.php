@@ -15,6 +15,11 @@ Route::get('/', function () {
 
 Route::get('/dashboard', [InspectionController::class, 'home'])->middleware(['auth', 'verified'])->name('dashboard');
 
+use App\Http\Controllers\LineWebhookController;
+
+// LINE Messaging API Webhook
+Route::post('/webhook/line', [LineWebhookController::class, 'handle']);
+
 Route::middleware('auth')->group(function () {
     // Debug Route
     Route::get('/debug-logs', function() {

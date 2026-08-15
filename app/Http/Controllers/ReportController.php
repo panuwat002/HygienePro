@@ -108,15 +108,48 @@ class ReportController extends Controller
                     $sq->where('department_id', $departmentId);
                 });
             })
-            ->select('location_id', \Illuminate\Support\Facades\DB::raw('count(*) as total'))
-            ->groupBy('location_id')
-            ->with('location')
+            ->select('location_id', 'checkpoint_id', \Illuminate\Support\Facades\DB::raw('count(*) as total'))
+            ->groupBy('location_id', 'checkpoint_id')
+            ->with(['location', 'checkpoint'])
             ->orderByDesc('total')
             ->take(5)
             ->get()
             ->map(function($item) {
+                $locName = $item->location->location_name ?? 'Unknown';
+                $cpName = $item->checkpoint->title ?? 'Unknown';
+                // Truncate checkpoint name if too long
+                if (mb_strlen($cpName) > 20) {
+                    $cpName = mb_substr($cpName, 0, 20) . '...';
+                }
                 return [
-                    'label' => $item->location->location_name ?? 'Unknown',
+                    'label' => $locName . ' (' . $cpName . ')',
+                    'count' => $item->total
+                ];
+            });
+            
+        // Top 5 Recurring Personnel (Employees) (Last 30 Days)
+        $recurringPersonnel = \App\Models\InspectionLog::where('result', 'fail')
+            ->where('inspected_at', '>=', now()->subDays(30))
+            ->whereNotNull('employee_id')
+            ->when($isIsolated, function($q) use ($departmentId) {
+                $q->whereHas('session', function($sq) use ($departmentId) {
+                    $sq->where('department_id', $departmentId);
+                });
+            })
+            ->select('employee_id', 'checkpoint_id', \Illuminate\Support\Facades\DB::raw('count(*) as total'))
+            ->groupBy('employee_id', 'checkpoint_id')
+            ->with(['employee', 'checkpoint'])
+            ->orderByDesc('total')
+            ->take(5)
+            ->get()
+            ->map(function($item) {
+                $name = $item->employee ? ($item->employee->fullname ?? ($item->employee->fname . ' ' . $item->employee->lname)) : 'Unknown';
+                $cpName = $item->checkpoint->title ?? 'Unknown';
+                if (mb_strlen($cpName) > 20) {
+                    $cpName = mb_substr($cpName, 0, 20) . '...';
+                }
+                return [
+                    'label' => $name . ' (' . $cpName . ')',
                     'count' => $item->total
                 ];
             });
@@ -157,6 +190,7 @@ class ReportController extends Controller
             'machines' => \App\Models\Machine::all(),
             'commonDefects' => $commonDefects,
             'recurringAreas' => $recurringAreas,
+            'recurringPersonnel' => $recurringPersonnel,
             'trendLabels' => $filledTrend->keys(),
             'trendValues' => $filledTrend->values(),
         ]);
@@ -632,7 +666,17 @@ class ReportController extends Controller
 
         $totalInspections = (clone $query)->count();
         $totalFails = (clone $query)->where('result', 'fail')->count();
-        $healthScore = $totalInspections > 0 ? round((($totalInspections - $totalFails) / $totalInspections) * 100) : 100;
+        
+        $rawScore = $totalInspections > 0 ? (($totalInspections - $totalFails) / $totalInspections) * 100 : 100;
+        if ($rawScore == 100) {
+            $healthScore = 100;
+        } else {
+            $healthScore = round($rawScore, 2);
+            // Prevent rounding up to 100 if there is at least 1 failure
+            if ($healthScore == 100 && $totalFails > 0) {
+                $healthScore = 99.99;
+            }
+        }
 
         $topDefectsRaw = (clone $query)->where('result', 'fail')
             ->join('checkpoints', 'inspection_logs.checkpoint_id', '=', 'checkpoints.id')
@@ -686,6 +730,7 @@ class ReportController extends Controller
         ];
 
         $pdf = Pdf::loadView('reports.pdf.monthly_summary', $data);
+        $pdf->setPaper('a4', 'landscape');
         return $pdf->stream("monthly-report-{$month}.pdf");
     }
 

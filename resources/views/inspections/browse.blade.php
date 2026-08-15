@@ -74,6 +74,10 @@
                             <i class="bi bi-check-circle me-1"></i>ตรวจแล้ว
                             <span class="tab-badge">{{ $inspectedCount }}</span>
                         </button>
+                        <button type="button" class="browse-tab tab-fail" data-filter="fail">
+                            <i class="bi bi-x-circle me-1"></i>ไม่ผ่าน
+                            <span class="tab-badge">{{ $failedCount }}</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -96,13 +100,14 @@
                         @php 
                             $isInspected = in_array($emp->id, $inspectedIds); 
                             $isAbsent = in_array($emp->id, $absentIds ?? []);
+                            $isFailed = in_array($emp->id, $failedIds ?? []);
                         @endphp
                         @if($isInspected || $isAbsent)
                         {{-- Already inspected or absent: non-clickable --}}
                         <div class="employee-item d-flex align-items-center p-3 border-bottom employee-done"
                            data-name="{{ mb_strtolower($emp->fullname) }}"
                            data-id="{{ mb_strtolower($emp->employee_id) }}"
-                           data-status="done"
+                           data-status="{{ $isFailed ? 'fail' : 'done' }}"
                            style="transition: all 0.2s ease; opacity: 0.85;">
                            
                             <a href="{{ route('inspection.checklist', ['session' => $session->id, 'hash' => $emp->employee_id, 'from' => 'browse'] + request()->query()) }}" class="d-flex flex-grow-1 align-items-center text-decoration-none" style="cursor: pointer;">
@@ -141,6 +146,10 @@
                                     @elseif(in_array($emp->id, $inspectedOtherShiftIds ?? []) && !in_array($emp->id, $inspectedCurrentIds ?? []))
                                     <span class="badge bg-info bg-opacity-10 text-info rounded-pill px-3 py-1 small me-2">
                                         <i class="bi bi-check-circle-fill me-1"></i>ตรวจแล้ว (รอบก่อน)
+                                    </span>
+                                    @elseif($isFailed)
+                                    <span class="badge bg-danger bg-opacity-10 text-danger rounded-pill px-3 py-1 small me-2">
+                                        <i class="bi bi-x-circle-fill me-1"></i>ตรวจแล้ว (ไม่ผ่าน)
                                     </span>
                                     @else
                                     <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 py-1 small me-2">
@@ -254,7 +263,13 @@
                                 @endif
                             </small>
                         </div>
-                        @if($shiftRemainingCount > 0)
+                        @if($session->is_sampling)
+                            <div class="text-end">
+                                <span class="badge bg-danger rounded-pill px-3 py-2 mt-2 mt-sm-0 shadow-sm">
+                                    <i class="bi bi-shield-lock me-1"></i> โหมดสุ่มตรวจ: ปิดการใช้งาน Pass All
+                                </span>
+                            </div>
+                        @elseif($shiftRemainingCount > 0)
                             <button type="button" class="btn btn-success rounded-pill fw-bold shadow-sm px-4" data-bs-toggle="modal" data-bs-target="#bulkPassModal">
                                 <i class="bi bi-check-all me-1"></i> ผ่านทุกคนที่เหลือ ({{ $shiftRemainingCount }})
                             </button>
@@ -487,6 +502,16 @@
             color: var(--slate-700);
             background: rgba(255,255,255,0.5);
         }
+        .browse-tab.tab-done.active {
+            background: var(--emerald-500);
+            color: white;
+            font-weight: 600;
+        }
+        .browse-tab.tab-fail.active {
+            background: var(--red-500);
+            color: white;
+            font-weight: 600;
+        }
         .browse-tab.active {
             background: var(--primary);
             color: #fff;
@@ -496,7 +521,6 @@
             background: #f59e0b;
             box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
         }
-        .browse-tab.tab-done.active {
             background: #10b981;
             box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
         }
