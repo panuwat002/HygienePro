@@ -26,26 +26,38 @@ class ReportController extends Controller
               ->where('result', 'fail');
         }]);
 
-        if ($user->department && $user->department->visibility_type === 'isolated' && !$user->isAdmin()) {
-            $empQuery->where('department_id', $user->department_id);
+        if ($user->isRestrictedToOwnDepartment()) {
+            $empQuery->where('department_id', $user->scopedDepartmentId());
         }
 
         $offenders = $this->calculateOffenders($empQuery->get(), 'employee');
 
         // 2. Machines
-        $machQuery = \App\Models\Machine::with(['location', 'inspectionLogs' => function($q) use ($month, $year) {
+        $machQuery = \App\Models\Machine::with(['location', 'inspectionLogs' => function($q) use ($month, $year, $user) {
             $q->whereYear('inspected_at', $year)
               ->whereMonth('inspected_at', $month)
               ->where('result', 'fail');
+            
+            if ($user->isRestrictedToOwnDepartment()) {
+                $q->whereHas('session', function($sq) use ($user) {
+                    $sq->where('department_id', $user->scopedDepartmentId());
+                });
+            }
         }]);
         
         $machineOffenders = $this->calculateOffenders($machQuery->get(), 'machine');
 
         // 3. Areas (Locations)
-        $areaQuery = \App\Models\Location::with(['inspectionLogs' => function($q) use ($month, $year) {
+        $areaQuery = \App\Models\Location::with(['inspectionLogs' => function($q) use ($month, $year, $user) {
             $q->whereYear('inspected_at', $year)
               ->whereMonth('inspected_at', $month)
               ->where('result', 'fail');
+            
+            if ($user->isRestrictedToOwnDepartment()) {
+                $q->whereHas('session', function($sq) use ($user) {
+                    $sq->where('department_id', $user->scopedDepartmentId());
+                });
+            }
         }]);
 
         $areaOffenders = $this->calculateOffenders($areaQuery->get(), 'area');
@@ -74,8 +86,8 @@ class ReportController extends Controller
         $user = auth()->user();
         
         // Scope variables
-        $departmentId = $user->department_id ?? null;
-        $isIsolated = ($user->department && $user->department->visibility_type === 'isolated' && !$user->isAdmin());
+        $isIsolated = $user->isRestrictedToOwnDepartment();
+        $departmentId = $isIsolated ? $user->scopedDepartmentId() : ($user->scopedDepartmentId() ?? null);
 
         // 1. Top 5 Common Defects (Last 30 Days)
         $commonDefects = \App\Models\InspectionLog::where('result', 'fail')
@@ -207,9 +219,9 @@ class ReportController extends Controller
             ->whereDate('inspection_date', $date);
 
         // Scope Enforcement
-        if ($user->department && $user->department->visibility_type === 'isolated' && !$user->isAdmin()) {
+        if ($user->isRestrictedToOwnDepartment()) {
             // Force user's department
-            $departmentId = $user->department_id; 
+            $departmentId = $user->scopedDepartmentId(); 
             $query->where('department_id', $departmentId);
         } elseif ($departmentId) {
             $query->where('department_id', $departmentId);
@@ -287,8 +299,8 @@ class ReportController extends Controller
             ->whereDate('inspection_date', $date);
 
         // Scope Enforcement
-        if ($user->department && $user->department->visibility_type === 'isolated' && !$user->isAdmin()) {
-            $departmentId = $user->department_id;
+        if ($user->isRestrictedToOwnDepartment()) {
+            $departmentId = $user->scopedDepartmentId();
             $query->where('department_id', $departmentId);
         } elseif ($departmentId) {
             $query->where('department_id', $departmentId);
@@ -571,6 +583,11 @@ class ReportController extends Controller
         $date = $request->input('date', Carbon::today()->toDateString());
         $departmentId = $request->input('department_id');
         
+        $user = auth()->user();
+        if ($user->isRestrictedToOwnDepartment()) {
+            $departmentId = $user->scopedDepartmentId();
+        }
+        
         // 1. Fetch ALL Active Machines with Location
         $machines = \App\Models\Machine::where('is_active', true)
             ->with(['location'])
@@ -652,6 +669,11 @@ class ReportController extends Controller
     {
         $month = $request->input('month', date('Y-m'));
         $departmentId = $request->input('department_id');
+        
+        $user = auth()->user();
+        if ($user->isRestrictedToOwnDepartment()) {
+            $departmentId = $user->scopedDepartmentId();
+        }
         
         $startDate = \Carbon\Carbon::parse($month . '-01')->startOfMonth();
         $endDate = $startDate->copy()->endOfMonth();
@@ -747,8 +769,8 @@ class ReportController extends Controller
             ->where('result', 'fail')
             ->whereBetween('inspected_at', [$startDate, $endDate]);
 
-        if ($user->department && $user->department->visibility_type === 'isolated' && !$user->isAdmin()) {
-            $departmentId = $user->department_id;
+        if ($user->isRestrictedToOwnDepartment()) {
+            $departmentId = $user->scopedDepartmentId();
             $query->whereHas('session', fn($q) => $q->where('department_id', $departmentId));
         } elseif ($departmentId) {
             $query->whereHas('session', fn($q) => $q->where('department_id', $departmentId));
@@ -786,6 +808,11 @@ class ReportController extends Controller
     {
         $month = $request->input('month', date('Y-m'));
         $departmentId = $request->input('department_id');
+        
+        $user = auth()->user();
+        if ($user->isRestrictedToOwnDepartment()) {
+            $departmentId = $user->scopedDepartmentId();
+        }
 
         $startDate = Carbon::parse($month . '-01')->startOfMonth();
         $endDate = $startDate->copy()->endOfMonth();

@@ -106,9 +106,15 @@ test('non-QA staff cannot inspect', function () {
 test('QA staff can start session and store inspection logs', function () {
     $this->actingAs($this->staff);
 
-    // 1. Start Inspection Session
+    $shift = \App\Models\Shift::create([
+        'shift_name' => 'กะเช้า 08.00-17.00', 'shift_type' => 'กะเช้า',
+        'start_time' => '08:00:00', 'end_time' => '17:00:00',
+    ]);
+
+    // 1. Start Inspection Session — the inspector picks the shift card; the system never guesses.
     $response = $this->post(route('inspection.start', 'personnel'), [
-        'department_id' => $this->deptPd->id
+        'department_id' => $this->deptPd->id,
+        'targets' => ['shift:custom_' . $shift->id],
     ]);
 
     $session = InspectionSession::where('department_id', $this->deptPd->id)->first();
@@ -317,7 +323,9 @@ test('shift card count is not zeroed out when other shift has been fully inspect
     $response->assertStatus(200);
     $cards = collect($response->json('locations'));
 
-    $nightCard = $cards->firstWhere('id', 'shift_night');
+    // Each shift row gets its own card, keyed by id - a generic 'shift_night' card used to
+    // stand for every night shift at once, which is how one bulk pass swept several groups.
+    $nightCard = $cards->firstWhere('id', 'shift_custom_' . $nightShift->id);
     expect($nightCard)->not->toBeNull();
     // Regression: night must report its real population even when morning was fully inspected.
     // Previously this returned 0 because the controller subtracted "inspected in other shifts"

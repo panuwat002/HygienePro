@@ -15,7 +15,11 @@ test('it does not create duplicate CARs when escalating an auto-created CAR', fu
     $emp = Employee::create(['employee_id' => '1', 'fullname' => 'Emp', 'department_id' => $dept->id, 'qr_code_hash' => 'x', 'is_active' => true]);
 
     $service = app(\App\Services\InspectionService::class);
-    $session = $service->startSession($user, $dept->id, 'personnel');
+    $shift = \App\Models\Shift::create([
+        'shift_name' => 'กะเช้า 08.00-17.00', 'shift_type' => 'กะเช้า',
+        'start_time' => '08:00:00', 'end_time' => '17:00:00',
+    ]);
+    $session = $service->startSession($user, $dept->id, 'personnel', false, 'custom_' . $shift->id);
     
     // Store log via service (this auto-creates CAR)
     $log = $service->storeLog($session, $emp->id, $cp->id, ['result' => 'fail', 'correction' => 'Auto']);

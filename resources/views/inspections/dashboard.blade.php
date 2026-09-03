@@ -518,17 +518,19 @@
                             </div>
                          </div>
 
-                        @if($type === 'personnel')
-                        <div id="new-round-container" class="form-check mb-4 p-3 border rounded-3 bg-light {{ isset($currentSession) ? 'd-none' : '' }}">
-                            <input class="form-check-input ms-0 me-2" type="checkbox" name="force_new_round" id="force_new_round" value="1" style="transform: scale(1.2);">
-                            <label class="form-check-label fw-bold text-secondary" for="force_new_round">
-                                <i class="bi bi-plus-circle-dotted me-1"></i> ต้องการขึ้นรอบใหม่ (Start New Round)
-                            </label>
-                            <div class="form-text ms-4 small text-muted">
-                                ติ๊กเลือกหากต้องการตัดรอบเดิมและเริ่มนับเป็น "รอบถัดไป" ทันที
+                        {{-- Shown once today's round is finished: continue it, or open a fresh one.
+                             Finishing used to force a new round, which re-listed every target
+                             the inspector had already covered. --}}
+                        <div id="new-round-container" class="d-none mb-4 p-3 border rounded-3 bg-light">
+                            <div class="fw-bold text-secondary mb-1">
+                                <i class="bi bi-clock-history me-1"></i> รอบที่ <span id="finished-round-no">-</span> จบไปแล้ววันนี้
                             </div>
+                            <div id="continue-round-help" class="small text-muted mb-3"></div>
+                            <button type="button" id="new-round-btn" class="btn btn-outline-secondary rounded-pill fw-bold px-4">
+                                <i class="bi bi-plus-circle-dotted me-1"></i> เริ่มรอบใหม่ (รอบที่ <span id="next-round-no">-</span>)
+                            </button>
                         </div>
-                        @endif
+                        <input type="hidden" name="force_new_round" id="force_new_round" value="0">
 
                         <!-- Sampling Inspection Toggle (Pillar 2) -->
                         @if(Auth::user()->isSupervisor() || Auth::user()->isAdmin())
@@ -547,6 +549,12 @@
                                     <input type="number" name="sample_size" id="sample_size" class="form-control form-control-sm" placeholder="เช่น 10" min="1" max="100">
                                 </div>
                             </div>
+                        </div>
+                        @endif
+
+                        @if($type === 'personnel')
+                        <div id="shift-required-hint" class="alert alert-warning border-0 rounded-4 mt-4 mb-0 d-none">
+                            <i class="bi bi-hand-index-thumb me-2"></i>เลือกกะที่ต้องการตรวจจากการ์ดด้านบนก่อน จึงจะเริ่มการตรวจได้
                         </div>
                         @endif
 
@@ -998,14 +1006,100 @@
             });
         }
 
+        function setText(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        }
+
+        // Each button states its own intent; the form carries it as force_new_round.
+        function wireRoundIntentButtons() {
+            const forceInput = document.getElementById('force_new_round');
+            const startBtn = document.getElementById('start-session-btn');
+            const newRoundBtn = document.getElementById('new-round-btn');
+            if (!forceInput) return;
+
+            if (startBtn) {
+                startBtn.addEventListener('click', function () {
+                    forceInput.value = this.dataset.forceNewRound === '1' ? '1' : '0';
+                });
+            }
+            if (newRoundBtn) {
+                newRoundBtn.addEventListener('click', function () {
+                    forceInput.value = '1';
+                    this.closest('form')?.requestSubmit();
+                });
+            }
+        }
+
+        wireRoundIntentButtons();
+
+        // The inspector picks the shift; the system never guesses one. Mirrors the server-side
+        // guard in InspectionController::startSession() so the button can't submit an empty shift.
+        function applyPersonnelShiftGate() {
+            if ('{{ $type }}' !== 'personnel') return;
+
+            const submitButton = document.getElementById('start-session-btn');
+            if (!submitButton) return;
+
+            const hasShift = typeof selectedShiftsArray !== 'undefined' && selectedShiftsArray.length > 0;
+
+            submitButton.disabled = !hasShift;
+            submitButton.classList.toggle('opacity-50', !hasShift);
+            submitButton.classList.toggle('pulse-btn', hasShift);
+
+            // "เริ่มรอบใหม่" submits the same form, so it needs a shift just as much.
+            const newRoundBtn = document.getElementById('new-round-btn');
+            if (newRoundBtn) {
+                newRoundBtn.disabled = !hasShift;
+                newRoundBtn.classList.toggle('opacity-50', !hasShift);
+            }
+            if (!hasShift) {
+                submitButton.innerHTML = 'เลือกกะที่ต้องการตรวจก่อน <i class="bi bi-hand-index-thumb ms-2"></i>';
+            }
+
+            const hint = document.getElementById('shift-required-hint');
+            if (hint) hint.classList.toggle('d-none', hasShift);
+        }
+
+        // Draws the "รอบที่ N จบไปแล้ววันนี้" panel. Returns true when that round can be
+        // continued, in which case it owns the submit button's label.
+        function renderRoundPanel(data) {
+            const container = document.getElementById('new-round-container');
+            const newRoundBtn = document.getElementById('new-round-btn');
+            const finished = !!(data && data.session_exists
+                && data.session_status !== 'in_progress' && data.session_status !== 'paused');
+
+            if (container) container.classList.toggle('d-none', !finished);
+            if (!finished) {
+                if (newRoundBtn) newRoundBtn.classList.add('d-none');
+                return false;
+            }
+
+            const round = data.session_round || 1;
+            const canReopen = !!data.session_can_reopen;
+
+            setText('finished-round-no', round);
+            setText('next-round-no', round + 1);
+            setText('continue-round-help', canReopen
+                ? 'กด "ตรวจต่อ" เพื่อทำเฉพาะรายการที่ยังเหลือในรอบเดิม หรือ "เริ่มรอบใหม่" เพื่อตรวจใหม่ทั้งชุด'
+                : 'รอบนี้ถูกตรวจสอบโดยหัวหน้างานแล้ว จึงตรวจต่อไม่ได้ ต้องเริ่มรอบใหม่เท่านั้น');
+            if (newRoundBtn) newRoundBtn.classList.toggle('d-none', !canReopen);
+
+            return canReopen;
+        }
+
         function updateSubmitButton() {
             const submitButton = document.getElementById('start-session-btn');
             if (!submitButton) return;
 
+            // A finished round that can be continued owns the label, even with cards picked -
+            // otherwise the button counts targets while the server reopens the round.
+            const canContinueRound = renderRoundPanel(currentSessionData);
+
             const selectedCount = document.querySelectorAll('.target-checkbox:checked').length;
             const personnelSelectedCount = ('{{ $type }}' === 'personnel' && typeof selectedShiftsArray !== 'undefined') ? selectedShiftsArray.length : 0;
-            
-            if (selectedCount > 0 || personnelSelectedCount > 0) {
+
+            if ((selectedCount > 0 || personnelSelectedCount > 0) && !canContinueRound) {
                 const totalSelected = selectedCount + personnelSelectedCount;
                 submitButton.innerHTML = `เริ่มการตรวจสอบ (${totalSelected} รายการ) <i class="bi bi-arrow-right ms-2"></i>`;
                 submitButton.classList.replace('btn-primary-custom', 'btn-success');
@@ -1015,6 +1109,8 @@
                 // We'll manage session state in the fetchStats then
                 refreshSessionUI(currentSessionData);
             }
+
+            applyPersonnelShiftGate();
         }
 
         function refreshSessionUI(data) {
@@ -1023,10 +1119,16 @@
             const submitButton = document.getElementById('start-session-btn');
             if (!submitButton) return;
 
+            // Draw the panel BEFORE the target-selection shortcut below. Personnel can't submit
+            // without picking a shift, so returning early on a selection meant the panel never
+            // rendered for them and the button said "เริ่มการตรวจสอบ" while the server reopened
+            // the round.
+            const canContinueRound = renderRoundPanel(data);
+
             const selectedCount = document.querySelectorAll('.target-checkbox:checked').length;
             const personnelSelectedCount = ('{{ $type }}' === 'personnel' && typeof selectedShiftsArray !== 'undefined') ? selectedShiftsArray.length : 0;
-            
-            if (selectedCount > 0 || personnelSelectedCount > 0) {
+
+            if ((selectedCount > 0 || personnelSelectedCount > 0) && !canContinueRound) {
                 updateSubmitButton();
                 return;
             }
@@ -1034,23 +1136,36 @@
             if (data && data.session_exists) {
                 if (data.session_status === 'in_progress') {
                     if (newRoundContainer) newRoundContainer.classList.add('d-none');
+                    submitButton.dataset.forceNewRound = '0';
                     submitButton.innerHTML = `กลับเข้าสู่การตรวจรอบที่ ${data.session_round} <i class="bi bi-arrow-right ms-2"></i>`;
                     submitButton.className = 'btn btn-primary-custom btn-lg shadow-sm py-3 fs-5';
                 } else if (data.session_status === 'paused') {
                     if (newRoundContainer) newRoundContainer.classList.add('d-none');
+                    submitButton.dataset.forceNewRound = '0';
                     submitButton.innerHTML = `ดำเนินการตรวจต่อ (รอบที่ ${data.session_round}) <span class="badge bg-warning text-dark ms-2">Paused</span>`;
                     submitButton.className = 'btn btn-warning btn-lg shadow-sm py-3 fs-5 fw-bold text-dark';
                 } else {
-                    // Completed or other
-                    if (newRoundContainer) newRoundContainer.classList.remove('d-none');
-                    submitButton.innerHTML = `เริ่มการตรวจสอบ (Start Inspection) <i class="bi bi-arrow-right ms-2"></i>`;
+                    // Completed. renderRoundPanel() has already drawn the panel; this only
+                    // labels the main button with the action it will actually perform.
+                    const round = data.session_round || 1;
+
                     submitButton.className = 'btn btn-primary-custom btn-lg shadow-sm py-3 fs-5';
+                    if (canContinueRound) {
+                        submitButton.dataset.forceNewRound = '0';
+                        submitButton.innerHTML = `ตรวจต่อ (รอบที่ ${round}) <i class="bi bi-arrow-right ms-2"></i>`;
+                    } else {
+                        submitButton.dataset.forceNewRound = '1';
+                        submitButton.innerHTML = `เริ่มรอบใหม่ (รอบที่ ${round + 1}) <i class="bi bi-arrow-right ms-2"></i>`;
+                    }
                 }
             } else {
-                if (newRoundContainer) newRoundContainer.classList.remove('d-none');
+                if (newRoundContainer) newRoundContainer.classList.add('d-none');
+                submitButton.dataset.forceNewRound = '0';
                 submitButton.innerHTML = `เริ่มการตรวจสอบ (Start Inspection) <i class="bi bi-arrow-right ms-2"></i>`;
                 submitButton.className = 'btn btn-primary-custom btn-lg shadow-sm py-3 fs-5';
             }
+
+            applyPersonnelShiftGate();
         }
 
         // Add confirmFinishSession for the Finish button
@@ -1074,8 +1189,16 @@
         };
 
         // Initialize shift arrays on DOM load
-        window.selectedShiftsArray = [document.getElementById('selected_shift')?.value].filter(Boolean);
-        
+        window.selectedShiftsArray = [
+            @if(isset($currentSession) && $type === 'personnel')
+                @foreach(explode(',', $currentSession->shift) as $s)
+                    "{{ trim($s) }}",
+                @endforeach
+            @else
+                document.getElementById('selected_shift')?.value
+            @endif
+        ].filter(Boolean);
+
         window.updateSelectedTargetsInputs = function() {
             const container = document.getElementById('selected_targets_container');
             if (container) {
@@ -1091,6 +1214,7 @@
         };
 
         window.updateSelectedTargetsInputs();
+        applyPersonnelShiftGate();
 
         window.toggleShift = function(shiftValue, locationId, cardElement) {
             const index = selectedShiftsArray.indexOf(shiftValue);

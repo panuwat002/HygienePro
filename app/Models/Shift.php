@@ -16,6 +16,69 @@ class Shift extends Model
         'department_id',
     ];
 
+    /**
+     * Canonical shift_type values.
+     *
+     * shift_name is free text ("กะบ่าย 17.00-02.00", "กะโอที"), so shift_type is the only
+     * field a generic session key ('morning'/'afternoon'/'night') can resolve against.
+     * See InspectionSession::getResolvedShifts().
+     */
+    public const TYPE_MORNING = 'กะเช้า';
+    public const TYPE_AFTERNOON = 'กะบ่าย';
+    public const TYPE_NIGHT = 'กะดึก';
+    public const TYPE_DAYOFF = 'วันหยุด';
+
+    public static function types(): array
+    {
+        return [self::TYPE_MORNING, self::TYPE_AFTERNOON, self::TYPE_NIGHT, self::TYPE_DAYOFF];
+    }
+
+    /**
+     * Work out which canonical type a shift belongs to.
+     *
+     * Prefers the shift_name prefix, since that is what ShiftSeeder writes and what admins
+     * type by hand. Falls back to the same start_time buckets ShiftSeeder groups by, so an
+     * off-pattern name like "กะโอที 17.00-02.00" still lands in กะบ่าย.
+     */
+    public static function deriveType(?string $shiftName, ?string $startTime, bool $isDayOff = false): string
+    {
+        if ($isDayOff) {
+            return self::TYPE_DAYOFF;
+        }
+
+        $name = mb_strtolower(trim((string) $shiftName));
+        $prefixes = [
+            self::TYPE_MORNING => ['กะเช้า', 'morning'],
+            self::TYPE_AFTERNOON => ['กะบ่าย', 'afternoon'],
+            self::TYPE_NIGHT => ['กะดึก', 'night'],
+            self::TYPE_DAYOFF => ['วันหยุด', 'dayoff', 'day off'],
+        ];
+
+        foreach ($prefixes as $type => $candidates) {
+            foreach ($candidates as $prefix) {
+                if ($name !== '' && str_starts_with($name, $prefix)) {
+                    return $type;
+                }
+            }
+        }
+
+        if (empty($startTime)) {
+            return self::TYPE_NIGHT;
+        }
+
+        $parts = explode(':', $startTime);
+        $decimalTime = (int) ($parts[0] ?? 0) + ((int) ($parts[1] ?? 0) / 60);
+
+        if ($decimalTime >= 6 && $decimalTime <= 12) {
+            return self::TYPE_MORNING;
+        }
+        if ($decimalTime >= 12.5 && $decimalTime <= 18) {
+            return self::TYPE_AFTERNOON;
+        }
+
+        return self::TYPE_NIGHT;
+    }
+
     public function employees(): HasMany
     {
         return $this->hasMany(Employee::class);

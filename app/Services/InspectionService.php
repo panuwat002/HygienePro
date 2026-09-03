@@ -7,6 +7,7 @@ use App\Models\InspectionLog;
 use App\Models\Department;
 use App\Models\Checkpoint;
 use App\Models\User;
+use App\Models\Employee;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
@@ -21,6 +22,15 @@ class InspectionService
      */
     public function startSession(User $user, int $departmentId, string $type, bool $forceNew = false, string $manualShift = null, bool $isSampling = false, ?int $sampleSize = null): InspectionSession
     {
+        // Personnel rounds must name the shift the inspector picked. Falling back to a
+        // time-guessed generic key ('morning') makes the session target every shift of that
+        // type at once, which bulk pass then sweeps in one click.
+        if ($type === 'personnel' && empty($manualShift)) {
+            throw ValidationException::withMessages([
+                'shift' => 'กรุณาเลือกกะที่ต้องการตรวจก่อนเริ่มการตรวจ',
+            ]);
+        }
+
         $shift = $manualShift ?? \App\Models\Shift::detectCurrent();
         $today = now()->hour < 6 ? now()->subDay()->toDateString() : now()->toDateString();
 
@@ -45,6 +55,36 @@ class InspectionService
                         $session->update(['is_sampling' => true, 'sample_size' => $sampleSize]);
                     }
                     return $session;
+                }
+            }
+
+            // "ตรวจต่อ": pick the finished round back up rather than opening a fresh one that
+            // re-lists every target already covered. The bulk checklist scopes "already
+            // inspected" to session_id, so staying on the same session is what makes the
+            // earlier work show as done. A round the supervisor has already reviewed is
+            // closed for good — that one always starts a new round.
+            if ($session && $session->status === 'completed' && ! $forceNew && $this->canReopen($session)) {
+                $session->update(['status' => 'in_progress']);
+                if ($isSampling) {
+                    $session->update(['is_sampling' => true, 'sample_size' => $sampleSize]);
+                }
+
+                return $session;
+            }
+
+            // A NEW personnel round must name the shift cards the inspector picked
+            // ('custom_11'), never a generic key. A generic key spans every shift of its type,
+            // which is how one "ผ่านทุกคนที่เหลือ" swept three shift groups at once. Checked
+            // here rather than at the top so rounds already stored with a generic key stay
+            // resumable above.
+            if ($type === 'personnel') {
+                $tokens = array_filter(array_map('trim', explode(',', (string) $shift)));
+                $generic = array_filter($tokens, fn ($t) => ! preg_match('/^custom_\d+$/', $t));
+
+                if (! empty($generic)) {
+                    throw ValidationException::withMessages([
+                        'shift' => 'กรุณาเลือกกะที่ต้องการตรวจจากรายการกะก่อนเริ่มการตรวจ',
+                    ]);
                 }
             }
 
@@ -73,38 +113,81 @@ class InspectionService
     /**
      * Finish a session (Inspector Done).
      */
+    /**
+     * A finished round can be picked back up with "ตรวจต่อ" unless the supervisor has
+     * already reviewed it — reopening a reviewed round would change what was signed off.
+     */
+    public function canReopen(InspectionSession $session): bool
+    {
+        return $session->status === 'completed'
+            && ! $session->isLocked()
+            && $session->verified_at === null
+            && $session->approved_at === null
+            // The live QA flow stamps verification on the LOGS, never on the session row
+            // (InspectionController::verify()), so the session columns above stay null even
+            // for a fully signed-off round. The logs are what actually says it was reviewed.
+            && ! $session->logs()->whereNotNull('verified_at')->exists();
+    }
+
     public function finishSession(InspectionSession $session): void
     {
         if ($session->status === 'completed') {
             return; // Already done
         }
-        
+
+        // A reopened round is finished more than once. The announcements below — supervisor
+        // bell, LINE summary — belong to the round, so they go out once; a second one reads
+        // as a second round. What DOES have to get through on a later finish is anything the
+        // continuation newly produced, so the CAR summary and the escalation are handled on
+        // their own terms rather than under this flag.
+        $announcedAt = $session->finished_notified_at;
+        $alreadyAnnounced = $announcedAt !== null;
+
         $session->update([
             'status' => 'completed',
+            'finished_notified_at' => $announcedAt ?? now(),
         ]);
 
-        // Auto-Escalation for Random Audits
-        if ($session->is_sampling) {
-            $totalInspected = $session->logs()->distinct('employee_id')->count();
-            if ($totalInspected > 0) {
-                // Count employees who have at least one fail log
-                $failedEmployeesCount = $session->logs()
-                    ->where('result', 'fail')
-                    ->distinct('employee_id')
-                    ->count();
+        // Auto-Escalation for Random Audits.
+        // A control, not an announcement: the fail rate may only cross the threshold on a
+        // continuation, and that round still has to escalate. escalated_at keeps it to once.
+        if ($session->is_sampling && $session->audit_escalated_at === null) {
+            $targetColumn = 'employee_id';
+            if ($session->type === 'machine') {
+                $targetColumn = 'machine_id';
+            } elseif ($session->type === 'area') {
+                $targetColumn = 'location_id';
+            }
 
-                $failRate = ($failedEmployeesCount / $totalInspected) * 100;
+            $totalInspected = $session->logs()->distinct($targetColumn)->count($targetColumn);
+            if ($totalInspected > 0) {
+                // Count targets who have at least one fail log
+                $failedTargetsCount = $session->logs()
+                    ->where('result', 'fail')
+                    ->distinct($targetColumn)
+                    ->count($targetColumn);
+
+                $failRate = ($failedTargetsCount / $totalInspected) * 100;
                 // If fail rate > 20%, trigger auto-escalation
                 if ($failRate > 20) {
-                    $this->triggerRandomAuditEscalation($session, $failRate, $failedEmployeesCount, $totalInspected);
+                    $this->triggerRandomAuditEscalation($session, $failRate, $failedTargetsCount, $totalInspected);
+                    $session->update(['audit_escalated_at' => now()]);
                 }
             }
+        }
+
+        if ($alreadyAnnounced) {
+            // Managers hear about CARs only here, never per-CAR while inspecting, so anything
+            // the continuation opened would otherwise reach nobody. Scope it to those.
+            $this->notifyManagersOfSessionCars($session, $announcedAt);
+
+            return;
         }
 
         $this->notifySupervisorsFinished($session);
         // Fix #7: One consolidated bell entry for all CARs opened this session.
         $this->notifyManagersOfSessionCars($session);
-        
+
         // --- LINE Notification Integration ---
         try {
             $stats = [
@@ -126,13 +209,20 @@ class InspectionService
      * auto-CAR opened during this session. Silent if no CARs. Called from
      * finishSession() and from the area/machine auto-complete path.
      */
-    public function notifyManagersOfSessionCars(InspectionSession $session): void
+    /**
+     * @param \Illuminate\Support\Carbon|null $since Only summarise CARs opened after this,
+     *        so a round finished again after "ตรวจต่อ" reports what the continuation found
+     *        instead of repeating the whole round.
+     */
+    public function notifyManagersOfSessionCars(InspectionSession $session, $since = null): void
     {
         // Fix #10: Eager-load the log's machine and location so the mapper below
         // doesn't fire a query per CAR just to build a place label.
         $cars = \App\Models\CorrectiveAction::whereHas('log', function ($q) use ($session) {
             $q->where('session_id', $session->id);
-        })->with(['log.machine', 'log.location'])->get();
+        })
+            ->when($since, fn ($q) => $q->where('created_at', '>', $since))
+            ->with(['log.machine', 'log.location', 'log.employee'])->get();
 
         if ($cars->isEmpty()) {
             return;
@@ -143,9 +233,9 @@ class InspectionService
             return [
                 'car_id' => $car->id,
                 'checkpoint' => $log?->checkpoint_title_snapshot ?? 'ไม่ระบุจุดตรวจ',
-                'place' => $log?->machine?->name
-                    ?? $log?->location?->location_name
-                    ?? 'ไม่ระบุพื้นที่',
+                'place' => $log?->employee ? $log->employee->fullname : (
+                    $log?->machine?->name ?? $log?->location?->location_name ?? 'ไม่ระบุพื้นที่/บุคคล'
+                ),
             ];
         })->all();
 
@@ -162,7 +252,7 @@ class InspectionService
      * Trigger auto-escalation for failed random audits.
      * Creates a Re-check session for the entire department and notifies managers.
      */
-    protected function triggerRandomAuditEscalation(InspectionSession $session, float $failRate, int $failedEmployeesCount, int $totalInspected): void
+    protected function triggerRandomAuditEscalation(InspectionSession $session, float $failRate, int $failedTargetsCount, int $totalInspected): void
     {
         // 1. Create a Re-check InspectionSession for the entire department (NOT sampling)
         $recheckSession = InspectionSession::create([
@@ -194,12 +284,12 @@ class InspectionService
 
         // 3. Send Email
         if (count($emails) > 0) {
-            \Illuminate\Support\Facades\Mail::to($emails)->send(new \App\Mail\RandomAuditEscalationMail($session, $recheckSession, $failRate, $failedEmployeesCount, $totalInspected));
+            \Illuminate\Support\Facades\Mail::bcc($emails)->send(new \App\Mail\RandomAuditEscalationMail($session, $recheckSession, $failRate, $failedTargetsCount, $totalInspected));
         }
         
         // 4. Send In-App Notification
         foreach ($recipients as $recipient) {
-            $recipient->notify(new \App\Notifications\RandomAuditEscalationNotification($session, $recheckSession, $failRate, $failedEmployeesCount, $totalInspected));
+            $recipient->notify(new \App\Notifications\RandomAuditEscalationNotification($session, $recheckSession, $failRate, $failedTargetsCount, $totalInspected));
         }
         
         \Log::info("Random Audit Auto-Escalation triggered for Session {$session->id}. Fail Rate: {$failRate}%. Recheck Session {$recheckSession->id} created.");
@@ -268,32 +358,37 @@ class InspectionService
 
     public function shiftEndAt(InspectionSession $session): ?\Illuminate\Support\Carbon
     {
-        // Support multiple shifts (e.g. "morning,afternoon")
-        $shiftsArr = explode(',', (string) $session->shift);
-        // Get the last shift for ending time determination
-        $lastShift = trim(end($shiftsArr));
-
-        $names = match (strtolower($lastShift)) {
-            'morning'   => ['morning', 'กะเช้า'],
-            'afternoon' => ['afternoon', 'กะบ่าย'],
-            'night'     => ['night', 'กะดึก'],
-            default     => [$lastShift],
-        };
-
-        $shift = \App\Models\Shift::whereIn('shift_name', $names)->first();
-        if (! $shift || empty($shift->end_time)) {
+        // Resolve through the session itself so a picked shift card ('custom_11') works, not
+        // just the generic keys. Matching shift_name literally missed every real row, which
+        // left shiftEndAt() null and personnel sessions never auto-closing.
+        $shifts = $session->getResolvedShifts()['shifts'];
+        if ($shifts->isEmpty()) {
             return null;
         }
 
         $date = \Illuminate\Support\Carbon::parse($session->inspection_date)->toDateString();
-        $end  = \Illuminate\Support\Carbon::parse($date . ' ' . $shift->end_time);
+        $latest = null;
 
-        // Shift wraps past midnight (e.g. night 22:00-06:00): end lands on the next day
-        if (! empty($shift->start_time) && $shift->end_time <= $shift->start_time) {
-            $end->addDay();
+        // A session may span several shifts ("custom_4,custom_9"); it is only over once the
+        // last of them has ended.
+        foreach ($shifts as $shift) {
+            if (empty($shift->end_time)) {
+                continue;
+            }
+
+            $end = \Illuminate\Support\Carbon::parse($date . ' ' . $shift->end_time);
+
+            // Shift wraps past midnight (e.g. 17:00-02:00): end lands on the next day
+            if (! empty($shift->start_time) && $shift->end_time <= $shift->start_time) {
+                $end->addDay();
+            }
+
+            if ($latest === null || $end->gt($latest)) {
+                $latest = $end;
+            }
         }
 
-        return $end;
+        return $latest;
     }
 
     public function lastActivityAt(InspectionSession $session): \Illuminate\Support\Carbon
@@ -327,7 +422,7 @@ class InspectionService
 
             // Send ONE grouped email to all supervisors
             if (count($emails) > 0) {
-                \Illuminate\Support\Facades\Mail::to($emails)->send(new \App\Mail\InspectionSessionStarted($session));
+                \Illuminate\Support\Facades\Mail::bcc($emails)->send(new \App\Mail\InspectionSessionStarted($session));
             }
         } catch (\Exception $e) {
             \Log::error('Failed to send Inspection Started email: ' . $e->getMessage());
@@ -344,10 +439,28 @@ class InspectionService
                 ->get()
                 ->filter(fn($u) => $u->isQA());
 
+            $targetColumn = 'employee_id';
+            $unit = 'คน';
+            if ($session->type === 'machine') {
+                $targetColumn = 'machine_id';
+                $unit = 'เครื่อง';
+            } elseif ($session->type === 'area') {
+                $targetColumn = 'location_id';
+                $unit = 'พื้นที่';
+            }
+            
+            $totalTargets = $session->logs()->distinct($targetColumn)->count($targetColumn);
+            $failedTargets = $session->logs()->where('result', 'fail')->distinct($targetColumn)->count($targetColumn);
+            $passedTargets = $totalTargets - $failedTargets;
+
             $stats = [
                 'total' => $session->logs()->count(),
                 'pass' => $session->logs()->where('result', 'pass')->count(),
                 'fail' => $session->logs()->where('result', 'fail')->count(),
+                'total_targets' => $totalTargets,
+                'passed_targets' => $passedTargets,
+                'failed_targets' => $failedTargets,
+                'unit' => $unit
             ];
 
             // Determine which event type this is
@@ -364,7 +477,7 @@ class InspectionService
 
             // Send ONE grouped email to all supervisors
             if (count($emails) > 0) {
-                \Illuminate\Support\Facades\Mail::to($emails)->send(new \App\Mail\InspectionSessionFinished($session, $stats));
+                \Illuminate\Support\Facades\Mail::bcc($emails)->send(new \App\Mail\InspectionSessionFinished($session, $stats));
             }
             
             \Log::info("Session {$session->id} finished emails sent to QA Supervisors.");
@@ -540,13 +653,13 @@ class InspectionService
         }
 
         return DB::transaction(function () use ($session) {
-            // 1. Get all active personnel checkpoints
-            $checkpoints = Checkpoint::where('type', 'person')
+            // 1. Get all active personnel checkpoints (global fallback)
+            $globalCheckpointIds = Checkpoint::where('type', 'person')
                 ->where('is_active', true)
                 ->pluck('id')
                 ->toArray();
 
-            if (empty($checkpoints)) {
+            if (empty($globalCheckpointIds)) {
                 return 0;
             }
 
@@ -572,13 +685,45 @@ class InspectionService
                 return 0;
             }
 
-            // 5. Build bulk insert data
+            // 5. Build bulk insert data - respecting per-employee checkpoint assignments
             $now = now();
             $deptSnapshot = $session->department->dept_name ?? 'N/A';
             $bulkData = [];
 
+            // Pre-load employees with their checkpoints and locations for efficiency
+            $remainingEmployees = Employee::with(['checkpoints', 'location'])
+                ->whereIn('id', $remainingIds)
+                ->get()
+                ->keyBy('id');
+
             foreach ($remainingIds as $employeeId) {
-                foreach ($checkpoints as $checkpointId) {
+                $emp = $remainingEmployees->get($employeeId);
+
+                // Priority 1: Employee-specific checkpoints (employee_checkpoint)
+                $empCheckpointIds = [];
+                if ($emp) {
+                    $empCheckpointIds = $emp->checkpoints
+                        ->where('is_active', true)
+                        ->where('type', 'person')
+                        ->pluck('id')
+                        ->toArray();
+                }
+
+                // Priority 2: Location checkpoints (location_checkpoint)
+                if (empty($empCheckpointIds) && $emp?->location) {
+                    $empCheckpointIds = $emp->location->checkpoints()
+                        ->where('is_active', true)
+                        ->where('type', 'person')
+                        ->pluck('checkpoints.id')
+                        ->toArray();
+                }
+
+                // Priority 3: All active checkpoints (fallback)
+                if (empty($empCheckpointIds)) {
+                    $empCheckpointIds = $globalCheckpointIds;
+                }
+
+                foreach ($empCheckpointIds as $checkpointId) {
                     $bulkData[] = [
                         'session_id' => $session->id,
                         'employee_id' => $employeeId,

@@ -18,6 +18,8 @@ class InspectionSession extends Model
         'round',
         'status',
         'locked_at',
+        'finished_notified_at',
+        'audit_escalated_at',
         'verified_by',
         'verified_at',
         'approved_by',
@@ -31,6 +33,8 @@ class InspectionSession extends Model
     protected $casts = [
         'inspection_date' => 'date',
         'locked_at' => 'datetime',
+        'finished_notified_at' => 'datetime',
+        'audit_escalated_at' => 'datetime',
         'verified_at' => 'datetime',
         'approved_at' => 'datetime',
         'is_locked' => 'boolean', // Gap 2: Lock flag
@@ -154,18 +158,20 @@ class InspectionSession extends Model
         }
 
         $validShiftIdsQuery = \App\Models\Shift::query();
-        $hasCondition = false;
-        if (!empty($shiftNames)) {
-            $validShiftIdsQuery->whereIn('shift_name', $shiftNames);
-            $hasCondition = true;
-        }
-        if (!empty($customShiftIds)) {
-            if ($hasCondition) {
-                $validShiftIdsQuery->orWhereIn('id', $customShiftIds);
-            } else {
-                $validShiftIdsQuery->whereIn('id', $customShiftIds);
-                $hasCondition = true;
-            }
+        $hasCondition = !empty($shiftNames) || !empty($customShiftIds);
+        if ($hasCondition) {
+            $validShiftIdsQuery->where(function ($q) use ($shiftNames, $customShiftIds) {
+                if (!empty($shiftNames)) {
+                    // Shift rows are named "<type> <HH.mm>-<HH.mm>" (e.g. "กะบ่าย 17.00-02.00"),
+                    // so a generic key like 'afternoon' never matches shift_name exactly.
+                    // shift_type holds the canonical กะเช้า/กะบ่าย/กะดึก value it must match on.
+                    $q->orWhereIn('shift_name', $shiftNames)
+                      ->orWhereIn('shift_type', $shiftNames);
+                }
+                if (!empty($customShiftIds)) {
+                    $q->orWhereIn('id', $customShiftIds);
+                }
+            });
         }
 
         try {
@@ -200,8 +206,20 @@ class InspectionSession extends Model
             ->where('is_active', true)
             ->get();
 
-        if (empty($validShiftIds) && empty($shiftNames)) {
+        $namedShifts = ! empty(array_filter(array_map('trim', explode(',', (string) $this->shift))));
+
+        // A round that named no shift at all (legacy rows saved before one was required)
+        // means the whole department.
+        if (! $namedShifts) {
             return $allEmployees;
+        }
+
+        // A round that DID name shifts but resolved none — the shift row was deleted, say —
+        // must target nobody rather than silently falling back to the whole department.
+        // Bulk pass runs off this list, so the open version would pass every employee in the
+        // department, day-offs included.
+        if (empty($validShiftIds) && empty($shiftNames)) {
+            return $allEmployees->take(0);
         }
 
         $schedules = \App\Models\EmployeeSchedule::where('date', $this->inspection_date ? $this->inspection_date->startOfDay() : now()->startOfDay())
@@ -224,24 +242,29 @@ class InspectionSession extends Model
      */
     public function getShiftLabelAttribute(): string
     {
-        $resolved = $this->getResolvedShifts();
-        $shifts = $resolved['shifts'];
-
-        if ($shifts->isNotEmpty()) {
-            $rawNames = $shifts->pluck('shift_name')->toArray();
-            return $this->formatShiftNames($rawNames);
-        }
-
-        // Fallback formatting if shifts model not matched directly
+        $shiftsById = $this->getResolvedShifts()['shifts']->keyBy('id');
         $sessionShifts = array_filter(array_map('trim', explode(',', (string) $this->shift)));
-        $rawNames = array_map(function($s) {
-            return match(strtolower($s)) {
+
+        $rawNames = [];
+        foreach ($sessionShifts as $s) {
+            // A generic key stands for a whole shift_type group, so it keeps its generic
+            // label — spelling out every "กะบ่าย HH.mm-HH.mm" variant would flood the header.
+            $generic = match (strtolower($s)) {
                 'morning' => 'กะเช้า',
                 'afternoon' => 'กะบ่าย',
                 'night' => 'กะดึก',
-                default => $s,
+                default => null,
             };
-        }, $sessionShifts);
+
+            if ($generic !== null) {
+                $rawNames[] = $generic;
+            } elseif (str_starts_with($s, 'custom_')) {
+                $id = (int) str_replace('custom_', '', $s);
+                $rawNames[] = $shiftsById->get($id)?->shift_name ?? $s;
+            } else {
+                $rawNames[] = $s;
+            }
+        }
 
         return $this->formatShiftNames($rawNames);
     }

@@ -155,6 +155,39 @@ class User extends Authenticatable
     }
 
     /**
+     * Is this user confined to their own department's data?
+     *
+     * Fail closed: a user with no department is confined, never exempt. The report scopes
+     * used to start with `$user->department && ...`, so a null department skipped filtering
+     * altogether and returned every department's data — and department_id is optional on the
+     * user form, so one unfilled field was enough to reach that state.
+     */
+    public function isRestrictedToOwnDepartment(): bool
+    {
+        if ($this->isAdmin()) {
+            return false;
+        }
+
+        if (! $this->department) {
+            return true;
+        }
+
+        return $this->department->visibility_type === 'isolated';
+    }
+
+    /**
+     * The department id to confine a restricted user to.
+     *
+     * Never null. A user without a department has to match no rows rather than every row,
+     * and that must not depend on whether the column being filtered happens to be NOT NULL.
+     * No department row has id 0.
+     */
+    public function scopedDepartmentId(): int
+    {
+        return (int) ($this->department_id ?? 0);
+    }
+
+    /**
      * Check if user is Executive (C-Suite) - Read-Only Dashboard access
      */
     public function isExecutive(): bool
