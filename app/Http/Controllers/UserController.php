@@ -14,7 +14,9 @@ class UserController extends Controller
      */
     public function index()
     {
-        $users = User::orderBy('id', 'asc')->paginate(10);
+        // Eager-load the department: the list renders it per row, and without this the page
+        // fires one query per user.
+        $users = User::with('department')->orderBy('id', 'asc')->paginate(10);
         $departments = \App\Models\Department::all();
         return view('users.index', compact('users', 'departments'));
     }
@@ -92,6 +94,11 @@ class UserController extends Controller
             'department_id' => ['nullable', 'exists:departments,id'],
             'password' => ['nullable', 'confirmed', Rules\Password::defaults()],
         ]);
+
+        // Prevent admin from demoting themselves (would lock out admin panel)
+        if ($user->id === auth()->id() && $user->role === 'admin' && $request->role !== 'admin') {
+            return back()->with('error', 'ไม่สามารถลดสิทธิ์ของตัวเองได้ กรุณาให้ Admin คนอื่นทำการเปลี่ยนแปลง');
+        }
 
         $data = [
             'name' => $request->name,

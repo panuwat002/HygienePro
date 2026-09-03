@@ -54,6 +54,7 @@
                                     <th>รหัสพนักงาน</th>
                                     <th>อีเมล</th>
                                     <th>ตำแหน่ง (Role)</th>
+                                    <th>แผนก</th>
                                     <th>วันที่สร้าง</th>
                                     <th class="text-end pe-4">จัดการ</th>
                                 </tr>
@@ -80,6 +81,21 @@
                                                 <span class="badge bg-info text-dark">Supervisor</span>
                                             @else
                                                 <span class="badge bg-secondary">Staff</span>
+                                            @endif
+                                        </td>
+                                        {{-- แผนกเป็นตัวตัดสินว่าใครเห็นข้อมูลของใคร คนที่ไม่มีแผนกจะมองไม่เห็นรายงานเลย
+                                             จึงต้องเห็นได้จากหน้านี้ ไม่ต้องเปิดหน้าแก้ไขทีละคน --}}
+                                        <td data-label="แผนก">
+                                            @if($user->department)
+                                                <span class="text-dark">{{ $user->department->dept_name }}</span>
+                                                <small class="text-muted d-block">{{ $user->department->dept_code }}</small>
+                                            @elseif($user->role === 'admin')
+                                                <span class="text-muted small">ทุกแผนก (Admin)</span>
+                                            @else
+                                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
+                                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>ไม่มีแผนก
+                                                </span>
+                                                <small class="text-danger d-block">มองไม่เห็นรายงาน</small>
                                             @endif
                                         </td>
                                         <td data-label="วันที่สร้าง" class="text-muted small">{{ $user->created_at->format('d/m/Y') }}</td>
