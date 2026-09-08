@@ -7,7 +7,27 @@ use Illuminate\Database\Eloquent\Model;
 
 class InspectionSession extends Model
 {
-    use HasFactory;
+    use HasFactory, \Illuminate\Database\Eloquent\Prunable;
+
+    /**
+     * Get the prunable model query.
+     */
+    public function prunable()
+    {
+        return static::where('created_at', '<=', now()->subYears(2));
+    }
+
+    /**
+     * Prepare the model for pruning.
+     */
+    protected function pruning()
+    {
+        // ลบไฟล์รูปภาพออกจาก Disk ก่อนที่ DB จะทำ Cascade Delete ข้อมูล InspectionLog
+        $logsWithPhotos = $this->logs()->whereNotNull('photo_path')->get();
+        foreach ($logsWithPhotos as $log) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($log->photo_path);
+        }
+    }
 
     protected $fillable = [
         'inspector_id',

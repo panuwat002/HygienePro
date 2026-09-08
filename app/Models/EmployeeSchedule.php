@@ -7,7 +7,15 @@ use Illuminate\Database\Eloquent\Model;
 
 class EmployeeSchedule extends Model
 {
-    use HasFactory;
+    use HasFactory, \Illuminate\Database\Eloquent\Prunable;
+
+    /**
+     * Get the prunable model query.
+     */
+    public function prunable()
+    {
+        return static::where('date', '<=', now()->subMonths(6));
+    }
 
     protected $fillable = [
         'employee_id',

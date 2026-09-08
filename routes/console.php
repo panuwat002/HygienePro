@@ -24,3 +24,11 @@ Schedule::call(function () {
 
 // ระบบสุ่มตรวจอัตโนมัติ: สร้างตารางการสุ่มตรวจล่วงหน้าทุกๆ เช้ามืดวันจันทร์ เวลา 01:00 น.
 Schedule::command('audit:generate')->weeklyOn(1, '01:00');
+
+// ระบบล้างข้อมูลเก่าที่ไม่ได้ใช้งาน (Prunable Models) ประจำวัน
+Schedule::command('model:prune')->dailyAt('02:00');
+
+// ระบบล้างแจ้งเตือน (Notifications) ที่เก่าเกิน 1 เดือน
+Schedule::call(function () {
+    \Illuminate\Support\Facades\DB::table('notifications')->where('created_at', '<=', now()->subMonth())->delete();
+})->dailyAt('02:30');

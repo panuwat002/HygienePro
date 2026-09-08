@@ -47,7 +47,12 @@ class LineMessagingChannel
                 ]);
 
             if ($response->failed()) {
-                Log::error('LINE Messaging API Error: ' . $response->body());
+                $responseBody = $response->body();
+                if (str_contains($responseBody, 'monthly limit')) {
+                    Log::warning('LINE Messaging API Quota Exceeded: ' . $responseBody);
+                } else {
+                    Log::error('LINE Messaging API Error: ' . $responseBody);
+                }
             }
         } catch (\Exception $e) {
             Log::error('LINE Messaging API Exception: ' . $e->getMessage());

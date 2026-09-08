@@ -7,7 +7,15 @@ use Illuminate\Database\Eloquent\Model;
 
 class ActivityLog extends Model
 {
-    use HasFactory;
+    use HasFactory, \Illuminate\Database\Eloquent\Prunable;
+
+    /**
+     * Get the prunable model query.
+     */
+    public function prunable()
+    {
+        return static::where('created_at', '<=', now()->subMonths(3));
+    }
 
     protected $fillable = [
         'user_id',
