@@ -1501,7 +1501,10 @@ class InspectionController extends Controller
 
         $request->validate([
             'employee_id' => 'required|exists:employees,id',
-            'random_evidence_photo_base64' => 'nullable|string',
+            // ~13.4M base64 chars decodes to ~10MB, matching the logs.*.photo cap.
+            // Without a cap this field accepted an unbounded string that was
+            // base64_decode()d into memory and then written to disk.
+            'random_evidence_photo_base64' => 'nullable|string|max:13400000',
             'logs' => 'required|array',
             'logs.*.checkpoint_id' => 'required|exists:checkpoints,id',
             'logs.*.result' => 'required|in:pass,fail',
@@ -1525,10 +1528,27 @@ class InspectionController extends Controller
                     $base64String = substr($base64String, strpos($base64String, ',') + 1);
                 }
                 
-                $imageBinary = base64_decode($base64String);
+                $imageBinary = base64_decode($base64String, true);
                 $filename = 'evidence_random_' . uniqid() . '_' . $session->id . '_' . $request->employee_id . '.webp';
                 $path = 'evidence/' . $filename;
-                
+
+                // The payload must actually be an image before anything is written.
+                // The fallback below exists for cameras whose format Intervention cannot
+                // re-encode, but it used to run on ANY exception, so arbitrary bytes
+                // reached web-served storage whenever Image::read() threw.
+                $isImage = $imageBinary !== false && @getimagesizefromstring($imageBinary) !== false;
+
+                if (! $isImage) {
+                    \Log::warning('Rejected non-image random evidence payload', [
+                        'session_id' => $session->id,
+                        'employee_id' => $request->employee_id,
+                        'user_id' => Auth::id(),
+                    ]);
+
+                    return redirect()->back()
+                        ->with('error', 'ไฟล์รูปหลักฐานไม่ถูกต้อง กรุณาถ่ายใหม่อีกครั้ง');
+                }
+
                 try {
                     $image = Image::read($imageBinary);
                     $image->scale(width: 800);
@@ -1536,7 +1556,8 @@ class InspectionController extends Controller
                     Storage::disk('public')->put($path, (string) $encoded);
                     $randomPhotoPath = $path;
                 } catch (\Exception $e) {
-                    // Fallback if image manipulation fails
+                    // Intervention could not re-encode it, but it is a real image, so
+                    // keep the original rather than losing the inspector's evidence.
                     Storage::disk('public')->put($path, $imageBinary);
                     $randomPhotoPath = $path;
                 }
@@ -1904,7 +1925,13 @@ class InspectionController extends Controller
             }
 
             $hasReclean = $logsInGroup->contains('verification_status', 'reclean');
-            $hasPending = $logsInGroup->contains(fn($l) => is_null($l->verified_at));
+            // reject() stamps verified_at alongside verification_status = 'rejected', so
+            // a rejected group used to fail the is_null(verified_at) test, fall through
+            // the ladder below and be filed as 'verified' — rejected work vanished from
+            // the queue into the completed tab and was never signed off by anyone.
+            // A rejection means the work still needs attention: treat it as pending.
+            $hasRejected = $logsInGroup->contains('verification_status', 'rejected');
+            $hasPending = $hasRejected || $logsInGroup->contains(fn($l) => is_null($l->verified_at));
 
             // Check Session Approval (Manager Level)
             // Check Group Approval (Log Level)

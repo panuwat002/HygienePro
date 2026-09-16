@@ -7,6 +7,7 @@ use App\Models\Department;
 use App\Models\Checkpoint;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class DatabaseSeeder extends Seeder
 {
@@ -33,11 +34,16 @@ class DatabaseSeeder extends Seeder
 
         // 2. Create Users (Matrix Roles)
 
-        // IT Admin (Global, Level 6)
+        // IT Admin (Global, Level 6).
+        // The admin password comes from SEED_ADMIN_PASSWORD, never from a literal in
+        // this file: a real credential committed here is readable by anyone with repo
+        // access and stays in git history even after it is edited out. Falls back to a
+        // random value, so an unconfigured seed run produces an account nobody can log
+        // into rather than one with a known password.
         User::create([
             'name' => 'panuwat sakutem',
-            'email' => 'panuwat.sa@allcoco.co.th',
-            'password' => Hash::make('088286@p'),
+            'email' => env('SEED_ADMIN_EMAIL', 'panuwat.sa@allcoco.co.th'),
+            'password' => Hash::make(env('SEED_ADMIN_PASSWORD') ?: Str::random(32)),
             'role' => 'admin',
             'level' => 6,
             'department_id' => $deptQA->id, // Admin usually in QA or IT

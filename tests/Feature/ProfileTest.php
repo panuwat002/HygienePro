@@ -13,13 +13,17 @@ test('profile page is displayed', function () {
 });
 
 test('profile information can be updated', function () {
-    $user = User::factory()->create();
+    // Changing the email now requires the current password — it is a login identifier,
+    // so an unattended session could otherwise repoint the account and take it over via
+    // the password-reset flow. See tests/Feature/Security/ProfileEmailChangeTest.php.
+    $user = User::factory()->create(['password' => bcrypt('password')]);
 
     $response = $this
         ->actingAs($user)
         ->patch('/profile', [
             'name' => 'Test User',
             'email' => 'test@example.com',
+            'current_password' => 'password',
         ]);
 
     $response

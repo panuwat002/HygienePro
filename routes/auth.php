@@ -12,10 +12,21 @@ use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
-    Route::get('register', [RegisteredUserController::class, 'create'])
-        ->name('register');
-
-    Route::post('register', [RegisteredUserController::class, 'store']);
+    // Public self-registration is DISABLED. This is an internal plant system; accounts
+    // are provisioned by an admin at /users (UserController), which assigns role,
+    // level and department deliberately.
+    //
+    // Left open, these two routes handed an account to anyone who could reach the host:
+    // the users table defaults role to 'staff' and level to 2, so a registrant became a
+    // working staff account, and RegisteredUserController::store() calls Auth::login()
+    // immediately. User does not implement MustVerifyEmail, so the `verified`
+    // middleware on /dashboard does not gate anything either.
+    //
+    // To re-enable, uncomment both lines AND make User implement MustVerifyEmail, or
+    // add an admin-approval step before the account becomes usable.
+    // Route::get('register', [RegisteredUserController::class, 'create'])
+    //     ->name('register');
+    // Route::post('register', [RegisteredUserController::class, 'store']);
 
     Route::get('login', [AuthenticatedSessionController::class, 'create'])
         ->name('login');

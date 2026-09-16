@@ -597,6 +597,21 @@ class InspectionService
                 }
             }
 
+            // Rework of a rejected log: reject() sets verification_status = 'rejected'
+            // plus verified_at, and $logData carries neither key, so without this the
+            // resubmitted row kept the old rejection and its verifier forever.
+            $existingRow = InspectionLog::where('session_id', $session->id)
+                ->where('employee_id', $employeeId)
+                ->where('checkpoint_id', $checkpointId)
+                ->first();
+
+            if ($existingRow && $existingRow->verification_status === 'rejected') {
+                $logData['verification_status'] = null;
+                $logData['verified_at'] = null;
+                $logData['verifier_id'] = null;
+                $logData['verification_comment'] = null;
+            }
+
             $log = InspectionLog::updateOrCreate(
                 [
                     'session_id' => $session->id,
