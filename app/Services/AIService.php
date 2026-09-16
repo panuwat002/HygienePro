@@ -15,7 +15,7 @@ class AIService
      */
     public static function getTagsFromFinding($text)
     {
-        if (empty(trim($text))) {
+        if (!config('services.ai.enabled', false) || empty(trim($text))) {
             return [];
         }
 
@@ -45,6 +45,10 @@ class AIService
      */
     public static function detectShift($currentTime, $currentHour, $lastSessionShift = null, $lastSessionTime = null)
     {
+        if (!config('services.ai.enabled', false)) {
+            return null;
+        }
+
         try {
             $response = Http::timeout(3)->post('http://localhost:8001/api/detect-shift', [
                 'current_time' => $currentTime,
@@ -71,6 +75,10 @@ class AIService
      */
     public static function verifyImage($imagePath)
     {
+        if (!config('services.ai.enabled', false)) {
+            return null;
+        }
+
         try {
             // In a real app we would attach the file. 
             // For this mockup, we just send a dummy file request.

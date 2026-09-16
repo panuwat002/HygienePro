@@ -62,15 +62,22 @@ class SystemSettingController extends Controller
         foreach ($keys as $key) {
             $value = $request->input($key);
             
+            // CRITICAL SECURITY: Sanitize value to prevent .env injection
+            // Strip newlines, carriage returns, and null bytes that could inject new .env keys
+            if ($value !== null) {
+                $value = str_replace(["\n", "\r", "\0", "\x0B"], '', $value);
+            }
+            
             // Format value safely
             if (empty($value) && $value !== '0') {
                 $value = 'null';
-            } elseif (preg_match('/\s/', $value)) {
-                $value = '"' . $value . '"';
+            } elseif (preg_match('/[\s#"\']/', $value)) {
+                // Quote values containing spaces, hash signs, or quotes
+                $value = '"' . addcslashes($value, '"') . '"';
             }
 
             // Replace existing key or append
-            $pattern = "/^{$key}=.*/m";
+            $pattern = "/^" . preg_quote($key, '/') . "=.*/m";
             if (preg_match($pattern, $str)) {
                 $str = preg_replace($pattern, "{$key}={$value}", $str);
             } else {

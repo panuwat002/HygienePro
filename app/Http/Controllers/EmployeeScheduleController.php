@@ -77,6 +77,16 @@ class EmployeeScheduleController extends Controller
             'schedules.*.shift_id' => 'nullable|exists:shifts,id',
             'schedules.*.is_day_off' => 'boolean',
         ]);
+        
+        // Prevent Cross-Department Schedule Hijacking
+        $employeeIds = collect($data['schedules'])->pluck('employee_id')->unique();
+        $validEmployeeCount = Employee::whereIn('id', $employeeIds)
+            ->where('department_id', $department->id)
+            ->count();
+            
+        if ($validEmployeeCount !== $employeeIds->count()) {
+            abort(403, 'Unauthorized. One or more employees do not belong to this department.');
+        }
 
         foreach ($data['schedules'] as $sch) {
             if (empty($sch['shift_id']) && empty($sch['is_day_off'])) {

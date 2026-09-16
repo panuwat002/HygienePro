@@ -57,3 +57,10 @@ Thumbs.db
 
 # Typo-name artefact leftover from a broken template render.
 /dept_name})
+
+# Webroot must contain exactly one PHP entrypoint. Any other .php file in
+# public/ is served directly by IIS/Apache, bypassing Laravel's routing,
+# middleware, auth and CSRF entirely. Debug/fix helpers belong in
+# app/Console/Commands (unreachable over HTTP) or tests/.
+/public/*.php
+!/public/index.php

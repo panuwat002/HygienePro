@@ -83,13 +83,17 @@ class InspectionController extends Controller
         // --- SCOPE DEFINITION (Role Matrix Compliance) ---
         // Global scope users (QA, Admin, Executive) see all departments
         // Isolated scope users see only their own department
+        // scopedDepartmentId() returns 0 for a departmentless user, which matches no
+        // row. Reading department_id directly gave null, and the `if ($scopeDeptId)`
+        // below then skipped the filter entirely — so a user with no department saw
+        // every department's data instead of none.
         $scopeDeptId = null;
         if (!$user->hasGlobalVisibility()) {
-            $scopeDeptId = $user->department_id;
+            $scopeDeptId = $user->scopedDepartmentId();
         }
 
         $applyScope = function($query) use ($scopeDeptId) {
-            if ($scopeDeptId) {
+            if ($scopeDeptId !== null) {
                 // Filter logs where it is an Employee inspection AND they belong to Dept
                 // OR it is an Area/Machine inspection AND the session belongs to Dept
                 $query->where(function($q) use ($scopeDeptId) {
@@ -170,27 +174,40 @@ class InspectionController extends Controller
 
         // 6. CAR Statistics (Executive View) - Cached 5 minutes
         $startOfMonth = now()->startOfMonth();
-        $carStatsCacheKey = "dashboard_car_stats_" . $startOfMonth->format('Y_m');
-        $carStats = \Illuminate\Support\Facades\Cache::remember($carStatsCacheKey, 300, function () use ($startOfMonth) {
-            $totalCars = \App\Models\CorrectiveAction::where('created_at', '>=', $startOfMonth)->count();
-            
+        // These CAR aggregates had no department scope at all, and the cache key had no
+        // department component — so /dashboard (middleware `auth` only, and the view
+        // carries no role guard) showed every user a per-department CAR breakdown of
+        // the whole company, defeating visibility_type = 'isolated'.
+        $scopeCars = function ($query) use ($scopeDeptId) {
+            if ($scopeDeptId !== null) {
+                $query->whereHas('log.session', fn($q) => $q->where('department_id', $scopeDeptId));
+            }
+
+            return $query;
+        };
+
+        $carStatsCacheKey = "dashboard_car_stats_" . $startOfMonth->format('Y_m') . '_' . ($scopeDeptId ?? 'all');
+        $carStats = \Illuminate\Support\Facades\Cache::remember($carStatsCacheKey, 300, function () use ($startOfMonth, $scopeDeptId, $scopeCars) {
+            $totalCars = $scopeCars(\App\Models\CorrectiveAction::where('created_at', '>=', $startOfMonth))->count();
+
             $carsByDept = \Illuminate\Support\Facades\DB::table('corrective_actions')
                 ->join('inspection_logs', 'corrective_actions.inspection_log_id', '=', 'inspection_logs.id')
                 ->join('inspection_sessions', 'inspection_logs.session_id', '=', 'inspection_sessions.id')
                 ->leftJoin('departments', 'inspection_sessions.department_id', '=', 'departments.id')
                 ->where('corrective_actions.created_at', '>=', $startOfMonth)
-                ->selectRaw('COALESCE(departments.dept_name, "Unknown") as dept_name, COUNT(corrective_actions.id) as count')
+                ->when($scopeDeptId !== null, fn($q) => $q->where('inspection_sessions.department_id', $scopeDeptId))
+                ->selectRaw("COALESCE(departments.dept_name, 'Unknown') as dept_name, COUNT(corrective_actions.id) as count")
                 ->groupBy('dept_name')
                 ->pluck('count', 'dept_name');
-                            
-            $onTimeCount = \App\Models\CorrectiveAction::where('created_at', '>=', $startOfMonth)
+
+            $onTimeCount = $scopeCars(\App\Models\CorrectiveAction::where('created_at', '>=', $startOfMonth))
                 ->whereIn('status', ['resolved', 'closed', 'verified'])
                 ->where(function($q) {
                     $q->whereColumn('resolved_at', '<=', 'due_date')
                       ->orWhereNull('due_date');
                 })->count();
-            
-            $overdueCount = \App\Models\CorrectiveAction::where('created_at', '>=', $startOfMonth)
+
+            $overdueCount = $scopeCars(\App\Models\CorrectiveAction::where('created_at', '>=', $startOfMonth))
                 ->whereNotNull('due_date')
                 ->where(function($q) {
                     $q->where(function($q2) {
@@ -204,7 +221,7 @@ class InspectionController extends Controller
 
             $inProgressCount = max(0, $totalCars - $onTimeCount - $overdueCount);
 
-            $aiTagsRows = \App\Models\CorrectiveAction::where('created_at', '>=', $startOfMonth)
+            $aiTagsRows = $scopeCars(\App\Models\CorrectiveAction::where('created_at', '>=', $startOfMonth))
                 ->whereNotNull('ai_tags')
                 ->pluck('ai_tags');
                 
@@ -309,9 +326,10 @@ class InspectionController extends Controller
         }
 
         // 2. Fetch Pending Re-cleans (Scoped by department if needed)
+        // scopedDepartmentId() is the fail-closed form: 0 for a departmentless user.
         $scopeDeptId = null;
         if (!$user->hasGlobalVisibility()) {
-            $scopeDeptId = $user->department_id;
+            $scopeDeptId = $user->scopedDepartmentId();
         }
 
         $pendingReCleansQuery = InspectionLog::with(['employee', 'location', 'machine', 'checkpoint', 'session.department', 'session.inspector', 'verifier'])
@@ -321,7 +339,7 @@ class InspectionController extends Controller
                 $q->where('type', $type);
             });
             
-        if ($scopeDeptId) {
+        if ($scopeDeptId !== null) {
             $pendingReCleansQuery->where(function($q) use ($scopeDeptId) {
                 $q->whereHas('employee', function($subQ) use ($scopeDeptId) {
                     $subQ->where('department_id', $scopeDeptId);
@@ -456,7 +474,7 @@ class InspectionController extends Controller
             ->where('status', 'in_progress');
             // ->where('inspector_id', '!=', Auth::id()) 
             
-        if ($scopeDeptId) {
+        if ($scopeDeptId !== null) {
             $activeOtherSessionsQuery->where('department_id', $scopeDeptId);
         }
             
@@ -1106,8 +1124,20 @@ class InspectionController extends Controller
         });
 
         if ($session->is_sampling && $session->sample_size > 0) {
-            // Seed the shuffle with the session ID so the target list is locked for this session
-            $targetEmployeesList = $targetEmployeesList->sortBy('id')->values()->shuffle($session->id)->take($session->sample_size);
+            // Lock the sample to this session. Collection::shuffle() takes NO arguments
+            // in Laravel 12 (it delegates to Arr::shuffle, which uses a CSPRNG), and PHP
+            // silently discards extra arguments to userland methods — so the previous
+            // ->shuffle($session->id) threw the seed away and re-rolled the target list
+            // on every page load, losing the inspector's list on any refresh and making
+            // the audited sample unreproducible afterwards.
+            //
+            // A hash of (session id, employee id) gives a stable pseudo-random order:
+            // deterministic for a given session, different between sessions, and with no
+            // dependence on global RNG state.
+            $targetEmployeesList = $targetEmployeesList
+                ->sortBy(fn($emp) => md5($session->id . '-' . $emp->id))
+                ->values()
+                ->take($session->sample_size);
         }
         $targetEmployeeIdsMap = array_flip($targetEmployeesList->pluck('id')->toArray());
 
@@ -1269,7 +1299,11 @@ class InspectionController extends Controller
     {
         $this->authorizeSessionOwner($session);
 
-        if (!Auth::user()->isSupervisor() && !Auth::user()->isAdmin() && !Auth::user()->isQA()) {
+        // The `|| isQA()` disjunct used to nullify this whole guard: the route sits
+        // behind can:inspect, and Gate 'inspect' -> User::canInspect() already requires
+        // isQA(), so !isQA() was always false and a QA staff account could mark an
+        // entire shift as passed without inspecting anyone.
+        if (!Auth::user()->isSupervisor() && !Auth::user()->isManager() && !Auth::user()->isAdmin()) {
             if ($request->wantsJson() || $request->ajax()) {
                 return response()->json(['success' => false, 'message' => 'ไม่มีสิทธิ์ใช้งานฟังก์ชันนี้ (Unauthorized)'], 403);
             }
@@ -1639,7 +1673,7 @@ class InspectionController extends Controller
         // Isolated scope users see only their own department  
         $scopeDeptId = null;
         if (!$user->hasGlobalVisibility()) {
-            $scopeDeptId = $user->department_id;
+            $scopeDeptId = $user->scopedDepartmentId();
         }
 
         // 2. Type Filtering (Extract early to prevent loading thousands of logs into memory)
@@ -1686,7 +1720,7 @@ class InspectionController extends Controller
             })
             ->orderBy('inspected_at', 'desc');
 
-        if ($scopeDeptId) {
+        if ($scopeDeptId !== null) {
             $query->where(function($q) use ($scopeDeptId) {
                 $q->whereHas('employee', fn($subQ) => $subQ->where('department_id', $scopeDeptId))
                   ->orWhere(function($q2) use ($scopeDeptId) {

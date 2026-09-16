@@ -21,7 +21,9 @@ use App\Http\Controllers\LineWebhookController;
 Route::post('/webhook/line', [LineWebhookController::class, 'handle']);
 
 Route::middleware('auth')->group(function () {
-    // Debug Route
+    // Debug Route. Sat in the bare `auth` group with no gate, so any staff account
+    // could read the 10 most recent area logs from every department, walking around
+    // the isolated-department scoping the rest of the app enforces.
     Route::get('/debug-logs', function() {
         $logs = \App\Models\InspectionLog::with('checkpoint')
             ->whereNotNull('location_id')
@@ -31,7 +33,7 @@ Route::middleware('auth')->group(function () {
             ->take(10)
             ->get();
         return response()->json($logs);
-    });
+    })->middleware('can:manage-system');
 
     // Notification Routes
     Route::post('/notifications/{id}/read', [App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.read');
@@ -140,7 +142,7 @@ Route::middleware('auth')->group(function () {
             Route::post('departments/{department}/roster/import', [\App\Http\Controllers\EmployeeScheduleController::class, 'import'])->name('departments.roster.import');
             Route::get('departments-export', [App\Http\Controllers\DepartmentController::class, 'export'])->name('departments.export');
             Route::post('departments-import', [App\Http\Controllers\DepartmentController::class, 'import'])->name('departments.import');
-            Route::post('locations-bulk-delete', [LocationController::class, 'bulkDelete'])->name('locations.bulk-delete');
+            Route::post('locations-bulk-delete', [LocationController::class, 'destroyBulk'])->name('locations.bulk-delete');
             Route::resource('locations', LocationController::class);
             Route::get('locations-export', [LocationController::class, 'export'])->name('locations.export');
             Route::post('locations-import', [LocationController::class, 'import'])->name('locations.import');
@@ -148,7 +150,7 @@ Route::middleware('auth')->group(function () {
             Route::post('locations/{location}/map', [LocationController::class, 'saveMapping'])->name('locations.map.save');
             Route::get('locations-bulk-map', [LocationController::class, 'showBulkMapping'])->name('locations.bulk-map');
             Route::post('locations-bulk-map', [LocationController::class, 'saveBulkMapping'])->name('locations.bulk-map.save');
-            Route::post('machines-bulk-delete', [App\Http\Controllers\MachineController::class, 'bulkDelete'])->name('machines.bulk-delete');
+            Route::post('machines-bulk-delete', [App\Http\Controllers\MachineController::class, 'destroyBulk'])->name('machines.bulk-delete');
             Route::resource('machines', App\Http\Controllers\MachineController::class);
             Route::get('machines-export', [App\Http\Controllers\MachineController::class, 'export'])->name('machines.export');
             Route::post('machines-import', [App\Http\Controllers\MachineController::class, 'import'])->name('machines.import');
@@ -183,7 +185,7 @@ Route::middleware('auth')->group(function () {
             Route::get('employees-bulk-shift', [EmployeeController::class, 'showBulkShift'])->name('employees.bulk-shift');
             Route::post('employees-bulk-shift', [EmployeeController::class, 'saveBulkShift'])->name('employees.bulk-shift.save');
             Route::post('employees-bulk-department', [EmployeeController::class, 'saveBulkDepartment'])->name('employees.bulk-department.save');
-            Route::post('employees-bulk-delete', [EmployeeController::class, 'bulkDelete'])->name('employees.bulk-delete');
+            Route::post('employees-bulk-delete', [EmployeeController::class, 'destroyBulk'])->name('employees.bulk-delete');
             Route::resource('employees', EmployeeController::class);
             Route::resource('shifts', ShiftController::class);
         });

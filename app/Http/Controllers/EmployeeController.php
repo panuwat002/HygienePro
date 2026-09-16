@@ -21,8 +21,8 @@ class EmployeeController extends Controller
 
         // --- SCOPE DEFINITION ---
         $scopeDeptId = null;
-        if ($user->department && $user->department->visibility_type === 'isolated' && !$user->isAdmin()) {
-            $scopeDeptId = $user->department_id;
+        if ($user->isRestrictedToOwnDepartment()) {
+            $scopeDeptId = $user->scopedDepartmentId();
             // Force filter by user's department
             $query->where('department_id', $scopeDeptId);
         }
@@ -76,8 +76,8 @@ class EmployeeController extends Controller
         $user = auth()->user();
         
         $departments = Department::all();
-        if ($user->department && $user->department->visibility_type === 'isolated' && !$user->isAdmin()) {
-            $departments = Department::where('id', $user->department_id)->get();
+        if ($user->isRestrictedToOwnDepartment()) {
+            $departments = Department::where('id', $user->scopedDepartmentId())->get();
         }
 
         $shifts = \App\Models\Shift::all();
@@ -98,14 +98,14 @@ class EmployeeController extends Controller
             'shift_id' => 'nullable|exists:shifts,id',
             'location_id' => 'nullable|exists:locations,id',
             'level' => 'nullable|string|max:50',
-            'profile_image' => 'nullable|image|max:2048',
+            'profile_image' => 'nullable|mimes:jpeg,png,jpg,gif,webp|max:2048',
         ]);
 
         $data = $request->all();
 
         // Enforce Scope
-        if ($user->department && $user->department->visibility_type === 'isolated' && !$user->isAdmin()) {
-            if ($data['department_id'] != $user->department_id) {
+        if ($user->isRestrictedToOwnDepartment()) {
+            if ($data['department_id'] != $user->scopedDepartmentId()) {
                 return back()->with('error', 'Unauthorized to add employee to this department.');
             }
         }
@@ -143,11 +143,11 @@ class EmployeeController extends Controller
         $user = auth()->user();
         
         // Check Scope
-        if ($user->department && $user->department->visibility_type === 'isolated' && !$user->isAdmin()) {
-            if ($employee->department_id != $user->department_id) {
+        if ($user->isRestrictedToOwnDepartment()) {
+            if ($employee->department_id != $user->scopedDepartmentId()) {
                 abort(403, 'Unauthorized access to this employee.');
             }
-            $departments = Department::where('id', $user->department_id)->get();
+            $departments = Department::where('id', $user->scopedDepartmentId())->get();
         } else {
             $departments = Department::all();
         }
@@ -161,9 +161,10 @@ class EmployeeController extends Controller
     {
         $user = auth()->user();
 
-        // Check Scope
-        if ($user->department && $user->department->visibility_type === 'isolated' && !$user->isAdmin()) {
-             if ($employee->department_id != $user->department_id) {
+        // Check Scope (Before Update)
+        if ($user->isRestrictedToOwnDepartment()) {
+             // Cannot access employee from another department
+             if ($employee->department_id != $user->scopedDepartmentId()) {
                 abort(403, 'Unauthorized update to this employee.');
              }
         }
@@ -177,10 +178,18 @@ class EmployeeController extends Controller
             'shift_id' => 'nullable|exists:shifts,id',
             'location_id' => 'nullable|exists:locations,id',
             'level' => 'nullable|string|max:50',
-            'profile_image' => 'nullable|image|max:2048',
+            'profile_image' => 'nullable|mimes:jpeg,png,jpg,gif,webp|max:2048',
         ]);
 
         $data = $request->all();
+        
+        // Prevent moving employee to another department if user is isolated
+        if ($user->isRestrictedToOwnDepartment()) {
+             if ($data['department_id'] != $user->scopedDepartmentId()) {
+                 return back()->with('error', 'Unauthorized to move employee to this department.');
+             }
+        }
+
         $data['fullname'] = $data['prefix'] . ' ' . $data['fname'] . ' ' . $data['lname'];
 
         if ($request->hasFile('profile_image')) {
@@ -213,6 +222,13 @@ class EmployeeController extends Controller
 
     public function destroy(Employee $employee)
     {
+        $user = auth()->user();
+        if ($user->isRestrictedToOwnDepartment()) {
+             if ($employee->department_id != $user->scopedDepartmentId()) {
+                abort(403, 'Unauthorized to delete this employee.');
+             }
+        }
+
         $employee->delete();
         return redirect()->route('employees.index')->with('success', 'ลบข้อมูลพนักงานเรียบร้อยแล้ว');
     }
@@ -224,14 +240,22 @@ class EmployeeController extends Controller
             'employee_ids.*' => 'exists:employees,id',
         ]);
 
-        Employee::whereIn('id', $request->employee_ids)->delete();
+        $user = auth()->user();
+        $query = Employee::whereIn('id', $request->employee_ids);
+
+        if ($user->isRestrictedToOwnDepartment()) {
+             $query->where('department_id', $user->scopedDepartmentId());
+        }
+
+        $query->delete();
 
         return redirect()->route('employees.index')->with('success', 'ลบข้อมูลพนักงานที่เลือกเรียบร้อยแล้ว');
     }
 
     public function export()
     {
-        return Excel::download(new EmployeesExport, 'employees.xlsx');
+        $user = auth()->user();
+        return Excel::download(new EmployeesExport($user), 'employees.xlsx');
     }
 
     public function import(Request $request)
@@ -241,7 +265,8 @@ class EmployeeController extends Controller
         ]);
 
         try {
-            Excel::import(new EmployeesImport, $request->file('file'));
+            $user = auth()->user();
+            Excel::import(new EmployeesImport($user), $request->file('file'));
             return redirect()->route('employees.index')->with('success', 'Employees imported successfully.');
         } catch (\Exception $e) {
             $msg = 'เกิดข้อผิดพลาดในการนำเข้าพนักงาน: ' . $e->getMessage();
@@ -259,7 +284,8 @@ class EmployeeController extends Controller
         ]);
 
         try {
-            $import = new \App\Imports\SchedulesImport;
+            $user = auth()->user();
+            $import = new \App\Imports\SchedulesImport($user);
             Excel::import($import, $request->file('file'));
             
             $msg = "นำเข้าตารางกะสำเร็จ {$import->importedCount} รายการ";
@@ -281,7 +307,15 @@ class EmployeeController extends Controller
 
     public function printCard($id)
     {
+        $user = auth()->user();
         $employee = Employee::with('department')->findOrFail($id);
+
+        if ($user->isRestrictedToOwnDepartment()) {
+            if ($employee->department_id != $user->scopedDepartmentId()) {
+                abort(403, 'Unauthorized to view this employee card.');
+            }
+        }
+
         return view('employees.card', compact('employee'));
     }
 
@@ -292,13 +326,27 @@ class EmployeeController extends Controller
             return redirect()->back()->with('error', 'No employees selected.');
         }
 
-        $employees = Employee::with('department')->whereIn('id', $ids)->get();
+        $user = auth()->user();
+        $query = Employee::with('department')->whereIn('id', $ids);
+
+        if ($user->isRestrictedToOwnDepartment()) {
+            $query->where('department_id', $user->scopedDepartmentId());
+        }
+
+        $employees = $query->get();
         return view('employees.cards_bulk', compact('employees'));
     }
 
     public function showBulkLocation()
     {
-        $employees = Employee::with(['department', 'location'])->orderBy('department_id')->get();
+        $user = auth()->user();
+        $query = Employee::with(['department', 'location'])->orderBy('department_id');
+        
+        if ($user->isRestrictedToOwnDepartment()) {
+            $query->where('department_id', $user->scopedDepartmentId());
+        }
+
+        $employees = $query->get();
         $departments = Department::all();
         $locations = \App\Models\Location::withCount('employees')->orderBy('location_name')->get();
 
@@ -313,7 +361,14 @@ class EmployeeController extends Controller
             'location_id' => 'required|exists:locations,id',
         ]);
 
-        $employees = Employee::whereIn('id', $request->employee_ids)->get();
+        $user = auth()->user();
+        $query = Employee::whereIn('id', $request->employee_ids);
+
+        if ($user->isRestrictedToOwnDepartment()) {
+            $query->where('department_id', $user->scopedDepartmentId());
+        }
+
+        $employees = $query->get();
         $count = 0;
         foreach ($employees as $employee) {
             $employee->location_id = $request->location_id;
@@ -330,7 +385,12 @@ class EmployeeController extends Controller
 
     public function showBulkPerson(Request $request)
     {
+        $user = auth()->user();
         $query = Employee::with(['department', 'location'])->orderBy('department_id');
+        
+        if ($user->isRestrictedToOwnDepartment()) {
+            $query->where('department_id', $user->scopedDepartmentId());
+        }
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -373,7 +433,14 @@ class EmployeeController extends Controller
             'mode' => 'required|in:add,replace',
         ]);
 
-        $employees = Employee::whereIn('id', $request->employee_ids)->get();
+        $user = auth()->user();
+        $query = Employee::whereIn('id', $request->employee_ids);
+
+        if ($user->isRestrictedToOwnDepartment()) {
+            $query->where('department_id', $user->scopedDepartmentId());
+        }
+
+        $employees = $query->get();
         $checkpointIds = $request->checkpoint_ids;
         $count = $employees->count();
 
@@ -391,7 +458,14 @@ class EmployeeController extends Controller
 
     public function showBulkShift()
     {
-        $employees = Employee::with(['department', 'shift'])->orderBy('department_id')->get();
+        $user = auth()->user();
+        $query = Employee::with(['department', 'shift'])->orderBy('department_id');
+        
+        if ($user->isRestrictedToOwnDepartment()) {
+            $query->where('department_id', $user->scopedDepartmentId());
+        }
+
+        $employees = $query->get();
         $departments = Department::all();
         $shifts = \App\Models\Shift::withCount('employees')->orderBy('shift_name')->get();
 
@@ -406,7 +480,14 @@ class EmployeeController extends Controller
             'shift_id' => 'required|exists:shifts,id',
         ]);
 
-        $employees = Employee::whereIn('id', $request->employee_ids)->get();
+        $user = auth()->user();
+        $query = Employee::whereIn('id', $request->employee_ids);
+
+        if ($user->isRestrictedToOwnDepartment()) {
+            $query->where('department_id', $user->scopedDepartmentId());
+        }
+
+        $employees = $query->get();
         $count = 0;
         foreach ($employees as $employee) {
             $employee->shift_id = $request->shift_id;
@@ -429,7 +510,23 @@ class EmployeeController extends Controller
             'department_id' => 'required|exists:departments,id',
         ]);
 
-        $employees = Employee::whereIn('id', $request->employee_ids)->get();
+        $user = auth()->user();
+        
+        // Ensure isolated users can only move THEIR OWN employees
+        // AND prevent them from moving employees to OTHER departments!
+        if ($user->isRestrictedToOwnDepartment()) {
+            if ($request->department_id != $user->scopedDepartmentId()) {
+                abort(403, 'Unauthorized. Cannot move employees to a different department.');
+            }
+        }
+
+        $query = Employee::whereIn('id', $request->employee_ids);
+        
+        if ($user->isRestrictedToOwnDepartment()) {
+            $query->where('department_id', $user->scopedDepartmentId());
+        }
+
+        $employees = $query->get();
         $count = 0;
         foreach ($employees as $employee) {
             $employee->department_id = $request->department_id;
@@ -448,7 +545,14 @@ class EmployeeController extends Controller
             'employee_ids.*' => 'exists:employees,id',
         ]);
 
-        $count = Employee::whereIn('id', $request->employee_ids)->delete();
+        $user = auth()->user();
+        $query = Employee::whereIn('id', $request->employee_ids);
+
+        if ($user->isRestrictedToOwnDepartment()) {
+            $query->where('department_id', $user->scopedDepartmentId());
+        }
+
+        $count = $query->delete();
 
         return redirect()->route('employees.index')
             ->with('success', "ลบข้อมูลพนักงาน {$count} รายการ เรียบร้อยแล้ว");

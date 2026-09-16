@@ -409,7 +409,7 @@ class ReportController extends Controller
             $areaFallbackQuery = \App\Models\InspectionLog::with(['checkpoint', 'location', 'correctiveAction'])
                 ->whereHas('session', function ($q) use ($date, $departmentId, $shift, $reportType) {
                     $q->whereDate('inspection_date', $date);
-                    if ($departmentId) {
+                    if ($departmentId !== null && $departmentId !== '') {
                         $q->where('department_id', $departmentId);
                     }
                     if ($shift) {
@@ -598,7 +598,7 @@ class ReportController extends Controller
             ->whereNotNull('machine_id')
             ->whereIn('checkpoint_id', [1, 2]); // Completeness (1) & Cleanliness (2)
 
-        if ($departmentId) {
+        if ($departmentId !== null && $departmentId !== '') {
             $logsQuery->whereHas('session', function($q) use ($departmentId) {
                 $q->where('department_id', $departmentId);
             });
@@ -680,7 +680,7 @@ class ReportController extends Controller
 
         $query = \App\Models\InspectionLog::whereBetween('inspected_at', [$startDate, $endDate]);
         
-        if ($departmentId) {
+        if ($departmentId !== null && $departmentId !== '') {
             $query->whereHas('session', function($q) use ($departmentId) {
                 $q->where('department_id', $departmentId);
             });
@@ -821,7 +821,7 @@ class ReportController extends Controller
             ->where('result', 'fail')
             ->whereBetween('inspected_at', [$startDate, $endDate]);
 
-        if ($departmentId) {
+        if ($departmentId !== null && $departmentId !== '') {
             $query->whereHas('session', fn($q) => $q->where('department_id', $departmentId));
         }
 

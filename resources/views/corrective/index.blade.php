@@ -129,6 +129,61 @@
     @endpush
 
     <div class="container-fluid py-4" style="background-color: #f8fafc; min-height: calc(100vh - 70px);">
+        <!-- Dashboard Stats -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-3 col-6">
+                <div class="impeccable-card h-100 p-3 p-md-4 text-center">
+                    <h6 class="text-muted fw-bold mb-2">ปัญหาสะสมทั้งหมด</h6>
+                    <h2 class="fw-bolder text-dark mb-0">{{ $stats['total'] }}</h2>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="impeccable-card h-100 p-3 p-md-4 text-center" style="border-bottom: 4px solid #f59e0b;">
+                    <h6 class="text-muted fw-bold mb-2">กำลังดำเนินการ</h6>
+                    <h2 class="fw-bolder text-warning mb-0">{{ $stats['open'] }}</h2>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="impeccable-card h-100 p-3 p-md-4 text-center" style="border-bottom: 4px solid #10b981;">
+                    <h6 class="text-muted fw-bold mb-2">แก้ไขแล้ว (รอตรวจ)</h6>
+                    <h2 class="fw-bolder text-success mb-0">{{ $stats['resolved'] }}</h2>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="impeccable-card h-100 p-3 p-md-4 text-center" style="border-bottom: 4px solid #ef4444;">
+                    <h6 class="text-muted fw-bold mb-2">เกินกำหนด (Overdue)</h6>
+                    <h2 class="fw-bolder text-danger mb-0">{{ $stats['overdue'] }}</h2>
+                </div>
+            </div>
+        </div>
+
+        @if(isset($aiTagsTrend) && $aiTagsTrend->isNotEmpty())
+        <!-- AI Smart Tags Trend -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="impeccable-card p-4">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="impeccable-header-icon me-3" style="background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%); color: #9333ea; box-shadow: 0 4px 12px rgba(147, 51, 234, 0.1); width: 40px; height: 40px; font-size: 1.2rem;">
+                            <i class="bi bi-robot"></i>
+                        </div>
+                        <div>
+                            <h5 class="fw-bold text-dark mb-0">AI วิเคราะห์แนวโน้มปัญหา (Smart Tags)</h5>
+                            <div class="text-muted small">Top 5 ปัญหาที่พบบ่อยที่สุดจากประวัติการแจ้ง CAR ทั้งหมด</div>
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        @foreach($aiTagsTrend as $tag => $count)
+                            <div class="d-inline-flex align-items-center bg-light border rounded-pill px-3 py-1 shadow-sm">
+                                <span class="fw-bold" style="color: #475569;">#{{ $tag }}</span>
+                                <span class="badge bg-secondary rounded-pill ms-2">{{ $count }}</span>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endif
+
         <div class="row g-4">
             <!-- Left Column: Pending Actions -->
             <div class="col-lg-6">
@@ -160,7 +215,10 @@
                                                     {{ ucfirst($action->status) }}
                                                 </span>
                                                 @if(in_array($action->status, ['open', 'assigned']))
-                                                    @php $hoursOpen = now()->diffInHours($action->created_at); @endphp
+                                                    {{-- Carbon 3 defaults $absolute to false (Carbon 2 defaulted to true), so
+                                                         now()->diffInHours($past) is negative and both badges below were dead.
+                                                         Diff forward from created_at to get a positive age. --}}
+                                                    @php $hoursOpen = $action->created_at->diffInHours(now()); @endphp
                                                     @if($hoursOpen > 24)
                                                         <span class="badge bg-danger animate__animated animate__flash animate__infinite" style="font-size: 0.65rem;"><i class="bi bi-fire"></i> >24h</span>
                                                     @elseif($hoursOpen > 2)

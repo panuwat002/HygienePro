@@ -210,6 +210,11 @@ class AreaInspectionController extends Controller
                 ->with('error', 'เซสชันนี้จบงานไปแล้ว ไม่สามารถบันทึกเพิ่มได้');
         }
 
+        // Validate uploaded photos to prevent Unrestricted File Upload (RCE)
+        $request->validate([
+            'photos.*.*' => 'nullable|mimes:jpeg,png,jpg,gif,webp|max:10240', // 10MB max, must be image
+        ]);
+
         // Anti-Cheat (Speed Trap): Level 1
         // Reject the submission when the previous per-checkpoint save by the same
         // inspector landed less than $minSeconds ago — prevents walking past
@@ -270,15 +275,20 @@ class AreaInspectionController extends Controller
         // Old photo files to delete after the transaction commits — we only want to
         // touch disk once we're sure the DB write survived.
         $oldPhotosToDelete = [];
+        // Same reasoning for the LINE pushes: they used to fire from inside the
+        // transaction, so a later BulkValidationException rolled back the rows but
+        // could not unsend messages already posted to the plant group — and the
+        // transaction held row locks across three external HTTPS round-trips.
+        $pendingLineNotifications = [];
 
         try {
             DB::transaction(function () use (
                 $request, $session, $recleanFixMode, $targetResults, $checkpointTitles,
-                &$pendingCarNotifications, &$oldPhotosToDelete
+                &$pendingCarNotifications, &$oldPhotosToDelete, &$pendingLineNotifications
             ) {
                 $this->processBulkTargets(
                     $request, $session, $recleanFixMode, $targetResults, $checkpointTitles,
-                    $pendingCarNotifications, $oldPhotosToDelete
+                    $pendingCarNotifications, $oldPhotosToDelete, $pendingLineNotifications
                 );
             });
         } catch (BulkValidationException $e) {
@@ -294,6 +304,14 @@ class AreaInspectionController extends Controller
         foreach ($pendingCarNotifications as [$managers, $notification]) {
             foreach ($managers as $manager) {
                 $manager->notify($notification);
+            }
+        }
+        foreach ($pendingLineNotifications as $notification) {
+            try {
+                \Illuminate\Support\Facades\Notification::route(\App\Channels\LineMessagingChannel::class, '')
+                    ->notify($notification);
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('LINE Failed Notification Error (Area): ' . $e->getMessage());
             }
         }
 
@@ -312,7 +330,8 @@ class AreaInspectionController extends Controller
         array $targetResults,
         $checkpointTitles,
         array &$pendingCarNotifications,
-        array &$oldPhotosToDelete
+        array &$oldPhotosToDelete,
+        array &$pendingLineNotifications = []
     ): void {
         // Fix #11: Pre-fetch every reclean-pending log that could match any
         // (location, machine, checkpoint) combo we're about to write. The
@@ -489,21 +508,14 @@ class AreaInspectionController extends Controller
             }
             
             if (!empty($failedItemsForTarget)) {
-                $pendingCarNotifications[] = [
-                    // Only used as a hack to pass through this existing array, but instead we just dispatch to LINE
-                    [], null
-                ];
-                
-                try {
-                    \Illuminate\Support\Facades\Notification::route(\App\Channels\LineMessagingChannel::class, '')
-                        ->notify(new \App\Notifications\InspectionFailedLineNotification(
-                            $targetName,
-                            $session->department->dept_name ?? 'ไม่ระบุ',
-                            $failedItemsForTarget
-                        ));
-                } catch (\Exception $e) {
-                    \Illuminate\Support\Facades\Log::error('LINE Failed Notification Error (Area): ' . $e->getMessage());
-                }
+                // Queued, not sent: storeBulk dispatches these after the transaction
+                // commits, so a rollback cannot leave the plant group notified about
+                // defects that were never saved.
+                $pendingLineNotifications[] = new \App\Notifications\InspectionFailedLineNotification(
+                    $targetName,
+                    $session->department->dept_name ?? 'ไม่ระบุ',
+                    $failedItemsForTarget
+                );
             }
         }
     }

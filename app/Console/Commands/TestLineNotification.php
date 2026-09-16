@@ -26,8 +26,8 @@ class TestLineNotification extends Command
      */
     public function handle()
     {
-        $token = env('LINE_CHANNEL_ACCESS_TOKEN');
-        $groupId = env('LINE_GROUP_ID');
+        $token = config('services.line.token');
+        $groupId = config('services.line.group_id');
 
         if (!$token || !$groupId) {
             $this->error('LINE_CHANNEL_ACCESS_TOKEN or LINE_GROUP_ID is missing in .env');

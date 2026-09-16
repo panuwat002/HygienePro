@@ -8,10 +8,27 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\MachinesExport;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-
-class MachineController extends Controller
+class MachineController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(function ($request, $next) {
+                $user = auth()->user();
+                $readOnlyMethods = ['index', 'show', 'export', 'showMapping', 'showBulkMapping'];
+                
+                if ($user && !in_array($request->route()->getActionMethod(), $readOnlyMethods)) {
+                    if (!$user->isAdmin() && !$user->hasGlobalVisibility()) {
+                        abort(403, 'Unauthorized. Only users with global visibility can modify system-wide master data.');
+                    }
+                }
+                return $next($request);
+            }),
+        ];
+    }
     public function index()
     {
         $machines = Machine::with('location')->orderBy('location_id')->paginate(15);
@@ -31,7 +48,7 @@ class MachineController extends Controller
             'location_id' => 'required|exists:locations,id',
             'code' => 'nullable|string|max:50',
             'description' => 'nullable|string',
-            'image' => 'nullable|image|max:2048',
+            'image' => 'nullable|mimes:jpeg,png,jpg,gif,webp|max:2048',
         ]);
 
         $data = $request->except('image');
@@ -58,7 +75,7 @@ class MachineController extends Controller
             'location_id' => 'required|exists:locations,id',
             'code' => 'nullable|string|max:50',
             'description' => 'nullable|string',
-            'image' => 'nullable|image|max:2048',
+            'image' => 'nullable|mimes:jpeg,png,jpg,gif,webp|max:2048',
         ]);
 
         $data = $request->except('image');
@@ -157,7 +174,9 @@ class MachineController extends Controller
         
         // Execute python script using specified Python executable or default
         $scriptPath = base_path('scripts/python/smart_machine_import.py');
-        $pythonExecutable = env('PYTHON_PATH', 'python');
+        // config(), not env(): env() returns null after config:cache, which would
+        // silently fall back to bare "python" and break every machine import.
+        $pythonExecutable = config('services.python.path');
         $command = escapeshellarg($pythonExecutable) . " " . escapeshellarg($scriptPath) . " " . escapeshellarg($fullPath) . " 2>&1";
         $output = shell_exec($command);
         

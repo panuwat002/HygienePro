@@ -17,18 +17,18 @@ class RandomAuditEscalationMail extends Mailable implements ShouldQueue
     public $session;
     public $recheckSession;
     public $failRate;
-    public $failedEmployeesCount;
+    public $failedTargetsCount;
     public $totalInspected;
 
     /**
      * Create a new message instance.
      */
-    public function __construct(InspectionSession $session, InspectionSession $recheckSession, float $failRate, int $failedEmployeesCount, int $totalInspected)
+    public function __construct(InspectionSession $session, InspectionSession $recheckSession, float $failRate, int $failedTargetsCount, int $totalInspected)
     {
         $this->session = $session;
         $this->recheckSession = $recheckSession;
         $this->failRate = $failRate;
-        $this->failedEmployeesCount = $failedEmployeesCount;
+        $this->failedTargetsCount = $failedTargetsCount;
         $this->totalInspected = $totalInspected;
     }
 

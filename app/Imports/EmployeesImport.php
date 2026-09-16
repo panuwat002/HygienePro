@@ -10,6 +10,13 @@ use Maatwebsite\Excel\Concerns\WithStartRow;
 
 class EmployeesImport implements ToModel, WithStartRow
 {
+    protected $user;
+
+    public function __construct($user = null)
+    {
+        $this->user = $user;
+    }
+
     /**
      * @return int
      */
@@ -58,28 +65,52 @@ class EmployeesImport implements ToModel, WithStartRow
         }
 
         // Find or Create Department
-        if (!$deptName) {
-            $deptName = 'ส่วนกลาง';
+        if ($this->user && $this->user->isRestrictedToOwnDepartment()) {
+            // Force the department to the user's isolated department
+            $department = $this->user->department;
+        } else {
+            if (!$deptName) {
+                $deptName = 'ส่วนกลาง';
+            }
+            
+            if ($this->user && $this->user->isAdmin()) {
+                // Only admins can create new departments via import
+                $department = Department::firstOrCreate(
+                    ['dept_name' => $deptName],
+                    [
+                        'dept_code' => Str::slug($deptName, '_') . '_' . time(),
+                        'dept_description' => 'Imported via Excel'
+                    ]
+                );
+            } else {
+                // Non-admin: must match existing department, cannot create new ones
+                $department = Department::where('dept_name', $deptName)->first();
+                if (!$department) {
+                    return null; // Skip row — department doesn't exist and user can't create it
+                }
+            }
         }
-        $department = Department::firstOrCreate(
-            ['dept_name' => $deptName],
-            [
-                'dept_code' => Str::slug($deptName, '_') . '_' . time(),
-                'dept_description' => 'Imported via Excel'
-            ]
-        );
 
         $shiftId = null;
         if ($shiftName && $shiftName !== '-') {
-            $shift = \App\Models\Shift::firstOrCreate(
-                ['shift_name' => $shiftName],
-                [
-                    'shift_code' => Str::slug($shiftName, '_') . '_' . time(),
-                    'description' => 'Imported via Excel',
-                    'start_time' => '08:00:00',
-                    'end_time' => '17:00:00'
-                ]
-            );
+            if ($this->user && $this->user->isAdmin()) {
+                // Only admins can create new shifts via import
+                $shift = \App\Models\Shift::firstOrCreate(
+                    ['shift_name' => $shiftName],
+                    [
+                        'shift_code' => Str::slug($shiftName, '_') . '_' . time(),
+                        'description' => 'Imported via Excel',
+                        'start_time' => '08:00:00',
+                        'end_time' => '17:00:00'
+                    ]
+                );
+            } else {
+                // Non-admin: must match existing shift, cannot create new ones
+                $shift = \App\Models\Shift::where('shift_name', $shiftName)->first();
+                if (!$shift) {
+                    return null; // Skip row — shift doesn't exist and user can't create it
+                }
+            }
             $shiftId = $shift->id;
         }
 
@@ -102,6 +133,13 @@ class EmployeesImport implements ToModel, WithStartRow
         if ($id) {
             $employee = Employee::withTrashed()->find($id);
             if ($employee) {
+                // Prevent updating employees outside of isolated scope
+                if ($this->user && $this->user->isRestrictedToOwnDepartment()) {
+                    if ($employee->department_id != $this->user->department_id) {
+                        return null; // Skip this row, unauthorized
+                    }
+                }
+
                 if ($employee->trashed()) {
                     $employee->restore();
                 }
@@ -114,6 +152,13 @@ class EmployeesImport implements ToModel, WithStartRow
         // If no ID or ID not found, check by employee_id just in case, or create new
         $employee = Employee::withTrashed()->where('employee_id', $employeeId)->first();
         if ($employee) {
+            // Prevent updating employees outside of isolated scope
+            if ($this->user && $this->user->isRestrictedToOwnDepartment()) {
+                if ($employee->department_id != $this->user->department_id) {
+                    return null; // Skip this row, unauthorized
+                }
+            }
+
             if ($employee->trashed()) {
                 $employee->restore();
             }

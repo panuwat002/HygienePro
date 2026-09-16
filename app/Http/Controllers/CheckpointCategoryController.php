@@ -4,9 +4,27 @@ namespace App\Http\Controllers;
 
 use App\Models\CheckpointCategory;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-class CheckpointCategoryController extends Controller
+class CheckpointCategoryController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(function ($request, $next) {
+                $user = auth()->user();
+                $readOnlyMethods = ['index', 'show', 'export'];
+                
+                if ($user && !in_array($request->route()->getActionMethod(), $readOnlyMethods)) {
+                    if (!$user->isAdmin() && !$user->hasGlobalVisibility()) {
+                        abort(403, 'Unauthorized. Only users with global visibility can modify system-wide master data.');
+                    }
+                }
+                return $next($request);
+            }),
+        ];
+    }
     public function index()
     {
         $categories = CheckpointCategory::withCount('checkpoints')->get();

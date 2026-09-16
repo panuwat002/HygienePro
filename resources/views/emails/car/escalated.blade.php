@@ -19,6 +19,24 @@
             <td style="padding-bottom: 12px;"><strong style="color: #6b7280; font-size: 14px; text-transform: uppercase;">พื้นที่ (Location):</strong></td>
             <td style="padding-bottom: 12px; color: #1f2937; font-weight: 500;">{{ $action->log->session->department->dept_name ?? 'N/A' }}</td>
         </tr>
+        @if($action->log && $action->log->employee)
+        <tr>
+            <td style="padding-bottom: 12px;"><strong style="color: #6b7280; font-size: 14px; text-transform: uppercase;">เป้าหมาย/พนักงาน:</strong></td>
+            <td style="padding-bottom: 12px; color: #1f2937; font-weight: 500;">{{ $action->log->employee->fullname }}</td>
+        </tr>
+        @endif
+        @if($action->log && $action->log->machine)
+        <tr>
+            <td style="padding-bottom: 12px;"><strong style="color: #6b7280; font-size: 14px; text-transform: uppercase;">เป้าหมาย/เครื่องจักร:</strong></td>
+            <td style="padding-bottom: 12px; color: #1f2937; font-weight: 500;">{{ $action->log->machine->name }}</td>
+        </tr>
+        @endif
+        @if($action->log && $action->log->location && !$action->log->machine && !$action->log->employee)
+        <tr>
+            <td style="padding-bottom: 12px;"><strong style="color: #6b7280; font-size: 14px; text-transform: uppercase;">จุดที่พบ (Area):</strong></td>
+            <td style="padding-bottom: 12px; color: #1f2937; font-weight: 500;">{{ $action->log->location->location_name }}</td>
+        </tr>
+        @endif
         <tr>
             <td style="padding-bottom: 12px;"><strong style="color: #6b7280; font-size: 14px; text-transform: uppercase;">ผู้รายงาน (Reported By):</strong></td>
             <td style="padding-bottom: 12px; color: #1f2937; font-weight: 500;">{{ $action->escalator->name ?? 'QA Team' }}</td>

@@ -34,9 +34,9 @@ class CorrectiveActionController extends Controller
                 $q->where('assigned_to', $user->id)
                   ->orWhere('escalated_by', $user->id);
                 
-                // Manager Visibility: See all items in their department
-                // ONLY if user is Manager (Level >= 5)
-                if ($user->department_id && $user->level >= 5) {
+                // Manager/Supervisor Visibility: See all items in their department
+                // ONLY if user is Supervisor/Manager (Level >= 4)
+                if ($user->department_id && $user->level >= 4) {
                     $q->orWhereHas('log.session', function($sq) use ($user) {
                         $sq->where('department_id', $user->department_id);
                     });
@@ -49,7 +49,6 @@ class CorrectiveActionController extends Controller
         $openActions = $actions->whereIn('status', ['open', 'assigned', 'resolved']);
         $completedActions = $actions->whereIn('status', ['closed', 'verified']);
         
-        // Prepare Assignable Users: เฉพาะแผนกผลิต (Production) ที่มีสิทธิ์ระดับ Supervisor หรือ Manager ขึ้นไป
         $assignableUsers = \App\Models\User::whereHas('department', function($q) {
             $q->where('dept_name', 'like', '%Production%')
               ->orWhere('dept_name', 'like', '%ผลิต%');
@@ -59,7 +58,20 @@ class CorrectiveActionController extends Controller
               ->orWhere('level', '>=', 4);
         })
         ->get();
-        return view('corrective.index', compact('openActions', 'completedActions', 'assignableUsers'));
+
+        // Calculate Stats
+        $stats = [
+            'total' => $actions->count(),
+            'open' => $openActions->whereIn('status', ['open', 'assigned'])->count(),
+            'resolved' => $openActions->where('status', 'resolved')->count(),
+            'closed' => $completedActions->count(),
+            'overdue' => $actions->where('due_date', '<', now())->whereNotIn('status', ['closed', 'verified'])->count(),
+        ];
+
+        // AI Smart Tags Trend (Top 5 tags)
+        $aiTagsTrend = $actions->pluck('ai_tags')->flatten()->filter()->countBy()->sortDesc()->take(5);
+
+        return view('corrective.index', compact('openActions', 'completedActions', 'assignableUsers', 'stats', 'aiTagsTrend'));
     }
 
     public function assign(Request $request)
@@ -71,6 +83,27 @@ class CorrectiveActionController extends Controller
         ]);
 
         $action = \App\Models\CorrectiveAction::findOrFail($request->action_id);
+
+        // Reassigning a closed CAR silently reopened finished audit work.
+        if ($action->status === 'closed') {
+            return back()->with('error', 'ใบแจ้งปัญหานี้ปิดไปแล้ว ไม่สามารถจ่ายงานใหม่ได้ (CAR is already closed)');
+        }
+
+        $user = auth()->user();
+        $targetDeptId = $action->log?->session?->department_id;
+
+        // Authorization: Admin, QA, or Manager/Supervisor (level >= 4) of the target department
+        if (!$user->isAdmin() && !$user->isQA()) {
+            if ($user->level < 4 || $user->department_id !== $targetDeptId) {
+                return back()->with('error', 'คุณไม่มีสิทธิ์กำหนดผู้รับผิดชอบงานนี้ (Unauthorized to assign)');
+            }
+            
+            // SECURITY FIX: Ensure the assignee is from the SAME department
+            $assignee = \App\Models\User::find($request->assigned_to);
+            if ($assignee && $assignee->department_id !== $targetDeptId && !$assignee->isAdmin() && !$assignee->isQA()) {
+                return back()->with('error', 'ไม่สามารถจ่ายงานข้ามแผนกได้ (Cannot assign to user in different department)');
+            }
+        }
         
         $oldAssignee = $action->assigned_to;
         
@@ -131,23 +164,59 @@ class CorrectiveActionController extends Controller
         ]);
 
         $log = \App\Models\InspectionLog::find($request->log_id);
+        
+        $user = auth()->user();
+        $targetDeptId = $log->session?->department_id;
+        
+        // Authorization: Admin, QA, Inspector of this session, or Manager/Supervisor of target dept
+        if (!$user->isAdmin() && !$user->isQA() && $log->session?->inspector_id !== $user->id) {
+            if ($user->level < 4 || $user->department_id !== $targetDeptId) {
+                return back()->with('error', 'คุณไม่มีสิทธิ์สร้างใบแจ้งปัญหา (Unauthorized to escalate)');
+            }
+        }
 
         $assigneeId = $request->assignee_id;
+        
+        // SECURITY FIX: Ensure the assignee is from the SAME department
+        if ($assigneeId && !$user->isAdmin() && !$user->isQA()) {
+            $assignee = \App\Models\User::find($assigneeId);
+            if ($assignee && $assignee->department_id !== $targetDeptId && !$assignee->isAdmin() && !$assignee->isQA()) {
+                return back()->with('error', 'ไม่สามารถจ่ายงานข้ามแผนกได้ (Cannot assign to user in different department)');
+            }
+        }
         // BUG-010 Fix: Extract magic number / Use config
         $defaultDueHours = 24;
         $dueDate = $request->due_date ? \Carbon\Carbon::parse($request->due_date) : now()->addHours($defaultDueHours);
 
-        $action = \App\Models\CorrectiveAction::updateOrCreate([
-            'inspection_log_id' => $log->id,
-        ], [
+        $existing = \App\Models\CorrectiveAction::where('inspection_log_id', $log->id)->first();
+
+        // A CAR that has already been resolved or closed is a finished audit record.
+        // updateOrCreate() used to silently reopen and rewrite it, which let anyone
+        // authorised to escalate in this department erase the recorded root cause and
+        // reassign the escalator. Refuse instead.
+        if ($existing && in_array($existing->status, ['resolved', 'closed'], true)) {
+            return back()->with('error', 'ใบแจ้งปัญหานี้ปิดไปแล้ว ไม่สามารถแจ้งซ้ำได้ (CAR already resolved/closed)');
+        }
+
+        $attributes = [
             'status' => $assigneeId ? 'assigned' : 'open',
-            'escalated_by' => auth()->id(),
             'root_cause' => $request->note,
             'assigned_to' => $assigneeId,
             'assigned_at' => $assigneeId ? now() : null,
             'due_date' => $dueDate,
             'ai_tags' => \App\Services\AIService::getTagsFromFinding($request->note ?? ''),
-        ]);
+        ];
+
+        // escalated_by is the key close() authorises on, so it is set once at creation
+        // and never transferred by a later escalate() on the same log.
+        if (! $existing) {
+            $attributes['escalated_by'] = auth()->id();
+        }
+
+        $action = \App\Models\CorrectiveAction::updateOrCreate(
+            ['inspection_log_id' => $log->id],
+            $attributes
+        );
 
         // Email Notification
         try {
@@ -177,7 +246,7 @@ class CorrectiveActionController extends Controller
             }
 
             if (count($emails) > 0) {
-                \Illuminate\Support\Facades\Mail::to($emails)->send(new \App\Mail\NewCAREscalated($action));
+                \Illuminate\Support\Facades\Mail::bcc($emails)->send(new \App\Mail\NewCAREscalated($action));
             }
         } catch (\Exception $e) {
             \Log::error('Failed to send CAR email: ' . $e->getMessage());
@@ -192,10 +261,18 @@ class CorrectiveActionController extends Controller
             'action_id' => 'required|exists:corrective_actions,id',
             'action_taken' => 'required|string',
             'preventive_action' => 'required|string',
-            'proof_image' => 'required|image|max:10240' // 10MB
+            'proof_image' => 'required|mimes:jpeg,png,jpg,gif,webp|max:10240' // 10MB
         ]);
 
         $action = \App\Models\CorrectiveAction::findOrFail($request->action_id);
+
+        // A closed CAR is a finished audit record. Without this guard it could be
+        // pushed back to 'resolved' indefinitely — and resolve() sets assigned_to to
+        // the caller, so the escalator of a closed ticket could reopen it and claim
+        // ownership of work someone else completed.
+        if ($action->status === 'closed') {
+            return back()->with('error', 'ใบแจ้งปัญหานี้ปิดไปแล้ว ไม่สามารถแก้ไขได้ (CAR is already closed)');
+        }
 
         $user = auth()->user();
         if ($action->assigned_to !== $user->id && $action->escalated_by !== $user->id && !$user->isAdmin() && !$user->isQA()) {
@@ -258,6 +335,14 @@ class CorrectiveActionController extends Controller
             return back()->with('error', 'คุณต้องมีสิทธิ์ระดับ Manager ขึ้นไปเพื่อมอบหมายงาน (Manager level required)');
         }
 
+        // SECURITY FIX: Ensure the assignee is from the SAME department
+        if (!$user->isAdmin() && !$user->isQA()) {
+            $assignee = \App\Models\User::find($request->assigned_to);
+            if ($assignee && $assignee->department_id !== $targetDeptId && !$assignee->isAdmin() && !$assignee->isQA()) {
+                return back()->with('error', 'ไม่สามารถจ่ายงานข้ามแผนกได้ (Cannot delegate to user in different department)');
+            }
+        }
+
         $action->update([
             'assigned_to' => $request->assigned_to,
             'assigned_at' => now(),
@@ -271,13 +356,24 @@ class CorrectiveActionController extends Controller
     {
         $request->validate(['action_id' => 'required|exists:corrective_actions,id']);
         
-        $action = \App\Models\CorrectiveAction::find($request->action_id);
-        
+        // findOrFail, not find: the `exists` rule above queries the raw table and so
+        // matches soft-deleted rows, which find() then excludes — leaving $action null
+        // and 500ing on the update below. 404 is the right answer for a trashed CAR.
+        $action = \App\Models\CorrectiveAction::findOrFail($request->action_id);
+
         $isQA = auth()->user()->isQA();
         $isManager = auth()->user()->level >= 5;
+        $targetDeptId = $action->log?->session?->department_id;
 
-        if (auth()->id() != $action->escalated_by && !auth()->user()->isAdmin() && !$isQA && !$isManager) {
-             return back()->with('error', 'Only the escalator, QA, or Manager can close this ticket.');
+        // Manager can only close tickets in their own department. Strict comparison and
+        // an explicit null guard: with loose ==, a departmentless manager matched an
+        // orphaned log's null department and was treated as authorised.
+        $isAuthorizedManager = $isManager
+            && $targetDeptId !== null
+            && auth()->user()->department_id === $targetDeptId;
+
+        if (auth()->id() != $action->escalated_by && !auth()->user()->isAdmin() && !$isQA && !$isAuthorizedManager) {
+             return back()->with('error', 'Only the escalator, QA, or authorized Manager can close this ticket.');
         }
 
         $action->update([
@@ -298,62 +394,74 @@ class CorrectiveActionController extends Controller
         if ($action->inspection_log_id) {
             $log = \App\Models\InspectionLog::find($action->inspection_log_id);
             if ($log) {
-                // 1. Update the primary log
-                $log->update([
-                    'verification_status' => 'approved',
-                    'verified_at' => now()
-                ]);
-
-                // 2. Find and close ALL related 'reclean' logs in the same group
-                //    Group = Same session + Same employee/machine/location
-                $relatedQuery = \App\Models\InspectionLog::where('session_id', $log->session_id)
-                    ->where('verification_status', 'reclean');
+                // Determine the new status based on the user's role closing the CAR
+                $newStatus = null;
+                $user = auth()->user();
                 
-                // BUG-002 Fix: Better targeting of related logs
-                // Ensure we don't accidentally select all logs if identifiers are missing
-                $hasIdentifier = false;
-
-                if ($log->employee_id) {
-                    $relatedQuery->where('employee_id', $log->employee_id);
-                    $hasIdentifier = true;
-                } 
-                if ($log->machine_id) {
-                    $relatedQuery->where('machine_id', $log->machine_id);
-                    $hasIdentifier = true;
-                }
-                if ($log->location_id) {
-                    // Only use location if it's an Area inspection (no machine/employee)
-                    // Or if we want to group by location generally. 
-                    // Current logic implies specific target.
-                    if (!$log->machine_id && !$log->employee_id) {
-                        $relatedQuery->where('location_id', $log->location_id);
+                if ($user->isAdmin() || $user->isQA() || $user->level >= 5) {
+                    $newStatus = 'approved';
+                } elseif ($user->level >= 4) { // Supervisor
+                    $newStatus = 'verified';
+                } // Inspector / Staff (Level < 4) do not auto-approve/verify. Log remains 'reclean'
+                
+                if ($newStatus) {
+                    // 1. Update the primary log
+                    $log->update([
+                        'verification_status' => $newStatus,
+                        'verified_at' => now()
+                    ]);
+    
+                    // 2. Find and close ALL related 'reclean' logs in the same group
+                    //    Group = Same session + Same employee/machine/location
+                    $relatedQuery = \App\Models\InspectionLog::where('session_id', $log->session_id)
+                        ->where('verification_status', 'reclean');
+                    
+                    // BUG-002 Fix: Better targeting of related logs
+                    // Ensure we don't accidentally select all logs if identifiers are missing
+                    $hasIdentifier = false;
+    
+                    if ($log->employee_id) {
+                        $relatedQuery->where('employee_id', $log->employee_id);
+                        $hasIdentifier = true;
+                    } 
+                    if ($log->machine_id) {
+                        $relatedQuery->where('machine_id', $log->machine_id);
                         $hasIdentifier = true;
                     }
-                }
-
-                // Guard: If no valid identifier found (unlikely but safe), don't update others
-                if (!$hasIdentifier) {
-                    $relatedQuery->whereRaw('0 = 1'); // Return empty set
-                }
-
-                $relatedLogs = $relatedQuery->get();
-
-                foreach ($relatedLogs as $relatedLog) {
-                    // Check if this log's CAR is also closed
-                    $relatedCAR = $relatedLog->correctiveAction;
-                    
-                    if (!$relatedCAR || $relatedCAR->status === 'closed') {
-                        // No CAR or CAR is closed -> Approve this log too
-                        $relatedLog->update([
-                            'verification_status' => 'approved',
-                            'verified_at' => now()
-                        ]);
+                    if ($log->location_id) {
+                        // Only use location if it's an Area inspection (no machine/employee)
+                        // Or if we want to group by location generally. 
+                        // Current logic implies specific target.
+                        if (!$log->machine_id && !$log->employee_id) {
+                            $relatedQuery->where('location_id', $log->location_id);
+                            $hasIdentifier = true;
+                        }
+                    }
+    
+                    // Guard: If no valid identifier found (unlikely but safe), don't update others
+                    if (!$hasIdentifier) {
+                        $relatedQuery->whereRaw('0 = 1'); // Return empty set
+                    }
+    
+                    $relatedLogs = $relatedQuery->get();
+    
+                    foreach ($relatedLogs as $relatedLog) {
+                        // Check if this log's CAR is also closed
+                        $relatedCAR = $relatedLog->correctiveAction;
+                        
+                        if (!$relatedCAR || $relatedCAR->status === 'closed') {
+                            // No CAR or CAR is closed -> Approve this log too
+                            $relatedLog->update([
+                                'verification_status' => $newStatus,
+                                'verified_at' => now()
+                            ]);
+                        }
                     }
                 }
             }
         }
         // -----------------------------------
 
-        return back()->with('success', 'Ticket closed and related Inspection Logs approved.');
+        return back()->with('success', 'Ticket closed.');
     }
 }

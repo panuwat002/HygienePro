@@ -163,7 +163,7 @@
                             <h6 class="fw-bold mb-0 text-slate-800 fs-5"><i class="bi bi-activity text-teal-600 me-2"></i>แนวโน้มการพบปัญหารายเดือน</h6>
                             <small class="text-muted">สถิติจำนวนจุดที่ไม่ผ่านการตรวจ (Failures) ประจำเดือนปัจจุบัน</small>
                         </div>
-                        <span class="badge bg-slate-100 text-slate-600 rounded-pill px-3 py-1 border">Real-Time Data</span>
+                        <span class="badge bg-light text-secondary rounded-pill px-3 py-1 border border-secondary">Real-Time Data</span>
                     </div>
                     <div class="chart-container-responsive mt-2">
                         <canvas id="trendChart"></canvas>
@@ -423,12 +423,15 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Data from Controller
-            const trendLabels = {!! json_encode($trendLabels) !!};
-            const trendValues = {!! json_encode($trendValues) !!};
-            
-            const areaData = {!! json_encode($recurringAreas) !!};
-            const personnelData = {!! json_encode($recurringPersonnel) !!};
-            const defectData = {!! json_encode($commonDefects) !!};
+            // @json() applies JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT.
+            // Plain json_encode() leaves "<" and "/" intact, so a checkpoint title
+            // or location name containing "</script>" would break out of this block.
+            const trendLabels = @json($trendLabels);
+            const trendValues = @json($trendValues);
+
+            const areaData = @json($recurringAreas);
+            const personnelData = @json($recurringPersonnel);
+            const defectData = @json($commonDefects);
 
             // Toggle machine filter group
             const reportTypeSelect = document.getElementById('report_type');

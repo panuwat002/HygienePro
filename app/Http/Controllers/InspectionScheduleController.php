@@ -30,10 +30,11 @@ class InspectionScheduleController extends Controller
                   });
             });
 
+        // No department must mean "sees nothing", not "sees everything": the old
+        // `if ($user->scopedDepartmentId())` wrapper skipped the filter entirely for a
+        // departmentless non-admin. scopedDepartmentId() returns 0, which matches no row.
         if (!$user->isAdmin()) {
-            if ($user->department_id) {
-                $scheduleQuery->where('department_id', $user->department_id);
-            }
+            $scheduleQuery->where('department_id', $user->scopedDepartmentId());
         }
 
         $schedules = $scheduleQuery->get();
@@ -110,10 +111,9 @@ class InspectionScheduleController extends Controller
         
         $query = InspectionSchedule::with(['department', 'targetable']);
 
+        // Same fail-open as compliance(): a departmentless non-admin skipped the filter.
         if (!$user->isAdmin()) {
-            if ($user->department_id) {
-                $query->where('department_id', $user->department_id);
-            }
+            $query->where('department_id', $user->scopedDepartmentId());
         }
 
         $schedules = $query->orderBy('is_active', 'desc')
@@ -151,6 +151,13 @@ class InspectionScheduleController extends Controller
             'end_time' => 'required',
             'days_of_week' => 'nullable|array',
         ]);
+        
+        $user = auth()->user();
+        if ($user && $user->isRestrictedToOwnDepartment()) {
+            if ($request->department_id != $user->scopedDepartmentId()) {
+                abort(403, 'Unauthorized to create schedules for this department.');
+            }
+        }
 
         $targetClass = $request->target_type === 'machine' ? Machine::class : Location::class;
 
@@ -174,6 +181,13 @@ class InspectionScheduleController extends Controller
      */
     public function edit(InspectionSchedule $schedule)
     {
+        $user = auth()->user();
+        if ($user && $user->isRestrictedToOwnDepartment()) {
+            if ($schedule->department_id != $user->scopedDepartmentId()) {
+                abort(403, 'Unauthorized to edit this schedule.');
+            }
+        }
+
         $departments = Department::all();
         $locations = Location::all();
         $machines = Machine::all();
@@ -197,6 +211,14 @@ class InspectionScheduleController extends Controller
             'days_of_week' => 'nullable|array',
         ]);
 
+        $user = auth()->user();
+        if ($user && $user->isRestrictedToOwnDepartment()) {
+            // Cannot change schedule to another department, and cannot edit schedule of another department
+            if ($request->department_id != $user->scopedDepartmentId() || $schedule->department_id != $user->scopedDepartmentId()) {
+                abort(403, 'Unauthorized to update this schedule.');
+            }
+        }
+
         $targetClass = $request->target_type === 'machine' ? Machine::class : Location::class;
 
         $schedule->update([
@@ -219,6 +241,13 @@ class InspectionScheduleController extends Controller
      */
     public function destroy(InspectionSchedule $schedule)
     {
+        $user = auth()->user();
+        if ($user && $user->isRestrictedToOwnDepartment()) {
+            if ($schedule->department_id != $user->scopedDepartmentId()) {
+                abort(403, 'Unauthorized to delete this schedule.');
+            }
+        }
+        
         $schedule->delete();
         return back()->with('success', 'Schedule deleted.');
     }

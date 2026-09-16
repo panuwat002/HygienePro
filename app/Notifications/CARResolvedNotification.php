@@ -43,7 +43,7 @@ class CARResolvedNotification extends Notification
     {
         $log = $this->action->log;
         $checkpointName = $log?->checkpoint_title_snapshot ?? 'ไม่ระบุจุดตรวจ';
-        $place = $log?->machine ? $log->machine->name : ($log?->location ? $log->location->location_name : 'ไม่ระบุพื้นที่');
+        $place = $log?->employee ? $log->employee->fullname : ($log?->machine ? $log->machine->name : ($log?->location ? $log->location->location_name : 'ไม่ระบุพื้นที่/บุคคล'));
         
         $assigneeName = $this->action->assignee ? $this->action->assignee->name : 'เจ้าหน้าที่';
 
@@ -66,7 +66,7 @@ class CARResolvedNotification extends Notification
     {
         $log = $this->action->log;
         $checkpointName = $log?->checkpoint_title_snapshot ?? 'ไม่ระบุจุดตรวจ';
-        $place = $log?->machine ? $log->machine->name : ($log?->location ? $log->location->location_name : 'ไม่ระบุพื้นที่');
+        $place = $log?->employee ? $log->employee->fullname : ($log?->machine ? $log->machine->name : ($log?->location ? $log->location->location_name : 'ไม่ระบุพื้นที่/บุคคล'));
 
         return [
             'type' => 'car_resolved',

@@ -8,9 +8,27 @@ use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\LocationsExport;
 use App\Imports\LocationsImport;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-class LocationController extends Controller
+class LocationController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(function ($request, $next) {
+                $user = auth()->user();
+                $readOnlyMethods = ['index', 'show', 'export', 'showMapping', 'showBulkMapping'];
+                
+                if ($user && !in_array($request->route()->getActionMethod(), $readOnlyMethods)) {
+                    if (!$user->isAdmin() && !$user->hasGlobalVisibility()) {
+                        abort(403, 'Unauthorized. Only users with global visibility can modify system-wide master data.');
+                    }
+                }
+                return $next($request);
+            }),
+        ];
+    }
     public function index()
     {
         $locations = Location::withCount(['checkpoints', 'machines'])

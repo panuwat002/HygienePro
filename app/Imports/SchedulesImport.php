@@ -13,6 +13,12 @@ class SchedulesImport implements ToCollection
 {
     public $skippedCount = 0;
     public $importedCount = 0;
+    protected $user;
+
+    public function __construct($user = null)
+    {
+        $this->user = $user;
+    }
 
     public function collection(Collection $rows)
     {
@@ -78,7 +84,25 @@ class SchedulesImport implements ToCollection
                 ->orWhere('employee_id', ltrim($employeeCode, '0'))
                 ->first();
 
-            if (!$employee) {
+            if ($employee) {
+                // Prevent updating employees outside of isolated scope
+                if ($this->user && $this->user->isRestrictedToOwnDepartment()) {
+                    if ($employee->department_id != $this->user->department_id) {
+                        $this->skippedCount++;
+                        continue; // Skip this row, unauthorized
+                    }
+                }
+                
+                if ($employee->trashed()) {
+                    $employee->restore();
+                }
+            } else {
+                // Determine Department for new employee
+                $newDeptId = null;
+                if ($this->user && $this->user->isRestrictedToOwnDepartment()) {
+                    $newDeptId = $this->user->department_id;
+                }
+                
                 // Create missing employee automatically
                 $employee = Employee::create([
                     'employee_id' => $employeeCode,
@@ -87,32 +111,36 @@ class SchedulesImport implements ToCollection
                     'prefix' => '',
                     'fullname' => $nameFull,
                     'is_active' => true,
+                    'department_id' => $newDeptId,
                     'qr_code_hash' => (string) \Illuminate\Support\Str::uuid(),
                 ]);
-            } else if ($employee->trashed()) {
-                $employee->restore();
             }
 
             // Update Department using correct column
             if ($deptName) {
-                $normalizeDept = function ($str) {
-                    return mb_strtolower(preg_replace('/^แผนก\s*/u', '', str_replace(' ', '', $str)));
-                };
-                $normalizedDept = $normalizeDept($deptName);
-                
-                $department = \App\Models\Department::all()->first(function ($d) use ($normalizeDept, $normalizedDept) {
-                    return $normalizeDept($d->dept_name) === $normalizedDept;
-                });
-                
-                if (!$department) {
-                    $department = \App\Models\Department::create([
-                        'dept_name' => $deptName,
-                        'dept_code' => \Illuminate\Support\Str::slug($deptName, '_') . '_' . time(), 
-                        'dept_description' => 'Auto Created from Schedule Import'
-                    ]);
+                if ($this->user && $this->user->isRestrictedToOwnDepartment()) {
+                    // Force the department to the user's isolated department
+                    $employee->department_id = $this->user->department_id;
+                } else {
+                    $normalizeDept = function ($str) {
+                        return mb_strtolower(preg_replace('/^แผนก\s*/u', '', str_replace(' ', '', $str)));
+                    };
+                    $normalizedDept = $normalizeDept($deptName);
+                    
+                    $department = \App\Models\Department::all()->first(function ($d) use ($normalizeDept, $normalizedDept) {
+                        return $normalizeDept($d->dept_name) === $normalizedDept;
+                    });
+                    
+                    if (!$department) {
+                        $department = \App\Models\Department::create([
+                            'dept_name' => $deptName,
+                            'dept_code' => \Illuminate\Support\Str::slug($deptName, '_') . '_' . time(), 
+                            'dept_description' => 'Auto Created from Schedule Import'
+                        ]);
+                    }
+                    
+                    $employee->department_id = $department->id;
                 }
-                
-                $employee->department_id = $department->id;
             }
             
             if ($nameFull && $nameFull !== 'Unknown') {

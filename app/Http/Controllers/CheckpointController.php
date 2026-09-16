@@ -8,9 +8,27 @@ use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\CheckpointsExport;
 use App\Imports\CheckpointsImport;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-class CheckpointController extends Controller
+class CheckpointController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(function ($request, $next) {
+                $user = auth()->user();
+                $readOnlyMethods = ['index', 'show', 'export'];
+                
+                if ($user && !in_array($request->route()->getActionMethod(), $readOnlyMethods)) {
+                    if (!$user->isAdmin() && !$user->hasGlobalVisibility()) {
+                        abort(403, 'Unauthorized. Only users with global visibility can modify system-wide master data.');
+                    }
+                }
+                return $next($request);
+            }),
+        ];
+    }
     public function index()
     {
         $checkpoints = Checkpoint::with('category')->orderBy('sort_order')->orderBy('id')->get();
@@ -29,8 +47,8 @@ class CheckpointController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'category_id' => 'nullable|exists:checkpoint_categories,id',
-            'image_good' => 'nullable|image|max:10240',
-            'image_bad' => 'nullable|image|max:10240',
+            'image_good' => 'nullable|mimes:jpeg,png,jpg,gif,webp|max:10240',
+            'image_bad' => 'nullable|mimes:jpeg,png,jpg,gif,webp|max:10240',
         ]);
 
         $data = $request->all();
@@ -59,8 +77,8 @@ class CheckpointController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'category_id' => 'nullable|exists:checkpoint_categories,id',
-            'image_good' => 'nullable|image|max:10240',
-            'image_bad' => 'nullable|image|max:10240',
+            'image_good' => 'nullable|mimes:jpeg,png,jpg,gif,webp|max:10240',
+            'image_bad' => 'nullable|mimes:jpeg,png,jpg,gif,webp|max:10240',
         ]);
 
         $data = $request->all();
@@ -130,8 +148,8 @@ class CheckpointController extends Controller
             'category_id' => 'nullable|exists:checkpoint_categories,id',
             'new_category_name' => 'nullable|string|max:255|unique:checkpoint_categories,name',
             'type' => 'nullable|in:person,area',
-            'image_good' => 'nullable|image|max:10240',
-            'image_bad' => 'nullable|image|max:10240',
+            'image_good' => 'nullable|mimes:jpeg,png,jpg,gif,webp|max:10240',
+            'image_bad' => 'nullable|mimes:jpeg,png,jpg,gif,webp|max:10240',
         ]);
 
         $categoryId = $request->category_id;

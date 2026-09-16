@@ -72,12 +72,24 @@
         <div class="content">
             <p>เรียน ผู้จัดการแผนก และ QA Manager,</p>
             
-            <p>ระบบตรวจพบว่าผลการสุ่มตรวจ (Random Audit) ประจำสัปดาห์ ของ <strong>แผนก {{ $session->department->dept_name ?? 'N/A' }}</strong> มีอัตราพนักงานไม่ผ่านเกณฑ์สุขลักษณะเกินกำหนด (20%)</p>
+            @php
+                $targetNameStr = 'พนักงาน';
+                $unitStr = 'คน';
+                if($session->type === 'machine') {
+                    $targetNameStr = 'เครื่องจักร';
+                    $unitStr = 'เครื่อง';
+                } elseif($session->type === 'area') {
+                    $targetNameStr = 'พื้นที่';
+                    $unitStr = 'จุด';
+                }
+            @endphp
+            
+            <p>ระบบตรวจพบว่าผลการสุ่มตรวจ (Random Audit) ประจำสัปดาห์ ของ <strong>แผนก {{ $session->department->dept_name ?? 'N/A' }}</strong> มีอัตรา{{ $targetNameStr }}ไม่ผ่านเกณฑ์สุขลักษณะเกินกำหนด (20%)</p>
             
             <div class="stats-box">
                 <div>อัตราไม่ผ่านเกณฑ์ (Fail Rate)</div>
                 <div class="rate">{{ number_format($failRate, 1) }}%</div>
-                <div style="margin-top: 10px;">พนักงานไม่ผ่าน {{ $failedEmployeesCount }} คน จากที่สุ่มตรวจ {{ $totalInspected }} คน</div>
+                <div style="margin-top: 10px;">{{ $targetNameStr }}ไม่ผ่าน {{ $failedTargetsCount }} {{ $unitStr }} จากที่สุ่มตรวจ {{ $totalInspected }} {{ $unitStr }}</div>
             </div>
             
             <h3>รายละเอียดการตรวจ</h3>
@@ -88,7 +100,7 @@
             </ul>
             
             <p><strong>การดำเนินการอัตโนมัติ:</strong><br>
-            ระบบได้ทำการสร้างรอบตรวจ <strong>Re-check (ตรวจซ้ำทั้งหมด)</strong> สำหรับพนักงานทุกคนในแผนกนี้เรียบร้อยแล้ว กรุณาแจ้งให้ QA เข้าตรวจสอบรอบ Re-check โดยเร็วที่สุด</p>
+            ระบบได้ทำการสร้างรอบตรวจ <strong>Re-check (ตรวจซ้ำทั้งหมด)</strong> สำหรับ{{ $targetNameStr }}ทุกคนในแผนกนี้เรียบร้อยแล้ว กรุณาแจ้งให้ QA เข้าตรวจสอบรอบ Re-check โดยเร็วที่สุด</p>
             
             <div style="text-align: center;">
                 <a href="{{ url('/inspection/dashboard/' . $session->type) }}" class="btn">เข้าสู่ระบบเพื่อตรวจสอบ</a>

@@ -652,7 +652,7 @@
 
                         // Populate Location Filter (for Area/Machine)
                         if ('{{ $type }}' !== 'personnel' && locationFilter) {
-                            locationFilter.innerHTML = '<option value="" selected disabled>-- กรุณาเลือกพื้นที่ --</option><option value="all">-- ทั้งหมด --</option>';
+                            locationFilter.innerHTML = '<option value="all" selected>-- ทั้งหมด --</option>';
                             if (currentLocations.length > 0) {
                                 currentLocations.forEach(loc => {
                                     const option = document.createElement('option');
@@ -661,21 +661,12 @@
                                     locationFilter.appendChild(option);
                                 });
                             }
-                            // Reset filter to empty (forcing selection)
-                            locationFilter.value = ""; 
-                            
-                             cardsContainer.innerHTML = `
-                                <div class="col-12 py-5 text-center animate-in" style="column-span: all; -webkit-column-span: all; background: linear-gradient(135deg, #f8faff 0%, #eef2f9 100%); border-radius: 20px; border: 2px dashed #cdd7e5; transition: all 0.3s ease;">
-                                    <div class="d-inline-flex align-items-center justify-content-center bg-white shadow-sm rounded-circle mb-4 animate-float" style="width: 80px; height: 80px; transition: transform 0.3s ease; cursor: pointer;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">
-                                        <i class="bi bi-map-fill text-primary" style="font-size: 2.5rem;"></i>
-                                    </div>
-                                    <h5 class="fw-bold text-dark mb-2">ยังไม่ได้เลือกพื้นที่เป้าหมาย</h5>
-                                    <p class="text-muted mb-0" style="font-size: 0.95rem;">กรุณาเลือกพื้นที่จากเมนูด้านบน เพื่อเริ่มดำเนินการตรวจสอบ<br><small class="text-secondary">(Please select a location above to view targets)</small></p>
-                                </div>
-                             `;
-                        } else {
-                            renderLocations(currentLocations);
+                            // Set filter to 'all'
+                            locationFilter.value = "all"; 
                         }
+                        
+                        // Always render locations initially
+                        renderLocations(currentLocations);
                         
                         if(data.session_exists) {
                             refreshSessionUI(data);
@@ -717,12 +708,34 @@
             window.fetchStats(); 
         }
 
+        // Machine and location names come from the DB (and from Excel import, which
+        // any level-4 user can run) and are interpolated into HTML strings that get
+        // assigned to innerHTML below. Without this, a name like
+        // "<img src=x onerror=...>" executes for every inspector who loads the page.
+        function escapeHtml(value) {
+            if (value === null || value === undefined) return '';
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         function renderLocations(locations) {
             cardsContainer.innerHTML = '';
             
             if(!locations || locations.length === 0) {
-                 overviewContainer.classList.add('d-none');
-                 cardsContainer.innerHTML = '<div class="col-12 text-center text-muted py-3" style="column-span: all; -webkit-column-span: all;">ไม่มีข้อมูลจุดประจำการ</div>';
+                 overviewContainer.classList.remove('d-none');
+                 cardsContainer.innerHTML = `
+                    <div class="col-12 text-center text-muted py-5 animate-in" style="column-span: all; -webkit-column-span: all;">
+                        <div class="d-inline-flex align-items-center justify-content-center bg-light rounded-circle mb-3" style="width: 80px; height: 80px;">
+                            <i class="bi bi-folder-x text-secondary" style="font-size: 2.5rem;"></i>
+                        </div>
+                        <h5 class="fw-bold text-dark mb-2">ไม่พบข้อมูลเป้าหมายการตรวจ</h5>
+                        <p class="text-muted mb-0">แผนกหรือตัวกรองที่คุณเลือก ไม่มีเป้าหมายพนักงาน เครื่องจักร หรือจุดประจำการให้ตรวจสอบ</p>
+                    </div>
+                 `;
                  return;
             }
 
@@ -779,6 +792,7 @@
                 }
 
                 let areaSelectionHtml = '';
+                let hasSelectableItems = false;
                 if ('{{ $type }}' === 'area') {
                     const isAreaInspected = loc.inspected_count > 0;
                     if (isAreaInspected) {
@@ -789,6 +803,7 @@
                         }
                     } else {
                         const hasCheckpoints = loc.has_checkpoints;
+                        if (hasCheckpoints) hasSelectableItems = true;
                         const areaTargetId = `target_loc_${loc.id}`;
                         const disabledAttr = hasCheckpoints ? '' : 'disabled';
                         const labelClass = hasCheckpoints ? (isAreaInspected ? 'btn-outline-success' : 'btn-outline-primary') : 'btn-outline-secondary text-muted bg-light border-0';
@@ -857,7 +872,7 @@
                                             <div class="form-check p-0">
                                                 <input type="checkbox" class="btn-check target-checkbox" disabled>
                                                 <label class="btn btn-sm btn-outline-secondary text-muted bg-light border-0 w-100 rounded-3 text-start px-3 mb-2 py-2 d-flex justify-content-between align-items-center" style="opacity: 0.6; cursor: not-allowed;">
-                                                    <span class="fw-medium"><i class="bi bi-gear-wide-connected me-2"></i>${m.name}</span>
+                                                    <span class="fw-medium"><i class="bi bi-gear-wide-connected me-2"></i>${escapeHtml(m.name)}</span>
                                                     <div class="check-indicator">
                                                         <span class="badge bg-secondary text-light"><i class="bi bi-dash-circle me-1"></i>งดใช้งาน</span>
                                                     </div>
@@ -887,7 +902,7 @@
                                     <div class="form-check p-0">
                                         <input type="checkbox" class="btn-check target-checkbox" name="targets[]" value="machine:${m.id}" id="${mTargetId}" autocomplete="off" ${mDisabledAttr}>
                                         <label class="btn btn-sm ${mLabelClass} w-100 rounded-3 text-start px-3 mb-2 py-2 d-flex justify-content-between align-items-center" for="${mTargetId}" style="${!mHasCheckpoints ? 'opacity: 0.7; cursor: not-allowed;' : ''}">
-                                            <span class="fw-medium"><i class="bi bi-gear-wide-connected me-2"></i>${m.name}</span>
+                                            <span class="fw-medium"><i class="bi bi-gear-wide-connected me-2"></i>${escapeHtml(m.name)}</span>
                                             <div class="check-indicator">
                                                 ${mStatusIcon}
                                             </div>
@@ -899,6 +914,7 @@
                     }
 
                     if (visibleMachines > 0) {
+                        hasSelectableItems = true;
                         const collapseId = `collapse_loc_${loc.id}`;
                         // Collapse button covers area + machines together.
                         areaSelectionHtml += `
@@ -920,22 +936,24 @@
                 const isCurrentShift = loc.is_current_shift || false;
                 const shiftValue = String(loc.id).replace('shift_', '');
                 
-                // For personnel, we now check targets[] inputs or a javascript array.
-                // We'll determine selection via a class 'selected' added by our JS.
-                const pointerStyle = '{{ $type }}' === 'personnel' ? 'cursor: pointer;' : '';
-                const clickHandler = '{{ $type }}' === 'personnel' ? `onclick="toggleShift('${shiftValue}', '${loc.id}', this)"` : '';
+                const isPersonnel = '{{ $type }}' === 'personnel';
+                const pointerStyle = (isPersonnel || hasSelectableItems) ? 'cursor: pointer;' : '';
+                
+                let clickHandler = '';
+                if (isPersonnel) {
+                    clickHandler = `onclick="toggleShift('${shiftValue}', '${loc.id}', this)"`;
+                } else if (hasSelectableItems) {
+                    clickHandler = `onclick="toggleRoom(this, event)"`;
+                }
 
-                // We won't set cardBorderStyle based on isSelected at render time for personnel, 
-                // because we'll rely on our toggleShift JS to maintain the visual state across re-renders.
-                // Wait, if it re-renders, we NEED to know if it's selected.
-                // We'll read from our new global array 'selectedShiftsArray'.
+                // For personnel, we read from our new global array 'selectedShiftsArray'.
                 const isSelected = (typeof selectedShiftsArray !== 'undefined' && selectedShiftsArray.includes(shiftValue));
                 
-                const cardBorderStyle = isSelected 
+                const cardBorderStyle = isSelected && isPersonnel
                     ? 'border: 2px solid rgba(59,130,246,1) !important; background: linear-gradient(to right, rgba(59,130,246,0.05), transparent);' 
                     : (isCurrentShift ? 'border: 2px solid rgba(59,130,246,0.5) !important; background: linear-gradient(to right, rgba(59,130,246,0.02), transparent);' : '');
                 
-                const selectedBadge = isSelected
+                const selectedBadge = isSelected && isPersonnel
                     ? '<i class="bi bi-check-circle-fill text-primary ms-auto fs-5 selected-badge"></i>'
                     : '';
                     
@@ -945,15 +963,22 @@
 
                 const html = `
                 <div class="masonry-item location-card-col mb-3 animate-stagger" data-location-id="${loc.id}" style="animation-delay: ${animDelay}s">
-                    <div class="card border-0 shadow-sm rounded-4 hover-elevate ${opacityClass} ${'{{ $type }}' === 'personnel' ? 'shift-card' : ''}" style="${cardBorderStyle} ${pointerStyle}" ${clickHandler}>
+                    <div class="card border-0 shadow-sm rounded-4 hover-elevate ${opacityClass} ${isPersonnel ? 'shift-card' : 'room-card'}" style="${cardBorderStyle} ${pointerStyle}" ${clickHandler}>
                         <div class="card-body p-4">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold fs-6 mb-0 text-dark d-flex align-items-center w-100">${loc.location_name}${currentShiftBadge}${selectedBadge}</h6>
-                                ${progressBadge}
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div class="d-flex align-items-center w-100">
+                                    <h6 class="fw-bold fs-6 mb-0 text-dark d-flex align-items-center w-100">
+                                        ${escapeHtml(loc.location_name)}
+                                        ${currentShiftBadge}${selectedBadge}
+                                    </h6>
+                                </div>
+                                <div class="ms-2 text-end flex-shrink-0">
+                                    ${progressBadge}
+                                </div>
                             </div>
                             
-                            ${'{{ $type }}' === 'personnel' ? `
-                                <p class="text-muted small mb-3 text-truncate">${loc.description || '-'}</p>
+                            ${isPersonnel ? `
+                                <p class="text-muted small mb-3 text-truncate">${escapeHtml(loc.description) || '-'}</p>
                                 <div class="d-flex justify-content-between align-items-center mt-auto pt-3 border-top border-light">
                                     <small class="text-muted fw-medium"><i class="bi bi-people-fill text-secondary opacity-75 me-1"></i> มีพนักงาน ${total} คน</small>
                                     <small class="${inspected > 0 ? 'text-success fw-bold' : 'text-muted fw-medium'}"><i class="bi bi-check-circle-fill me-1 ${inspected > 0 ? '' : 'text-secondary opacity-50'}"></i>ตรวจแล้ว ${inspected} คน</small>
@@ -987,13 +1012,21 @@
                 
                 checkboxes.forEach(cb => {
                     cb.checked = targetState;
-                    // Trigger change event for any listeners
-                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                    // Trigger change event for any listeners (like room master checkbox logic if needed)
+                    // But we can also just manually update the room checkboxes
+                });
+
+                // Update room card style
+                const cards = container.querySelectorAll('.location-card-col');
+                cards.forEach(card => {
+                    if (typeof window.updateRoomCardStyle === 'function') {
+                        window.updateRoomCardStyle(card.querySelector('.card'));
+                    }
                 });
 
                 updateSubmitButton();
                 
-                selectAllBtn.innerHTML = targetState ? '<i class="bi bi-check-all me-1"></i>เลือกทั้งหมด' : '<i class="bi bi-dash-circle me-1"></i>ยกเลิกทั้งหมด';
+                selectAllBtn.innerHTML = targetState ? '<i class="bi bi-dash-circle me-1"></i>ยกเลิกทั้งหมด' : '<i class="bi bi-check-all me-1"></i>เลือกทั้งหมด';
             }
         });
 
@@ -1002,6 +1035,14 @@
             overviewContainer.addEventListener('change', function(e) {
                 if (e.target.classList.contains('target-checkbox')) {
                     updateSubmitButton();
+                    
+                    const cardCol = e.target.closest('.location-card-col');
+                    if (cardCol) {
+                        const card = cardCol.querySelector('.card');
+                        if (card && typeof window.updateRoomCardStyle === 'function') {
+                            window.updateRoomCardStyle(card);
+                        }
+                    }
                 }
             });
         }
@@ -1076,13 +1117,24 @@
             }
 
             const round = data.session_round || 1;
-            const canReopen = !!data.session_can_reopen;
+            let canReopen = !!data.session_can_reopen;
+            const remainingCount = {{ isset($remainingCount) ? $remainingCount : 0 }};
+            
+            let helpText = '';
+            if (canReopen) {
+                if (remainingCount === 0) {
+                    canReopen = false;
+                    helpText = 'ตรวจครบทุกเป้าหมายในรอบนี้แล้ว กรุณา "เริ่มรอบใหม่" เพื่อตรวจซ้ำ';
+                } else {
+                    helpText = 'กด "ตรวจต่อ" เพื่อทำเฉพาะรายการที่ยังเหลือในรอบเดิม หรือ "เริ่มรอบใหม่" เพื่อตรวจใหม่ทั้งชุด';
+                }
+            } else {
+                helpText = 'รอบนี้ถูกตรวจสอบโดยหัวหน้างานแล้ว จึงตรวจต่อไม่ได้ ต้องเริ่มรอบใหม่เท่านั้น';
+            }
 
             setText('finished-round-no', round);
             setText('next-round-no', round + 1);
-            setText('continue-round-help', canReopen
-                ? 'กด "ตรวจต่อ" เพื่อทำเฉพาะรายการที่ยังเหลือในรอบเดิม หรือ "เริ่มรอบใหม่" เพื่อตรวจใหม่ทั้งชุด'
-                : 'รอบนี้ถูกตรวจสอบโดยหัวหน้างานแล้ว จึงตรวจต่อไม่ได้ ต้องเริ่มรอบใหม่เท่านั้น');
+            setText('continue-round-help', helpText);
             if (newRoundBtn) newRoundBtn.classList.toggle('d-none', !canReopen);
 
             return canReopen;
@@ -1248,6 +1300,63 @@
 
             if (typeof window.fetchStats === 'function') {
                 window.fetchStats();
+            }
+        };
+
+        window.toggleRoom = function(cardElement, event) {
+            if ('{{ $type }}' === 'personnel') return;
+            
+            // Prevent toggling if clicked on a button, label, input, or inside collapse
+            if (event.target.closest('button') || event.target.closest('input') || event.target.closest('label') || event.target.closest('.collapse')) {
+                return;
+            }
+            
+            const cardCol = cardElement.closest('.location-card-col');
+            if (!cardCol) return;
+            
+            const checkboxes = cardCol.querySelectorAll('.target-checkbox:not(:disabled)');
+            if (checkboxes.length === 0) return;
+            
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            const targetState = !allChecked;
+            
+            checkboxes.forEach(cb => {
+                cb.checked = targetState;
+            });
+            
+            window.updateRoomCardStyle(cardElement);
+            updateSubmitButton();
+            
+            // Trigger change event to update global select-all button
+            const firstCb = checkboxes[0];
+            if (firstCb) firstCb.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        
+        window.updateRoomCardStyle = function(cardElement) {
+            if ('{{ $type }}' === 'personnel') return;
+            
+            const cardCol = cardElement.closest('.location-card-col');
+            if (!cardCol) return;
+            
+            const checkboxes = cardCol.querySelectorAll('.target-checkbox:not(:disabled)');
+            if (checkboxes.length === 0) return;
+            
+            const checkedCount = cardCol.querySelectorAll('.target-checkbox:not(:disabled):checked').length;
+            const isAllChecked = (checkedCount > 0 && checkedCount === checkboxes.length);
+            
+            if (isAllChecked) {
+                cardElement.style.setProperty('border', '2px solid rgba(59,130,246,1)', 'important');
+                cardElement.style.background = 'linear-gradient(to right, rgba(59,130,246,0.05), transparent)';
+                
+                const h6 = cardElement.querySelector('h6');
+                if (h6 && !h6.querySelector('.room-selected-badge')) {
+                    h6.insertAdjacentHTML('beforeend', '<i class="bi bi-check-circle-fill text-primary ms-auto fs-5 room-selected-badge"></i>');
+                }
+            } else {
+                cardElement.style.border = '2px solid transparent';
+                cardElement.style.background = '';
+                const badge = cardElement.querySelector('.room-selected-badge');
+                if (badge) badge.remove();
             }
         };
     </script>

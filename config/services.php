@@ -35,4 +35,21 @@ return [
         ],
     ],
 
+    /*
+     * env() only reads the .env file before the config cache is built. Once
+     * `php artisan config:cache` runs in production it returns null everywhere
+     * outside this directory, so anything calling env() at runtime goes silently
+     * dead. These keys were read that way from LineMessagingChannel and
+     * MachineController; read them through config() instead.
+     */
+    'line' => [
+        'token' => env('LINE_CHANNEL_ACCESS_TOKEN'),
+        'secret' => env('LINE_CHANNEL_SECRET'),
+        'group_id' => env('LINE_GROUP_ID'),
+    ],
+
+    'python' => [
+        'path' => env('PYTHON_PATH', 'python'),
+    ],
+
 ];

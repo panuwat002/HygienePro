@@ -42,16 +42,34 @@ class CheckOverdueCARs extends Command
         // User said "Notify executives".
         // Let's send one comprehensive report to Admin/Safety Manager for now.
         // And maybe individual notices to Dept Managers later.
-        // For MVP: Send to all Admins (level 10).
+        // Send to all Admins. Match on role, not level: nothing in the app ever
+        // assigns level 10 (UserController tops out at 9), so the old
+        // where('level', 10) matched no one and this mail silently never sent.
+        $admins = \App\Models\User::where('role', 'admin')->get();
         
-        $admins = \App\Models\User::where('level', 10)->get();
-        
+        $mailed = 0;
         foreach ($admins as $admin) {
             if ($admin->email && $admin->wantsEmailFor('email_car_overdue')) {
                 \Illuminate\Support\Facades\Mail::to($admin->email)->send(new \App\Mail\CAROverdueReport($overdueActions));
+                $mailed++;
             }
         }
+
+        if ($mailed === 0) {
+            $this->warn('No admin recipients matched - overdue CAR email was NOT sent to anyone.');
+        }
+
+        // Send LINE Notification
+        try {
+            \Illuminate\Support\Facades\Notification::route(\App\Channels\LineMessagingChannel::class, '')
+                ->notify(new \App\Notifications\OverdueCARLineNotification($overdueActions));
+            // LineMessagingChannel logs and swallows API errors, so reaching this
+            // line means "handed off", not "delivered". Check the log for failures.
+            $this->info('LINE notification dispatched (delivery errors, if any, are in the log).');
+        } catch (\Exception $e) {
+            $this->error('Failed to send LINE notification: ' . $e->getMessage());
+        }
         
-        $this->info('Notifications sent successfully.');
+        $this->info("Overdue CAR notifications dispatched (email recipients: {$mailed}).");
     }
 }

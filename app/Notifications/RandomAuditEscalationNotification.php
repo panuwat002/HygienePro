@@ -14,18 +14,18 @@ class RandomAuditEscalationNotification extends Notification implements ShouldQu
     public $session;
     public $recheckSession;
     public $failRate;
-    public $failedEmployeesCount;
+    public $failedTargetsCount;
     public $totalInspected;
 
     /**
      * Create a new notification instance.
      */
-    public function __construct(InspectionSession $session, InspectionSession $recheckSession, float $failRate, int $failedEmployeesCount, int $totalInspected)
+    public function __construct(InspectionSession $session, InspectionSession $recheckSession, float $failRate, int $failedTargetsCount, int $totalInspected)
     {
         $this->session = $session;
         $this->recheckSession = $recheckSession;
         $this->failRate = $failRate;
-        $this->failedEmployeesCount = $failedEmployeesCount;
+        $this->failedTargetsCount = $failedTargetsCount;
         $this->totalInspected = $totalInspected;
     }
 
@@ -52,7 +52,7 @@ class RandomAuditEscalationNotification extends Notification implements ShouldQu
             'recheck_session_id' => $this->recheckSession->id,
             'department_name' => $this->session->department->dept_name ?? 'N/A',
             'fail_rate' => $this->failRate,
-            'failed_employees_count' => $this->failedEmployeesCount,
+            'failed_targets_count' => $this->failedTargetsCount,
             'total_inspected' => $this->totalInspected,
             'title' => 'สุ่มตรวจไม่ผ่านเกณฑ์ (' . number_format($this->failRate, 1) . '%)',
             'message' => 'แผนก ' . ($this->session->department->dept_name ?? 'N/A') . ' พบอัตราไม่ผ่านเกณฑ์สูง ระบบได้สร้าง Re-check (รอบใหม่) อัตโนมัติแล้ว',

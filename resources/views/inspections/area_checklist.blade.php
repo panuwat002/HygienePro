@@ -390,11 +390,18 @@
                                         </ul>
                                     </div>
                                     @else
-                                    <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3 fw-bold" onclick="markRoomNoProduction({{ $locationId }}, '{{ $locName }}', '{{ $groupTargets }}')">
+                                    <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3 fw-bold" onclick="markRoomNoProduction({{ $locationId }}, '{{ addslashes($locName) }}', '{{ $groupTargets }}')">
                                         <i class="bi bi-slash-circle me-1"></i> ไม่มีผลิต
                                     </button>
                                     @endif
                                 @endif
+                            </div>
+                            
+                            <!-- Quick Save Container for Inline Statuses -->
+                            <div class="d-flex gap-2 flex-wrap justify-content-end align-items-center mb-2 mt-2 d-none" id="quick_save_container_{{ $locationId }}">
+                                <button class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btn_quick_save_{{ $locationId }}" onclick="saveQuickSelections({{ $locationId }})">
+                                    <i class="bi bi-save me-1"></i> บันทึกรายการที่เลือก (<span id="quick_save_count_{{ $locationId }}">0</span>)
+                                </button>
                             </div>
                         </div>
 
@@ -481,7 +488,13 @@
                                                     @endphp
                                                     <span class="badge {{ $badgeColor }} rounded-pill fw-normal px-2 px-md-3 py-1 py-md-2 x-small"><i class="bi bi-{{ $badgeColor === 'bg-danger' ? 'x-circle' : 'check2-circle' }} me-1"></i> {{ $badgeText }}</span>
                                                 @else
-                                                    <span class="badge bg-secondary text-white rounded-pill fw-normal px-2 px-md-3 py-1 py-md-2 x-small"><i class="bi bi-clock me-1 d-none d-md-inline"></i> รอตรวจ</span>
+                                                    <div class="btn-group btn-group-sm border border-secondary border-opacity-25 rounded-pill overflow-hidden" role="group" onclick="event.stopPropagation();">
+                                                        <input type="radio" class="btn-check quick-status-radio" name="quick_status_{{ $targetUniqueId }}" id="qs_pass_{{ $targetUniqueId }}" autocomplete="off" value="pass" data-target="{{ $targetKey }}" data-location="{{ $locationId }}" onchange="updateQuickSaveVisibility({{ $locationId }})">
+                                                        <label class="btn btn-outline-success px-2 py-1 m-0 text-nowrap" for="qs_pass_{{ $targetUniqueId }}" style="font-size: 0.75rem;"><i class="bi bi-check-lg"></i> ผ่าน</label>
+                                                        
+                                                        <input type="radio" class="btn-check quick-status-radio" name="quick_status_{{ $targetUniqueId }}" id="qs_noprod_{{ $targetUniqueId }}" autocomplete="off" value="no_production" data-target="{{ $targetKey }}" data-location="{{ $locationId }}" onchange="updateQuickSaveVisibility({{ $locationId }})">
+                                                        <label class="btn btn-outline-warning px-2 py-1 m-0 text-nowrap" for="qs_noprod_{{ $targetUniqueId }}" style="font-size: 0.75rem;"><i class="bi bi-slash-circle"></i> ไม่มีผลิต</label>
+                                                    </div>
                                                 @endif
                                             </div>
                                         </div>
@@ -1172,6 +1185,79 @@
                     });
                 }
             });
+        }
+
+        function updateQuickSaveVisibility(locationId) {
+            const passes = document.querySelectorAll(`input.quick-status-radio[data-location="${locationId}"][value="pass"]:checked`).length;
+            const noProds = document.querySelectorAll(`input.quick-status-radio[data-location="${locationId}"][value="no_production"]:checked`).length;
+            const total = passes + noProds;
+            
+            const container = document.getElementById(`quick_save_container_${locationId}`);
+            const countSpan = document.getElementById(`quick_save_count_${locationId}`);
+            
+            if (total > 0) {
+                container.classList.remove('d-none');
+                countSpan.innerText = total;
+            } else {
+                container.classList.add('d-none');
+            }
+        }
+
+        async function saveQuickSelections(locationId) {
+            const passes = Array.from(document.querySelectorAll(`input.quick-status-radio[data-location="${locationId}"][value="pass"]:checked`)).map(r => r.dataset.target);
+            const noProds = Array.from(document.querySelectorAll(`input.quick-status-radio[data-location="${locationId}"][value="no_production"]:checked`)).map(r => r.dataset.target);
+            
+            if (passes.length === 0 && noProds.length === 0) return;
+
+            Swal.fire({
+                title: 'กำลังบันทึก...',
+                html: 'กรุณารอสักครู่ ระบบกำลังบันทึกข้อมูลที่เลือก',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); }
+            });
+
+            try {
+                if (passes.length > 0) {
+                    const res = await fetch(`{{ url('/inspection/area') }}/{{ $session->id }}/${locationId}/bulk-pass`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                        },
+                        body: JSON.stringify({ targets_query: passes.join(',') })
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) throw new Error(data.message || 'เกิดข้อผิดพลาดในการบันทึกสถานะผ่าน');
+                }
+                
+                if (noProds.length > 0) {
+                    const res = await fetch(`{{ url('/inspection/area') }}/{{ $session->id }}/${locationId}/bulk-no-production-remaining`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                        },
+                        body: JSON.stringify({ targets_query: noProds.join(',') })
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) throw new Error(data.message || 'เกิดข้อผิดพลาดในการบันทึกสถานะไม่มีผลิต');
+                }
+                
+                Swal.fire({
+                    icon: 'success',
+                    title: 'สำเร็จ',
+                    text: 'บันทึกรายการที่เลือกเรียบร้อยแล้ว',
+                    showConfirmButton: false,
+                    timer: 1500
+                }).then(() => {
+                    isIntentionalNav = true;
+                    window.location.reload();
+                });
+            } catch (e) {
+                Swal.fire('ข้อผิดพลาด', e.message || 'ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง', 'error');
+            }
         }
     </script>
 </x-app-layout>

@@ -11,10 +11,28 @@ foreach ($sessionIds as $id) {
     if ($session && $session->status === 'completed') {
         echo "Resending LINE notification for Session ID: $id\n";
         
+        $targetColumn = 'employee_id';
+        $unit = 'คน';
+        if ($session->type === 'machine') {
+            $targetColumn = 'machine_id';
+            $unit = 'เครื่อง';
+        } elseif ($session->type === 'area') {
+            $targetColumn = 'location_id';
+            $unit = 'พื้นที่';
+        }
+        
+        $totalTargets = $session->logs()->distinct($targetColumn)->count($targetColumn);
+        $failedTargets = $session->logs()->where('result', 'fail')->distinct($targetColumn)->count($targetColumn);
+        $passedTargets = $totalTargets - $failedTargets;
+
         $stats = [
             'total' => $session->logs()->count(),
             'pass' => $session->logs()->where('result', 'pass')->count(),
             'fail' => $session->logs()->where('result', 'fail')->count(),
+            'total_targets' => $totalTargets,
+            'passed_targets' => $passedTargets,
+            'failed_targets' => $failedTargets,
+            'unit' => $unit
         ];
         $randomAssigned = $session->logs()->whereNull('verification_status')->count();
         

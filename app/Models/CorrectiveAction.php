@@ -6,8 +6,10 @@ use Illuminate\Database\Eloquent\Model;
 
 class CorrectiveAction extends Model
 {
+    use \Illuminate\Database\Eloquent\Factories\HasFactory;
     use \Illuminate\Database\Eloquent\SoftDeletes;
     use \App\Traits\HasApprovals;
+    use \App\Traits\LogsActivity;
 
     protected $fillable = [
         'inspection_log_id',
