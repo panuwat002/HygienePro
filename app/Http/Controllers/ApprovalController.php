@@ -38,6 +38,14 @@ class ApprovalController extends Controller
             $approval->status = 'approved';
             $approval->save();
 
+            // approvable is a morphTo with no FK behind it (the approval_tables
+            // migration uses a plain morphs()), so the target row can be gone. When it
+            // is, method_exists(null, ...) is false and the else branch wrote a property
+            // on null — a fatal Error, not a handled failure.
+            if (! $approval->approvable) {
+                return back()->with('error', 'รายการที่เกี่ยวข้องถูกลบไปแล้ว (Linked record no longer exists).');
+            }
+
             // Update Target Model Status
             if (method_exists($approval->approvable, 'markAsApproved')) {
                 $approval->approvable->markAsApproved();
@@ -65,6 +73,11 @@ class ApprovalController extends Controller
         $approval->status = 'rejected';
         $approval->rejection_reason = $request->reason;
         $approval->save();
+
+        // Same dangling-morph guard as approve().
+        if (! $approval->approvable) {
+            return back()->with('error', 'รายการที่เกี่ยวข้องถูกลบไปแล้ว (Linked record no longer exists).');
+        }
 
         // Update Target Model Status
         if (method_exists($approval->approvable, 'markAsRejected')) {

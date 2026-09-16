@@ -189,9 +189,15 @@
                                 <a href="{{ route('users.index') }}" class="list-group-item list-group-item-action border-0 mb-1 rounded-3 {{ request()->routeIs('users.*') ? 'active' : '' }}">
                                     <i class="bi bi-person-badge me-2"></i> <span>ผู้ใช้งานระบบ (Users)</span>
                                 </a>
-                                <a href="{{ route('admin.approvals.setup') }}" class="list-group-item list-group-item-action border-0 mb-1 rounded-3 {{ request()->routeIs('admin.approvals.*') ? 'active' : '' }}">
+                                {{-- Hidden until the approval flow is actually wired up. Nothing in the
+                                     codebase constructs an ApprovalRequest, so /approvals/pending is
+                                     permanently empty and any step chain configured here can never fire.
+                                     Leaving the link visible invites admins to configure a control that
+                                     does not exist, which is worse than having no control. The route
+                                     still works if visited directly. --}}
+                                {{-- <a href="{{ route('admin.approvals.setup') }}" class="list-group-item list-group-item-action border-0 mb-1 rounded-3 {{ request()->routeIs('admin.approvals.*') ? 'active' : '' }}">
                                     <i class="bi bi-diagram-3 me-2"></i> <span>ตั้งค่า Approval Flow</span>
-                                </a>
+                                </a> --}}
                                 <a href="{{ route('activity-logs.index') }}" class="list-group-item list-group-item-action border-0 mb-1 rounded-3 {{ request()->routeIs('activity-logs.*') ? 'active' : '' }}">
                                     <i class="bi bi-activity me-2"></i> <span>ประวัติการใช้งาน (Audit Logs)</span>
                                 </a>

@@ -1981,6 +1981,14 @@ class InspectionController extends Controller
                 'all_logs' => $logsInGroup->values(),
                 'is_verified' => !$hasPending && !$hasReclean,
                 'is_approved' => $isGroupApproved || $isGroupAutoVerified,
+                // Each shift runs a single QA inspector, so the person who inspected is
+                // usually also the one who verified. That is accepted operationally, but
+                // it must be visible: an FM-QA-22 auditor needs to see which rounds
+                // carried only one signature rather than have it look like two people
+                // signed. The real second signature is the manager approval step.
+                'self_verified' => $logsInGroup->contains(
+                    fn($l) => !is_null($l->verifier_id) && $l->verifier_id === $session->inspector_id
+                ),
                 'is_acknowledged' => $logsInGroup->every(fn($l) => !is_null($l->acknowledged_at)), // Gap 3: Check if acknowledged
                 'department_id' => $employee ? $employee->department_id : null, // Gap 3: For Acknowledge permission check
                 'log_ids' => $logsInGroup->pluck('id')->toArray(),
@@ -2408,6 +2416,18 @@ class InspectionController extends Controller
             $logsQuery->whereHas('session', fn($q) => $q->where('department_id', $user->department_id));
         }
         $approvedLogs = $logsQuery->get();
+
+        // Segregation of duty is enforced HERE, not in verify(). Each shift has a single
+        // QA inspector, so that person necessarily inspects and verifies their own round
+        // — blocking verify() would stop inspections outright. The manager approval step
+        // is the genuine second signature: a manager is not the one walking the shift, so
+        // refusing to let them approve a round they personally inspected costs nothing
+        // operationally and restores two-person control.
+        $ownWork = $approvedLogs->filter(fn($log) => $log->session?->inspector_id === $user->id);
+
+        if ($ownWork->isNotEmpty() && !$user->isAdmin()) {
+            return back()->with('error', 'ไม่สามารถอนุมัติรอบที่ตัวเองเป็นผู้ตรวจได้ กรุณาให้ผู้จัดการท่านอื่นอนุมัติ (Cannot approve a round you inspected yourself)');
+        }
 
         if ($approvedLogs->isEmpty()) {
             return back()->with('error', 'ไม่พบรายการในแผนกของคุณ (No items found in your department)');

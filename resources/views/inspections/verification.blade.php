@@ -216,6 +216,17 @@
                                                 <i class="bi bi-hourglass-split me-1"></i> รอยืนยัน
                                             </span>
                                         @endif
+
+                                        {{-- One QA per shift means the inspector is usually also the
+                                             verifier. That is accepted, but the FM-QA-22 record must show
+                                             which rounds carried a single signature; the manager approval
+                                             step is the genuine second one. --}}
+                                        @if($group->self_verified ?? false)
+                                            <span class="badge bg-warning text-dark px-3 py-2 rounded-pill shadow-sm ms-1"
+                                                  title="ผู้ตรวจและผู้ยืนยันเป็นคนเดียวกัน — ต้องให้ผู้จัดการอนุมัติเป็นลายเซ็นที่สอง">
+                                                <i class="bi bi-person-exclamation me-1"></i> ตรวจ+ยืนยันคนเดียวกัน
+                                            </span>
+                                        @endif
                                     </td>
                                     <td>
                                         @if($group->findings->isEmpty())
@@ -1281,9 +1292,14 @@ document.addEventListener('DOMContentLoaded', () => {
             <i class="bi bi-check2-all me-1"></i> ยืนยันทั้งหมด
         </button>
         @elseif($activeTab === 'completed')
+        {{-- managerApprove() requires the 'approve' gate (QA manager, level >= 5). The
+             button used to render for everyone, so a supervisor could click it and get
+             a bare 403. --}}
+        @can('approve')
         <button type="button" class="btn btn-success rounded-pill px-4 shadow-sm" onclick="submitBulkApprove()">
             <i class="bi bi-patch-check-fill me-1"></i> อนุมัติทั้งหมด
         </button>
+        @endcan
         @endif
     </div>
 </div>
