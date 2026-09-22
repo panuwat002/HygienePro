@@ -50,7 +50,12 @@ Thumbs.db
 
 # Sidecar directories that don't belong in the app repo.
 /ai_service/
-/scripts/
+# Contents ignored rather than the directory itself, so the negation below can
+# apply — git will not descend into an excluded directory to re-include a file.
+/scripts/*
+# ...except the server deployment scripts: the Task Scheduler entries on the UAT
+# box point straight at scripts/server/, so they have to ship with the repo.
+!/scripts/server/
 /storage/fonts/
 /public/storage_backup/
 /public/test-render.html

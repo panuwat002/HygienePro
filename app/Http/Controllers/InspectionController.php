@@ -2258,11 +2258,21 @@ class InspectionController extends Controller
                         return $u->isQA();
                     });
 
+                    $mailed = 0;
                     foreach ($qaManagers as $manager) {
                         if ($manager->email && $manager->wantsEmailFor('email_session_verified')) {
                             \Illuminate\Support\Facades\Mail::to($manager->email)
                                 ->send(new \App\Mail\InspectionVerified($session, Auth::user()));
+                            $mailed++;
                         }
+                    }
+
+                    // 'email_session_verified' defaults to false, so this silently
+                    // mails no one unless a manager has opted in. Say so in the log.
+                    if ($mailed === 0) {
+                        \Log::warning("verify: session {$session->id} fully verified but NO email sent - {$qaManagers->count()} QA manager(s) found, none opted in to 'email_session_verified'.");
+                    } else {
+                        \Log::info("verify: session {$session->id} verified, queued email to {$mailed} QA manager(s).");
                     }
                 }
             } catch (\Throwable $e) {

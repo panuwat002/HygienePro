@@ -423,6 +423,9 @@ class InspectionService
             // Send ONE grouped email to all supervisors
             if (count($emails) > 0) {
                 \Illuminate\Support\Facades\Mail::bcc($emails)->send(new \App\Mail\InspectionSessionStarted($session));
+                \Log::info("Session {$session->id} started: queued email to " . count($emails) . " QA supervisor(s).");
+            } else {
+                \Log::warning("Session {$session->id} started: NO email sent - {$supervisors->count()} QA supervisor(s) found, none opted in to 'email_session_started'.");
             }
         } catch (\Exception $e) {
             \Log::error('Failed to send Inspection Started email: ' . $e->getMessage());
@@ -475,12 +478,16 @@ class InspectionService
                 }
             }
 
-            // Send ONE grouped email to all supervisors
+            // Send ONE grouped email to all supervisors.
+            // Log inside the guard: this line used to sit outside it and reported
+            // "emails sent" even when $emails was empty, which made a system that
+            // was delivering nothing look healthy in the log.
             if (count($emails) > 0) {
                 \Illuminate\Support\Facades\Mail::bcc($emails)->send(new \App\Mail\InspectionSessionFinished($session, $stats));
+                \Log::info("Session {$session->id} finished: queued '{$eventName}' email to " . count($emails) . " QA supervisor(s).");
+            } else {
+                \Log::warning("Session {$session->id} finished: NO email sent - {$supervisors->count()} QA supervisor(s) found, none opted in to '{$eventName}'.");
             }
-            
-            \Log::info("Session {$session->id} finished emails sent to QA Supervisors.");
         } catch (\Exception $e) {
             \Log::error('Failed to process Inspection Finished event: ' . $e->getMessage());
         }

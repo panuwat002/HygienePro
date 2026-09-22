@@ -17,6 +17,9 @@ Schedule::command('inspection:escalate-verifications')->hourly();
 
 Schedule::command('inspection:send-smart-digest')->everyThirtyMinutes();
 
+// แจ้งเตือน CAR ที่เกินกำหนด (email ถึง admin + LINE) — ส่งวันละครั้งตอนเช้า
+Schedule::command('car:check-overdue')->dailyAt('08:30');
+
 Schedule::call(function () {
     \Illuminate\Support\Facades\Notification::route(\App\Channels\LineMessagingChannel::class, '')
         ->notify(new \App\Notifications\DailyDigestLineNotification());
