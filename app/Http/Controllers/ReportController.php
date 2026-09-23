@@ -484,11 +484,27 @@ class ReportController extends Controller
         unset($data);
 
         // Collect Signatures (Unique Managers and Supervisors involved)
-        $verifierIds = $sessions->flatMap(fn($s) => $s->logs->pluck('verifier_id'))->unique()->filter();
-        $approverIds = $sessions->pluck('approved_by')->unique()->filter();
+        $verifierIds = $sessions->flatMap(fn($s) => $s->logs->pluck('verifier_id'))
+            ->concat($sessions->pluck('verified_by'))
+            ->unique()
+            ->filter();
+        $approverIds = $sessions->pluck('approved_by')
+            ->concat($sessions->flatMap(fn($s) => $s->logs)->where('verification_status', 'approved')->pluck('verifier_id'))
+            ->unique()
+            ->filter();
 
         $verifiers = \App\Models\User::whereIn('id', $verifierIds)->get();
         $approvers = \App\Models\User::whereIn('id', $approverIds)->get();
+
+        // Exact date & time calculation for all 3 roles:
+        $recordedAt = $sessions->pluck('created_at')->filter()->max() 
+            ?? $sessions->flatMap(fn($s) => $s->logs)->max('inspected_at');
+
+        $verifiedAt = $sessions->pluck('verified_at')->filter()->max() 
+            ?? $sessions->flatMap(fn($s) => $s->logs)->whereNotNull('verified_at')->max('verified_at');
+
+        $approvedAt = $sessions->pluck('approved_at')->filter()->max() 
+            ?? $sessions->flatMap(fn($s) => $s->logs)->where('verification_status', 'approved')->max('verified_at');
 
         // Combine Area and Machine Matrices by Location for unified table
         $areaMachineCombined = [];
@@ -571,7 +587,10 @@ class ReportController extends Controller
             'shift',
             'reportType',
             'verifiers',
-            'approvers'
+            'approvers',
+            'recordedAt',
+            'verifiedAt',
+            'approvedAt'
         ));
         
         $pdf->setPaper('a4', $orientation);

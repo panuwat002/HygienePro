@@ -277,6 +277,26 @@ class InspectionSession extends Model
     }
 
     /**
+     * Get target employees specifically for this session.
+     * When is_sampling is true, returns the deterministic sampled subset matching sample_size.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public function getSessionTargetEmployees()
+    {
+        $targetEmployees = $this->getTargetEmployees();
+
+        if ($this->is_sampling && $this->sample_size > 0) {
+            $targetEmployees = $targetEmployees
+                ->sortBy(fn($emp) => md5($this->id . '-' . $emp->id))
+                ->values()
+                ->take($this->sample_size);
+        }
+
+        return $targetEmployees;
+    }
+
+    /**
      * Get human-readable label for the session shift.
      * Smartly combines common prefixes (e.g., "กะเช้า (07.00-16.00, 08.00-17.00)") to avoid redundancy.
      */

@@ -228,17 +228,22 @@
 
             {{-- Bulk Pass Button (Strictly Current Shift Only) --}}
             @php
-                // Count employees strictly in the current shift that haven't been inspected
-                $shiftRemainingCount = 0;
+                // Employees strictly in the current shift that haven't been inspected.
+                // Keep the models, not just the count: the confirmation modal lists them
+                // so the inspector can tick whoever did not come to work. Without that
+                // list, bulk pass recorded everyone as "ผ่าน", including people on leave.
+                $shiftRemainingEmployees = collect();
                 $currentShiftGroupName = 'เป้าหมายกะปัจจุบัน (' . $session->shift_label . ')';
-                
+
                 if ($grouped->has($currentShiftGroupName)) {
                     foreach($grouped[$currentShiftGroupName] as $emp) {
                         if (!in_array($emp->id, $inspectedIds) && !in_array($emp->id, $absentIds ?? [])) {
-                            $shiftRemainingCount++;
+                            $shiftRemainingEmployees->push($emp);
                         }
                     }
                 }
+
+                $shiftRemainingCount = $shiftRemainingEmployees->count();
             @endphp
             
             @php
@@ -328,10 +333,37 @@
                                 จะถูกบันทึกว่า <strong class="text-success">"ผ่าน"</strong> ทุกหัวข้อตรวจโดยอัตโนมัติ
                             </p>
                         </div>
-                        <div class="alert alert-warning d-flex align-items-start rounded-3 mb-0" role="alert">
+                        <div class="alert alert-warning d-flex align-items-start rounded-3 mb-3" role="alert">
                             <i class="bi bi-exclamation-triangle-fill me-2 mt-1 flex-shrink-0"></i>
                             <div class="small">
                                 <strong>พนักงานกะอื่นจะไม่ได้รับผลกระทบ:</strong> การดำเนินการนี้จะเปลี่ยนสถานะเฉพาะพนักงานที่มีรอบทำงานตรงกับกะของ Session นี้เท่านั้น (พนักงานกะอื่นจะยังคงสถานะเดิม)
+                            </div>
+                        </div>
+
+                        {{-- The database cannot tell "on leave" apart from "inspector ran out
+                             of time" — both look like a missing record. Only the inspector
+                             knows, so they mark it here. Ticked employees are recorded as
+                             'absent' and stay out of the hygiene score. --}}
+                        <div class="border rounded-3 p-3">
+                            <div class="fw-bold text-dark mb-1">
+                                <i class="bi bi-person-dash me-1"></i>มีใครไม่ได้มาทำงานไหม?
+                            </div>
+                            <p class="small text-muted mb-3">
+                                ติ๊กเฉพาะคนที่ <strong>ไม่ได้มาทำงาน</strong> (ลา/ขาด) — คนที่ไม่ติ๊กจะถูกบันทึกว่า "ผ่าน"
+                            </p>
+                            <div style="max-height: 240px; overflow-y: auto;">
+                                @foreach($shiftRemainingEmployees as $remaining)
+                                    <div class="form-check py-1">
+                                        <input class="form-check-input" type="checkbox"
+                                               name="absent_employee_ids[]"
+                                               value="{{ $remaining->id }}"
+                                               form="bulkPassForm"
+                                               id="absent_{{ $remaining->id }}">
+                                        <label class="form-check-label w-100" for="absent_{{ $remaining->id }}">
+                                            {{ $remaining->fullname ?? $remaining->name }}
+                                        </label>
+                                    </div>
+                                @endforeach
                             </div>
                         </div>
                     </div>
@@ -339,10 +371,10 @@
                         <button type="button" class="btn btn-light rounded-pill flex-grow-1 fw-bold" data-bs-dismiss="modal">
                             <i class="bi bi-x-lg me-1"></i> ยกเลิก
                         </button>
-                        <form action="{{ route('inspection.bulk-pass', $session->id) }}" method="POST" class="flex-grow-1 m-0">
+                        <form id="bulkPassForm" action="{{ route('inspection.bulk-pass', $session->id) }}" method="POST" class="flex-grow-1 m-0">
                             @csrf
                             <button type="submit" class="btn btn-success w-100 rounded-pill fw-bold shadow-sm">
-                                <i class="bi bi-check-all me-1"></i> ยืนยัน ผ่านทุกคน ({{ $shiftRemainingCount }} คน)
+                                <i class="bi bi-check-all me-1"></i> ยืนยันปิดรอบ ({{ $shiftRemainingCount }} คน)
                             </button>
                         </form>
                     </div>

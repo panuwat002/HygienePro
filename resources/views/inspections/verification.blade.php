@@ -1,7 +1,293 @@
 <x-app-layout>
     @section('header', 'ทวนสอบผล (Verify)')
 
-    <div class="row">
+    @push('styles')
+    <style>
+        /* Scoped Verification Page Design Tokens */
+        .v-page {
+            --v-border: #e2e8f0;
+            --v-border-subtle: #f1f5f9;
+            --v-text-main: #0f172a;
+            --v-text-muted: #64748b;
+            --v-text-subtle: #94a3b8;
+            --v-card-bg: #ffffff;
+            --v-table-header-bg: #f8fafc;
+        }
+
+        /* KPI Quick Bar */
+        .v-kpi-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 0.875rem;
+            margin-bottom: 1.25rem;
+        }
+        .v-kpi-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 1rem 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .v-kpi-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+        }
+        .v-kpi-label {
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: #64748b;
+            margin-bottom: 0.25rem;
+        }
+        .v-kpi-number {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1;
+        }
+        .v-kpi-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            flex-shrink: 0;
+        }
+
+        /* Type Segment Switcher (Level 1) */
+        .v-type-nav {
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 12px;
+            display: flex;
+            gap: 4px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 1.25rem;
+        }
+        .v-type-tab {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.625rem 1rem;
+            border-radius: 9px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #475569;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+        .v-type-tab:hover {
+            color: #0f172a;
+            background: rgba(255, 255, 255, 0.6);
+        }
+        .v-type-tab.active {
+            background: #ffffff;
+            color: #0f172a;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+        }
+        .v-type-badge {
+            font-size: 0.75rem;
+            padding: 0.15rem 0.6rem;
+            border-radius: 9999px;
+            font-weight: 600;
+        }
+
+        /* Status Tabs (Level 2) */
+        .v-status-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.5rem 1.125rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-decoration: none;
+            border: 1px solid #e2e8f0;
+            background: #ffffff;
+            color: #475569;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+        .v-status-tab:hover {
+            background: #f8fafc;
+            color: #0f172a;
+            border-color: #cbd5e1;
+        }
+        .v-status-tab.active-pending {
+            background: #0f172a;
+            color: #ffffff;
+            border-color: #0f172a;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+        }
+        .v-status-tab.active-reclean {
+            background: #d97706;
+            color: #ffffff;
+            border-color: #d97706;
+            box-shadow: 0 2px 6px rgba(217, 119, 6, 0.15);
+        }
+        .v-status-tab.active-completed {
+            background: #059669;
+            color: #ffffff;
+            border-color: #059669;
+            box-shadow: 0 2px 6px rgba(5, 150, 105, 0.15);
+        }
+
+        /* Table Aesthetics */
+        .v-table-container {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+            overflow: hidden;
+        }
+        .v-table {
+            margin-bottom: 0;
+        }
+        .v-table thead th {
+            background: #f8fafc;
+            color: #475569;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            padding: 0.875rem 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            white-space: nowrap;
+        }
+        .v-table tbody tr {
+            border-bottom: 1px solid #f1f5f9;
+            transition: background-color 0.15s ease;
+        }
+        .v-table tbody tr:last-child {
+            border-bottom: none;
+        }
+        .v-table tbody tr:hover {
+            background-color: #f8fafc;
+        }
+        .v-table tbody td {
+            padding: 0.875rem 1rem;
+            vertical-align: middle;
+            font-size: 0.875rem;
+        }
+
+        /* Standardized Design Tokens for Badges */
+        .v-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.275rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            line-height: 1.25;
+            white-space: nowrap;
+        }
+        .v-badge-pass {
+            background: #ecfdf5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+        .v-badge-fail {
+            background: #fff1f2;
+            color: #9f1239;
+            border: 1px solid #fecdd3;
+        }
+        .v-badge-resolved {
+            background: #fefce8;
+            color: #854d0e;
+            border: 1px solid #fde047;
+        }
+        .v-badge-absent {
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+        }
+        .v-badge-verified {
+            background: #eff6ff;
+            color: #1d4ed8;
+            border: 1px solid #bfdbfe;
+            font-weight: 600;
+        }
+        .v-badge-approved {
+            background: #ecfdf5;
+            color: #047857;
+            border: 1px solid #6ee7b7;
+            font-weight: 600;
+        }
+        .v-badge-reclean {
+            background: #fffbeb;
+            color: #b45309;
+            border: 1px solid #fcd34d;
+            font-weight: 600;
+        }
+        .v-badge-self {
+            background: #fff7ed;
+            color: #c2410c;
+            border: 1px solid #ffedd5;
+            font-size: 0.75rem;
+            padding: 0.2rem 0.55rem;
+        }
+
+        /* Tactile Action Button */
+        .v-btn-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.375rem 0.875rem;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: #2563eb;
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 9999px;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+        }
+        .v-btn-action:hover {
+            background: #eff6ff;
+            border-color: #93c5fd;
+            color: #1d4ed8;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 5px rgba(37, 99, 235, 0.1);
+        }
+
+        /* Mobile Card Styling */
+        .v-mobile-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+            transition: transform 0.1s ease;
+        }
+        .v-mobile-card:active {
+            transform: scale(0.99);
+        }
+
+        /* Accessible Focus Outline */
+        .v-btn-action:focus-visible, .v-status-tab:focus-visible, .v-type-tab:focus-visible {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .v-kpi-card, .v-btn-action, .v-type-tab, .v-status-tab, .v-mobile-card {
+                transition: none !important;
+                transform: none !important;
+            }
+        }
+    </style>
+    @endpush
+
+    <div class="row v-page">
         <div class="col-12">
             @if(session('success'))
             <div class="alert alert-success alert-dismissible fade show rounded-4 border-0 shadow-sm" role="alert">
@@ -17,373 +303,417 @@
             </div>
             @endif
 
-            <!-- Level 1: Type Tabs (Main Category) -->
-            <div class="mb-4 animate-in">
-                <ul class="nav nav-pills nav-pills-modern flex-nowrap overflow-auto" style="gap: 0.25rem;">
-                    <li class="nav-item flex-shrink-0 flex-fill text-center">
-                        <a class="nav-link px-3 {{ $filterType === 'person' ? 'active' : '' }}"
-                           href="{{ route('inspection.verification', ['date' => $date, 'filter_type' => 'person', 'tab' => 'pending']) }}">
-                            <i class="bi bi-person-badge me-1"></i>พนักงาน
-                            @if($typeCounts['person'] > 0)
-                                <span class="badge {{ $filterType === 'person' ? 'bg-white text-primary' : 'bg-primary text-white' }} rounded-pill ms-1">{{ $typeCounts['person'] }}</span>
-                            @endif
-                        </a>
-                    </li>
-                    <li class="nav-item flex-shrink-0 flex-fill text-center">
-                        <a class="nav-link px-3 {{ $filterType === 'machine' ? 'active' : '' }}"
-                           href="{{ route('inspection.verification', ['date' => $date, 'filter_type' => 'machine', 'tab' => 'pending']) }}">
-                            <i class="bi bi-gear-wide-connected me-1"></i>พื้นที่/เครื่องจักร
-                            @if($typeCounts['machine'] > 0)
-                                <span class="badge {{ $filterType === 'machine' ? 'bg-white text-primary' : 'bg-primary text-white' }} rounded-pill ms-1">{{ $typeCounts['machine'] }}</span>
-                            @endif
-                        </a>
-                    </li>
-                </ul>
+            <!-- KPI Summary Ribbon -->
+            <div class="v-kpi-bar">
+                <div class="v-kpi-card">
+                    <div>
+                        <div class="v-kpi-label">หมวดหมู่ปัจจุบัน</div>
+                        <div class="v-kpi-number">{{ $filterType === 'person' ? 'พนักงาน' : 'พื้นที่/เครื่องจักร' }}</div>
+                    </div>
+                    <div class="v-kpi-icon" style="background: #eff6ff; color: #2563eb;">
+                        <i class="bi {{ $filterType === 'person' ? 'bi-people-fill' : 'bi-gear-wide-connected' }}"></i>
+                    </div>
+                </div>
+                <div class="v-kpi-card">
+                    <div>
+                        <div class="v-kpi-label">รอทวนสอบ (Pending)</div>
+                        <div class="v-kpi-number {{ $counts['pending'] > 0 ? 'text-danger' : '' }}">{{ $counts['pending'] }}</div>
+                    </div>
+                    <div class="v-kpi-icon" style="background: {{ $counts['pending'] > 0 ? '#fff1f2' : '#f8fafc' }}; color: {{ $counts['pending'] > 0 ? '#e11d48' : '#64748b' }};">
+                        <i class="bi bi-clock-history"></i>
+                    </div>
+                </div>
+                <div class="v-kpi-card">
+                    <div>
+                        <div class="v-kpi-label">สั่งแก้ไข (Re-clean)</div>
+                        <div class="v-kpi-number {{ $counts['reclean'] > 0 ? 'text-warning' : '' }}">{{ $counts['reclean'] }}</div>
+                    </div>
+                    <div class="v-kpi-icon" style="background: {{ $counts['reclean'] > 0 ? '#fffbeb' : '#f8fafc' }}; color: {{ $counts['reclean'] > 0 ? '#d97706' : '#64748b' }};">
+                        <i class="bi bi-arrow-repeat"></i>
+                    </div>
+                </div>
+                <div class="v-kpi-card">
+                    <div>
+                        <div class="v-kpi-label">รออนุมัติ / ผ่านแล้ว</div>
+                        <div class="v-kpi-number text-success">{{ $counts['completed'] }}</div>
+                    </div>
+                    <div class="v-kpi-icon" style="background: #ecfdf5; color: #059669;">
+                        <i class="bi bi-check2-circle"></i>
+                    </div>
+                </div>
             </div>
 
-            <!-- Level 2: Status & Date Filter -->
+            <!-- Level 1: Type Segment Switcher -->
+            <div class="v-type-nav">
+                <a class="v-type-tab {{ $filterType === 'person' ? 'active' : '' }}"
+                   href="{{ route('inspection.verification', ['date' => $date, 'filter_type' => 'person', 'tab' => $activeTab]) }}"
+                   aria-label="สลับไปหมวดพนักงาน">
+                    <i class="bi bi-person-badge"></i>
+                    <span>พนักงาน</span>
+                    @if($typeCounts['person'] > 0)
+                        <span class="v-type-badge {{ $filterType === 'person' ? 'bg-primary text-white' : '' }}" style="{{ $filterType !== 'person' ? 'background: #e2e8f0; color: #475569;' : '' }}">{{ $typeCounts['person'] }}</span>
+                    @endif
+                </a>
+                <a class="v-type-tab {{ $filterType === 'machine' ? 'active' : '' }}"
+                   href="{{ route('inspection.verification', ['date' => $date, 'filter_type' => 'machine', 'tab' => $activeTab]) }}"
+                   aria-label="สลับไปหมวดพื้นที่และเครื่องจักร">
+                    <i class="bi bi-gear-wide-connected"></i>
+                    <span>พื้นที่ / เครื่องจักร</span>
+                    @if($typeCounts['machine'] > 0)
+                        <span class="v-type-badge {{ $filterType === 'machine' ? 'bg-primary text-white' : '' }}" style="{{ $filterType !== 'machine' ? 'background: #e2e8f0; color: #475569;' : '' }}">{{ $typeCounts['machine'] }}</span>
+                    @endif
+                </a>
+            </div>
+
+            <!-- Level 2: Status Navigation & Date Filter -->
             <div class="row g-2 mb-4 align-items-center">
-                <div class="col-12 col-md-8">
+                <div class="col-12 col-md-7">
                     <div class="d-flex flex-nowrap gap-2 overflow-auto pb-1">
                         <a href="{{ route('inspection.verification', ['date' => $date, 'filter_type' => $filterType, 'tab' => 'pending']) }}"
-                           class="btn rounded-pill px-3 flex-shrink-0 {{ $activeTab === 'pending' ? 'btn-dark shadow-sm' : 'btn-light border text-muted' }}">
-                            <i class="bi bi-clock-history me-1"></i> รอทวนสอบ
+                           class="v-status-tab {{ $activeTab === 'pending' ? 'active-pending' : '' }}"
+                           aria-label="แสดงรายการรอทวนสอบ">
+                            <i class="bi bi-clock-history"></i>
+                            <span>รอทวนสอบ</span>
                             @if($counts['pending'] > 0)
-                                <span class="badge bg-danger ms-1 rounded-pill">{{ $counts['pending'] }}</span>
+                                <span class="badge rounded-pill {{ $activeTab === 'pending' ? 'bg-danger text-white' : 'bg-danger-subtle text-danger' }}">{{ $counts['pending'] }}</span>
                             @endif
                         </a>
                         <a href="{{ route('inspection.verification', ['date' => $date, 'filter_type' => $filterType, 'tab' => 'reclean']) }}"
-                           class="btn rounded-pill px-3 flex-shrink-0 {{ $activeTab === 'reclean' ? 'btn-warning text-dark shadow-sm fw-bold' : 'btn-light border text-muted' }}">
-                            <i class="bi bi-arrow-repeat me-1"></i> สั่งแก้ไข
+                           class="v-status-tab {{ $activeTab === 'reclean' ? 'active-reclean' : '' }}"
+                           aria-label="แสดงรายการสั่งแก้ไข">
+                            <i class="bi bi-arrow-repeat"></i>
+                            <span>สั่งแก้ไข</span>
                             @if($counts['reclean'] > 0)
-                                <span class="badge bg-dark text-white ms-1 rounded-pill">{{ $counts['reclean'] }}</span>
+                                <span class="badge rounded-pill {{ $activeTab === 'reclean' ? 'bg-dark text-white' : 'bg-warning-subtle text-warning-emphasis' }}">{{ $counts['reclean'] }}</span>
                             @endif
                         </a>
                         <a href="{{ route('inspection.verification', ['date' => $date, 'filter_type' => $filterType, 'tab' => 'completed']) }}"
-                           class="btn rounded-pill px-3 flex-shrink-0 {{ $activeTab === 'completed' ? 'btn-success shadow-sm' : 'btn-light border text-muted' }}">
-                            <i class="bi bi-check-circle me-1"></i> รออนุมัติ
-                            <span class="badge bg-white text-success border ms-1 rounded-pill">{{ $counts['completed'] }}</span>
+                           class="v-status-tab {{ $activeTab === 'completed' ? 'active-completed' : '' }}"
+                           aria-label="แสดงรายการรออนุมัติหรือผ่านแล้ว">
+                            <i class="bi bi-check-circle"></i>
+                            <span>รออนุมัติ</span>
+                            <span class="badge rounded-pill {{ $activeTab === 'completed' ? 'bg-white text-success' : 'bg-success-subtle text-success' }}">{{ $counts['completed'] }}</span>
                         </a>
                     </div>
                 </div>
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-5">
                     <form action="{{ route('inspection.verification') }}" method="GET" id="filterForm" data-initial-date="{{ $date }}">
                         <input type="hidden" name="filter_type" value="{{ $filterType }}">
                         <input type="hidden" name="tab" value="{{ $activeTab }}">
                         
-                        <div class="input-group shadow-sm">
+                        <div class="input-group rounded-pill overflow-hidden border bg-white shadow-xs" style="border-color: #cbd5e1 !important;">
+                            <span class="input-group-text bg-white border-0 text-muted ps-3"><i class="bi bi-calendar-range text-primary"></i></span>
+                            <input type="text" class="form-control border-0 fw-semibold bg-white flatpickr-range text-dark py-2" name="date" value="{{ $date }}" placeholder="{{ empty($date) ? 'กำลังแสดงงานค้างทั้งหมด (คลิกเพื่อระบุวัน)' : 'เลือกช่วงวันที่...' }}" readonly style="cursor: pointer; font-size: 0.875rem;" aria-label="เลือกช่วงวันที่">
                             @if(!empty($date))
-                            <span class="input-group-text bg-white border-end-0 text-muted" title="ล้างตัวกรอง" style="cursor: pointer;" onclick="clearDateFilter()"><i class="bi bi-x-circle text-danger"></i></span>
-                            <span class="input-group-text bg-white border-end-0 border-start-0 text-muted"><i class="bi bi-calendar-range"></i></span>
-                            @else
-                            <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-calendar-range"></i></span>
+                            <button type="button" class="btn btn-white border-0 pe-3 text-danger" title="ล้างตัวกรองวันที่" onclick="clearDateFilter()" aria-label="ล้างตัวกรองวันที่">
+                                <i class="bi bi-x-circle-fill"></i>
+                            </button>
                             @endif
-                            <input type="text" class="form-control border-start-0 ps-0 fw-bold bg-white flatpickr-range" name="date" value="{{ $date }}" placeholder="{{ $activeTab === 'completed' ? 'เลือกช่วงวันที่...' : 'กำลังแสดงงานค้างทั้งหมด (คลิกเพื่อระบุวัน)' }}" readonly style="cursor: pointer;">
                         </div>
                     </form>
                 </div>
             </div>
 
             <!-- Table Section (Desktop) -->
-            <div class="card bg-white rounded-4 overflow-hidden d-none d-md-block">
-                <div class="card-body p-0">
-                    <div class="table-responsive w-100">
-                        <table class="table table-hover align-middle mb-0 text-nowrap">
-                            <thead class="bg-light border-bottom">
-                                <tr>
-                                    @if($activeTab === 'pending' || $activeTab === 'completed')
-                                    <th class="ps-4 py-3" style="width: 50px;">
-                                        <div class="form-check">
-                                            <input class="form-check-input" type="checkbox" id="selectAllDesktop" onchange="toggleAllCheckboxes(this)">
-                                        </div>
-                                    </th>
+            <div class="v-table-container d-none d-md-block">
+                <div class="table-responsive w-100">
+                    <table class="table v-table align-middle text-nowrap">
+                        <thead>
+                            <tr>
+                                @if($activeTab === 'pending' || $activeTab === 'completed')
+                                <th class="ps-4" style="width: 48px;">
+                                    <div class="form-check m-0">
+                                        <input class="form-check-input" type="checkbox" id="selectAllDesktop" onchange="toggleAllCheckboxes(this)" aria-label="เลือกทั้งหมด">
+                                    </div>
+                                </th>
+                                @endif
+                                <th class="{{ ($activeTab === 'pending' || $activeTab === 'completed') ? 'ps-2' : 'ps-4' }}">วัน-เวลา</th>
+                                <th>รอบ/กะ</th> 
+                                <th>รายการตรวจ (Item)</th>
+                                <th>แผนก/พื้นที่</th>
+                                <th class="text-center">ผลการตรวจ</th>
+                                <th class="text-center">สถานะทวนสอบ</th> 
+                                <th>ข้อบกพร่อง (Findings)</th>
+                                <th class="pe-4 text-end">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($groupedInspections as $group)
+                            <tr>
+                                @if($activeTab === 'pending' || $activeTab === 'completed')
+                                <td class="ps-4">
+                                    @if($activeTab === 'pending' || !$group->is_approved)
+                                    <div class="form-check m-0">
+                                        <input class="form-check-input item-checkbox" type="checkbox" value="{{ json_encode($group->log_ids) }}" onchange="updateBulkActionUI()" aria-label="เลือกรายการ {{ $group->name }}">
+                                    </div>
                                     @endif
-                                    <th class="{{ $activeTab === 'pending' ? 'ps-2' : 'ps-4' }} py-3 text-muted fw-bold">วัน-เวลา</th>
-                                    <th class="py-3 text-muted fw-bold">รอบ/กะ</th> 
-                                    <th class="py-3 text-muted fw-bold">รายการตรวจ (Item)</th>
-                                    <th class="py-3 text-muted fw-bold">แผนก/พื้นที่</th>
-                                    <th class="py-3 text-muted fw-bold text-center">ผลการตรวจ</th>
-                                    <th class="py-3 text-muted fw-bold text-center">สถานะทวนสอบ</th> 
-                                    <th class="py-3 text-muted fw-bold">ข้อบกพร่อง (Findings)</th>
-                                    <th class="pe-4 py-3 text-muted fw-bold text-end">จัดการ</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @forelse($groupedInspections as $group)
-                                <tr>
-                                    @if($activeTab === 'pending' || $activeTab === 'completed')
-                                    <td class="ps-4">
-                                        @if($activeTab === 'pending' || !$group->is_approved)
-                                        <div class="form-check">
-                                            <input class="form-check-input item-checkbox" type="checkbox" value="{{ json_encode($group->log_ids) }}" onchange="updateBulkActionUI()">
-                                        </div>
+                                </td>
+                                @endif
+                                <td class="{{ ($activeTab === 'pending' || $activeTab === 'completed') ? 'ps-2' : 'ps-4' }}">
+                                    <div class="fw-bold text-dark" style="font-size: 0.875rem;">{{ $group->date }}</div>
+                                    <div class="small text-secondary d-flex align-items-center gap-1">
+                                        <i class="bi bi-clock" style="font-size: 0.75rem;"></i> {{ $group->time }}
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column gap-1">
+                                        <span class="badge rounded-pill bg-light text-dark border align-self-start fw-normal px-2 py-1" style="font-size: 0.75rem;">
+                                            รอบที่ {{ $group->round }}
+                                        </span>
+                                        <span class="badge rounded-pill bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 align-self-start fw-normal px-2 py-1" style="font-size: 0.75rem;">
+                                            {{ $group->shift_label ?? $group->shift }}
+                                        </span>
+                                        @if($group->is_sampling ?? false)
+                                            <span class="badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle align-self-start fw-medium px-2 py-1" style="font-size: 0.75rem;" title="เซสชันนี้เกิดจากการสุ่มตรวจ">
+                                                <i class="bi bi-shuffle me-1"></i>สุ่มตรวจ
+                                            </span>
                                         @endif
-                                    </td>
-                                    @endif
-                                    <td class="{{ ($activeTab === 'pending' || $activeTab === 'completed') ? 'ps-2' : 'ps-4' }} fw-normal text-muted">
-                                        <div class="small fw-bold text-dark">{{ $group->date }}</div>
-                                        <div class="small">{{ $group->time }}</div>
-                                    </td>
-                                    <td>
-                                        <div class="d-flex flex-column gap-1">
-                                            <span class="badge bg-light text-dark border">รอบที่ {{ $group->round }}</span>
-                                            <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">{{ $group->shift_label ?? $group->shift }}</span>
-                                            @if($group->is_sampling ?? false)
-                                                <span class="badge bg-warning text-dark border border-warning border-opacity-50 shadow-sm" title="เซสชันนี้เกิดจากการสุ่มตรวจ">
-                                                    <i class="bi bi-shuffle me-1"></i>สุ่มตรวจ
-                                                </span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="rounded-3 d-flex justify-content-center align-items-center me-3 overflow-hidden border flex-shrink-0" style="width:40px; height:40px; background: #f8fafc;">
+                                            @if($group->image_path)
+                                                <img src="{{ asset('storage/' . $group->image_path) }}" alt="{{ $group->name }}" class="w-100 h-100 object-fit-cover">
+                                            @elseif($group->type === 'area')
+                                                <i class="bi bi-layers text-secondary fs-5"></i>
+                                            @elseif($group->type === 'machine')
+                                                <i class="bi bi-gear-wide-connected text-primary fs-5"></i>
+                                            @else
+                                                <i class="bi bi-person-badge text-primary fs-5"></i>
                                             @endif
                                         </div>
-                                    </td>
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <div class="rounded-circle bg-light d-flex justify-content-center align-items-center me-3 overflow-hidden border" style="width:40px; height:40px;">
-                                                @if($group->image_path)
-                                                    <img src="{{ asset('storage/' . $group->image_path) }}" alt="{{ $group->name }}" class="w-100 h-100 object-fit-cover">
-                                                @elseif($group->type === 'area')
-                                                    <i class="bi bi-layers text-secondary fs-5"></i>
-                                                @elseif($group->type === 'machine')
-                                                    <i class="bi bi-gear-wide-connected text-secondary fs-5"></i>
-                                                @else
-                                                    <span class="fw-bold text-secondary">{{ substr($group->name, 0, 1) }}</span>
-                                                @endif
-                                            </div>
-                                            <span class="fw-bold text-dark">{{ $group->name }}</span>
+                                        <div class="min-w-0">
+                                            <span class="fw-bold text-dark d-block text-truncate" style="max-width: 320px;">{{ $group->name }}</span>
                                         </div>
-                                    </td>
-                                    <td class="text-secondary">{{ $group->subtext }}</td>
-                                    <td class="text-center">
-                                        @php
-                                            $allResolved = false;
-                                            if ($group->status === 'fail' && $group->findings->count() > 0) {
-                                                $allResolved = true;
-                                                foreach($group->findings as $log) {
-                                                    $isResolved = $log->verification_status === 'approved' || (isset($log->correctiveAction) && in_array($log->correctiveAction->status, ['resolved', 'closed', 'verified']));
-                                                    if (!$isResolved) {
-                                                        $allResolved = false;
-                                                        break;
-                                                    }
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="text-secondary fw-medium">{{ $group->subtext }}</span>
+                                </td>
+                                <td class="text-center">
+                                    @php
+                                        $allResolved = false;
+                                        if ($group->status === 'fail' && $group->findings->count() > 0) {
+                                            $allResolved = true;
+                                            foreach($group->findings as $log) {
+                                                $isResolved = $log->verification_status === 'approved' || (isset($log->correctiveAction) && in_array($log->correctiveAction->status, ['resolved', 'closed', 'verified']));
+                                                if (!$isResolved) {
+                                                    $allResolved = false;
+                                                    break;
                                                 }
                                             }
-                                        @endphp
-                                        @if($group->status === 'pass')
-                                            <span class="badge badge-soft-success px-3 py-2 rounded-pill fw-normal">
-                                                <i class="bi bi-check-circle me-1"></i> ผ่าน
-                                            </span>
-                                        @elseif($group->status === 'no_production')
-                                            <span class="badge bg-secondary text-white px-3 py-2 rounded-pill fw-normal">
-                                                <i class="bi bi-slash-circle me-1"></i> งดผลิต
-                                            </span>
-                                        @elseif($group->status === 'absent')
-                                            <span class="badge bg-secondary text-white px-3 py-2 rounded-pill fw-normal">
-                                                <i class="bi bi-slash-circle me-1"></i> ขาดงาน
-                                            </span>
-                                        @else
-                                            @if($allResolved)
-                                                <span class="badge badge-soft-warning px-3 py-2 rounded-pill fw-normal text-dark border border-warning" title="ตรวจพบข้อบกพร่องแต่ได้รับการแก้ไขแล้ว">
-                                                    <i class="bi bi-check-circle-fill me-1 text-success"></i> แก้ไขแล้ว
-                                                </span>
-                                            @else
-                                                <span class="badge badge-soft-danger px-3 py-2 rounded-pill fw-normal">
-                                                    <i class="bi bi-x-circle me-1"></i> ไม่ผ่าน
-                                                </span>
-                                            @endif
-                                        @endif
-                                    </td>
-                                    <td class="text-center">
-                                        @if(!$group->is_action_required)
-                                            <span class="badge bg-light text-muted px-3 py-2 rounded-pill border">
-                                                <i class="bi bi-dash-circle me-1"></i> ไม่ต้องอนุมัติ
-                                            </span>
-                                        @elseif($group->verification_status === 'approved')
-                                            <span class="badge bg-success px-3 py-2 rounded-pill shadow-sm">
-                                                <i class="bi bi-check-circle-fill me-1"></i> อนุมัติแล้ว
-                                            </span>
-                                        @elseif($group->verification_status === 'reclean')
-                                            <span class="badge bg-warning text-dark px-3 py-2 rounded-pill shadow-sm border border-warning">
-                                                <i class="bi bi-arrow-repeat me-1"></i> สั่งแก้ไข
-                                            </span>
-                                        @elseif($group->verification_status === 'auto_verified')
-                                            <span class="badge bg-info text-white px-3 py-2 rounded-pill shadow-sm">
-                                                <i class="bi bi-robot me-1"></i> ผ่านอัตโนมัติ
-                                            </span>
-                                        @elseif($group->is_verified)
-                                            <span class="badge bg-primary px-3 py-2 rounded-pill shadow-sm">
-                                                <i class="bi bi-shield-check me-1"></i> ยืนยันแล้ว
+                                        }
+                                    @endphp
+                                    @if($group->status === 'pass')
+                                        <span class="v-badge v-badge-pass">
+                                            <i class="bi bi-check-circle-fill"></i> ผ่าน
+                                        </span>
+                                    @elseif($group->status === 'no_production')
+                                        <span class="v-badge v-badge-absent">
+                                            <i class="bi bi-slash-circle"></i> งดผลิต
+                                        </span>
+                                    @elseif($group->status === 'absent')
+                                        <span class="v-badge v-badge-absent">
+                                            <i class="bi bi-person-dash"></i> ขาดงาน
+                                        </span>
+                                    @else
+                                        @if($allResolved)
+                                            <span class="v-badge v-badge-resolved" title="ตรวจพบข้อบกพร่องแต่ได้รับการแก้ไขแล้ว">
+                                                <i class="bi bi-shield-check"></i> แก้ไขแล้ว
                                             </span>
                                         @else
-                                            <span class="badge bg-light text-muted px-3 py-2 rounded-pill border">
-                                                <i class="bi bi-hourglass-split me-1"></i> รอยืนยัน
+                                            <span class="v-badge v-badge-fail">
+                                                <i class="bi bi-x-circle-fill"></i> ไม่ผ่าน
                                             </span>
                                         @endif
+                                    @endif
+                                </td>
+                                <td class="text-center">
+                                    @if(!$group->is_action_required)
+                                        <span class="v-badge v-badge-absent">
+                                            <i class="bi bi-dash-circle"></i> ไม่ต้องอนุมัติ
+                                        </span>
+                                    @elseif($group->verification_status === 'approved')
+                                        <span class="v-badge v-badge-approved">
+                                            <i class="bi bi-check-circle-fill"></i> อนุมัติแล้ว
+                                        </span>
+                                    @elseif($group->verification_status === 'reclean')
+                                        <span class="v-badge v-badge-reclean">
+                                            <i class="bi bi-arrow-repeat"></i> สั่งแก้ไข
+                                        </span>
+                                    @elseif($group->verification_status === 'auto_verified')
+                                        <span class="v-badge" style="background: #ecfeff; color: #0891b2; border: 1px solid #a5f3fc; font-weight: 600;">
+                                            <i class="bi bi-robot"></i> ผ่านอัตโนมัติ
+                                        </span>
+                                    @elseif($group->is_verified)
+                                        <span class="v-badge v-badge-verified">
+                                            <i class="bi bi-shield-check"></i> ยืนยันแล้ว
+                                        </span>
+                                    @else
+                                        <span class="v-badge" style="background: #f8fafc; color: #64748b; border: 1px solid #cbd5e1;">
+                                            <i class="bi bi-hourglass-split"></i> รอยืนยัน
+                                        </span>
+                                    @endif
 
-                                        {{-- One QA per shift means the inspector is usually also the
-                                             verifier. That is accepted, but the FM-QA-22 record must show
-                                             which rounds carried a single signature; the manager approval
-                                             step is the genuine second one. --}}
-                                        @if($group->self_verified ?? false)
-                                            <span class="badge bg-warning text-dark px-3 py-2 rounded-pill shadow-sm ms-1"
-                                                  title="ผู้ตรวจและผู้ยืนยันเป็นคนเดียวกัน — ต้องให้ผู้จัดการอนุมัติเป็นลายเซ็นที่สอง">
-                                                <i class="bi bi-person-exclamation me-1"></i> ตรวจ+ยืนยันคนเดียวกัน
-                                            </span>
-                                        @endif
-                                    </td>
-                                    <td>
-                                        @if($group->findings->isEmpty())
-                                            <span class="text-muted small">-</span>
-                                        @else
-                                            @foreach($group->findings as $log)
-                                                <div class="mb-2">
-                                                    @if($log->verification_status === 'approved' || (isset($log->correctiveAction) && in_array($log->correctiveAction->status, ['resolved', 'closed', 'verified'])))
-                                                        <span class="text-success small fw-bold d-block">
-                                                            <i class="bi bi-check-circle-fill me-1"></i> {{ $log->checkpoint?->title ?? 'Unknown' }}
-                                                            <span class="badge bg-success bg-opacity-10 text-success border border-success ms-1">แก้ไขแล้ว</span>
-                                                        </span>
-                                                        <span class="text-muted x-small d-block ps-4 fst-italic strike-through">
-                                                            {{ $log->correction_action }}
-                                                        </span>
-                                                        @if(isset($log->correctiveAction) && $log->correctiveAction->action_taken)
-                                                            <span class="text-success x-small d-block ps-4 fw-bold">
-                                                                <i class="bi bi-arrow-return-right me-1"></i> {{ $log->correctiveAction->action_taken }}
-                                                            </span>
-                                                        @endif
-                                                    @else
-                                                        <span class="text-danger small fw-bold d-block">• {{ $log->checkpoint?->title ?? 'Unknown' }}</span>
-                                                        @if($log->correction_action)
-                                                            <span class="text-muted x-small d-block ps-2" style="font-size: 0.75rem;">โน้ต: {{ $log->correction_action }}</span>
-                                                        @endif
+                                    @if($group->self_verified ?? false)
+                                        <span class="v-badge v-badge-self ms-1"
+                                              title="ผู้ตรวจและผู้ยืนยันเป็นคนเดียวกัน — ต้องให้ผู้จัดการอนุมัติเป็นลายเซ็นที่สอง">
+                                            <i class="bi bi-person-exclamation"></i> ตรวจ+ยืนยันคนเดียวกัน
+                                        </span>
+                                    @endif
+                                </td>
+                                <td>
+                                    @if($group->findings->isEmpty())
+                                        <span class="text-muted small">-</span>
+                                    @else
+                                        @foreach($group->findings as $log)
+                                            <div class="mb-1">
+                                                @if($log->verification_status === 'approved' || (isset($log->correctiveAction) && in_array($log->correctiveAction->status, ['resolved', 'closed', 'verified'])))
+                                                    <span class="text-success small fw-semibold d-inline-flex align-items-center gap-1">
+                                                        <i class="bi bi-check-circle-fill"></i> {{ $log->checkpoint?->title ?? 'Unknown' }}
+                                                        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" style="font-size: 0.7rem;">แก้ไขแล้ว</span>
+                                                    </span>
+                                                @else
+                                                    <span class="text-danger small fw-semibold d-inline-flex align-items-center gap-1">
+                                                        <i class="bi bi-exclamation-circle-fill"></i> {{ $log->checkpoint?->title ?? 'Unknown' }}
+                                                    </span>
+                                                    @if($log->correction_action)
+                                                        <div class="text-muted ps-3" style="font-size: 0.75rem;">
+                                                            {{ Str::limit($log->correction_action, 35) }}
+                                                        </div>
                                                     @endif
-                                                </div>
-                                            @endforeach
-                                        @endif
-                                    </td>
-                                    <td class="pe-4 text-end">
-                                        <button class="btn btn-link text-primary text-decoration-none p-0" data-bs-toggle="modal" data-bs-target="#detailModal{{ $group->modal_id }}">
-                                            <i class="bi bi-eye"></i> รายละเอียด
-                                        </button>
-                                    </td>
-                                </tr>
-                                @empty
-                                <tr>
-                                    <td colspan="{{ ($activeTab === 'pending' || $activeTab === 'completed') ? 9 : 8 }}" class="text-center py-5 text-muted">
-                                        <i class="bi bi-clipboard-check fs-1 d-block mb-3 opacity-25"></i>
+                                                @endif
+                                            </div>
+                                        @endforeach
+                                    @endif
+                                </td>
+                                <td class="pe-4 text-end">
+                                    <button class="v-btn-action" data-bs-toggle="modal" data-bs-target="#detailModal{{ $group->modal_id }}" aria-label="ดูรายละเอียด {{ $group->name }}">
+                                        <i class="bi bi-eye"></i>
+                                        <span>รายละเอียด</span>
+                                    </button>
+                                </td>
+                            </tr>
+                            @empty
+                            <tr>
+                                <td colspan="{{ ($activeTab === 'pending' || $activeTab === 'completed') ? 9 : 8 }}" class="text-center py-5">
+                                    <div class="py-4">
+                                        <div class="rounded-circle bg-light d-inline-flex align-items-center justify-content-center mb-3" style="width: 64px; height: 64px;">
+                                            <i class="bi bi-clipboard-check text-secondary fs-2"></i>
+                                        </div>
                                         @if($activeTab === 'completed')
-                                        <div class="fw-semibold mb-1">ไม่พบข้อมูลการตรวจในวันที่เลือก</div>
+                                        <div class="fw-bold text-dark fs-6 mb-1">ไม่พบข้อมูลการตรวจในวันที่เลือก</div>
                                         @else
-                                        <div class="fw-semibold mb-1">สุดยอด! ไม่มีงานค้างในระบบ</div>
+                                        <div class="fw-bold text-dark fs-6 mb-1">ไม่มีงานค้างในระบบ</div>
                                         @endif
-                                        <small class="d-block text-secondary">
+                                        <p class="text-secondary small mb-0">
                                             @if($activeTab === 'pending')
-                                                ยังไม่มีรายการรอทวนสอบ — จะปรากฏเมื่อ Inspector ส่งผลการตรวจเข้ามา
+                                                ยังไม่มีรายการรอทวนสอบ — รายการจะปรากฏเมื่อผู้ตรวจส่งผลการตรวจเข้ามา
                                             @elseif($activeTab === 'reclean')
-                                                ไม่มีรายการสั่งแก้ไข
+                                                ไม่มีรายการสั่งแก้ไขในระบบ
                                             @else
-                                                ไม่มีรายการรออนุมัติ
+                                                ไม่มีรายการรออนุมัติในวันที่ระบุ
                                             @endif
-                                        </small>
-                                    </td>
-                                </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
+                                        </p>
+                                    </div>
+                                </td>
+                            </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
             <!-- Mobile Card View Section (Mobile) -->
             <div class="d-block d-md-none">
                 @if(($activeTab === 'pending' || $activeTab === 'completed') && $groupedInspections->count() > 0)
-                <div class="d-flex justify-content-between align-items-center mb-2 bg-white p-2 px-3 rounded-3 shadow-sm border">
+                <div class="d-flex justify-content-between align-items-center mb-3 bg-white p-3 rounded-4 shadow-xs border" style="border-color: #e2e8f0;">
                     <label class="fw-bold text-dark mb-0" for="selectAllMobile">เลือกทั้งหมด (Select All)</label>
-                    <div class="form-check m-0" style="transform: scale(1.2);">
-                        <input class="form-check-input border-secondary shadow-sm" type="checkbox" id="selectAllMobile" onchange="toggleAllCheckboxes(this)">
+                    <div class="form-check m-0">
+                        <input class="form-check-input border-secondary" type="checkbox" id="selectAllMobile" onchange="toggleAllCheckboxes(this)" style="width: 20px; height: 20px;" aria-label="เลือกทั้งหมด">
                     </div>
                 </div>
                 @endif
                 
                 @forelse($groupedInspections as $group)
-                <div class="card border-0 shadow-sm rounded-3 mb-2">
-                    <div class="card-body p-2" onclick="new bootstrap.Modal(document.getElementById('detailModal{{ $group->modal_id }}')).show()" style="cursor: pointer; transition: transform 0.1s, box-shadow 0.1s;" onpointerdown="this.style.transform='scale(0.98)'" onpointerup="this.style.transform=''" onpointerleave="this.style.transform=''">
-                        <div class="d-flex align-items-center mb-2">
-                            <div class="rounded-circle bg-light d-flex justify-content-center align-items-center me-2 overflow-hidden border flex-shrink-0" style="width:40px; height:40px;">
-                                @if($group->image_path)
-                                    <img src="{{ asset('storage/' . $group->image_path) }}" alt="{{ $group->name }}" class="w-100 h-100 object-fit-cover">
-                                @elseif($group->type === 'area')
-                                    <i class="bi bi-layers text-secondary fs-5"></i>
-                                @elseif($group->type === 'machine')
-                                    <i class="bi bi-gear-wide-connected text-secondary fs-5"></i>
-                                @else
-                                    <span class="fw-bold text-secondary fs-6">{{ substr($group->name, 0, 1) }}</span>
-                                @endif
-                            </div>
-                            <div class="flex-grow-1 min-w-0">
-                                <div class="d-flex justify-content-between align-items-start">
-                                    <h6 class="fw-bold text-dark mb-0 text-truncate me-2 flex-grow-1" style="font-size:0.95rem;">{{ $group->name }}</h6>
-                                    @if($activeTab !== 'pending')
-                                        @if($group->status === 'pass')
-                                            <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-2 py-0 x-small flex-shrink-0">
-                                                <i class="bi bi-check-circle-fill me-1"></i>ผ่าน
-                                            </span>
-                                        @else
-                                            <span class="badge bg-danger bg-opacity-10 text-danger rounded-pill px-2 py-0 x-small flex-shrink-0">
-                                                <i class="bi bi-x-circle-fill me-1"></i>ไม่ผ่าน
-                                            </span>
-                                        @endif
-                                    @endif
-                                </div>
-                                <div class="text-muted x-small text-truncate">{{ $group->subtext }}</div>
-                            </div>
-                            @if($activeTab === 'pending' || ($activeTab === 'completed' && !$group->is_approved))
-                            <div class="ms-2 ps-1 flex-shrink-0" style="transform: scale(1.2);">
-                                <input class="form-check-input item-checkbox border-secondary shadow-sm m-0" type="checkbox" value="{{ json_encode($group->log_ids) }}" onchange="updateBulkActionUI()" onclick="event.stopPropagation()">
-                            </div>
-                            @endif
-                        </div>
-
-                        <div class="d-flex justify-content-between align-items-center bg-light rounded-3 p-1 px-2 mb-2">
-                            <div class="d-flex gap-1 flex-wrap">
-                                <span class="badge bg-white border text-secondary fw-normal x-small"><i class="bi bi-calendar3 me-1"></i>{{ $group->date }} {{ $group->time }}</span>
-                                <span class="badge bg-white border text-secondary fw-normal x-small">รอบ {{ $group->round }}</span>
-                                <span class="badge bg-white border text-secondary fw-normal x-small">{{ $group->shift }}</span>
-                                @if($group->is_sampling ?? false)
-                                    <span class="badge bg-warning text-dark border border-warning fw-normal x-small" title="สุ่มตรวจ"><i class="bi bi-shuffle me-1"></i>สุ่มตรวจ</span>
-                                @endif
-                            </div>
-                            @if(!$group->findings->isEmpty())
-                                <small class="text-danger fw-bold x-small"><i class="bi bi-exclamation-circle me-1"></i>{{ $group->findings->count() }} ข้อผิดพลาด</small>
-                            @endif
-                        </div>
-
-                        <div class="d-grid">
-                            @if($group->is_verified)
-                                @if($group->verification_status === 'reclean')
-                                    <button class="btn btn-warning btn-sm rounded-pill w-100 text-dark fw-bold">
-                                        <i class="bi bi-arrow-repeat me-1"></i> สั่งแก้ไขใหม่แล้ว
-                                    </button>
-                                @else
-                                    <button class="btn btn-outline-primary btn-sm rounded-pill w-100 border-primary bg-primary bg-opacity-10 opacity-75">
-                                        <i class="bi bi-shield-check me-1"></i> ยืนยันแล้ว — แตะเพื่อดู
-                                    </button>
-                                @endif
+                <div class="v-mobile-card">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="rounded-3 d-flex justify-content-center align-items-center me-3 overflow-hidden border flex-shrink-0" style="width:44px; height:44px; background: #f8fafc;">
+                            @if($group->image_path)
+                                <img src="{{ asset('storage/' . $group->image_path) }}" alt="{{ $group->name }}" class="w-100 h-100 object-fit-cover">
+                            @elseif($group->type === 'area')
+                                <i class="bi bi-layers text-secondary fs-5"></i>
+                            @elseif($group->type === 'machine')
+                                <i class="bi bi-gear-wide-connected text-primary fs-5"></i>
                             @else
-                                <button class="btn btn-primary btn-sm rounded-pill w-100 shadow-sm">
-                                    <i class="bi bi-eye me-1"></i> ตรวจสอบ / ยืนยันผล
-                                </button>
+                                <i class="bi bi-person-badge text-primary fs-5"></i>
                             @endif
                         </div>
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="d-flex justify-content-between align-items-start gap-2">
+                                <h6 class="fw-bold text-dark mb-1 text-truncate" style="font-size:0.95rem;">{{ $group->name }}</h6>
+                                @if($group->status === 'pass')
+                                    <span class="v-badge v-badge-pass" style="font-size: 0.75rem; padding: 0.15rem 0.5rem;">
+                                        <i class="bi bi-check-circle-fill"></i> ผ่าน
+                                    </span>
+                                @elseif($group->status === 'absent')
+                                    <span class="v-badge v-badge-absent" style="font-size: 0.75rem; padding: 0.15rem 0.5rem;">
+                                        <i class="bi bi-person-dash"></i> ขาดงาน
+                                    </span>
+                                @elseif($group->status === 'no_production')
+                                    <span class="v-badge v-badge-absent" style="font-size: 0.75rem; padding: 0.15rem 0.5rem;">
+                                        <i class="bi bi-slash-circle"></i> งดผลิต
+                                    </span>
+                                @else
+                                    <span class="v-badge v-badge-fail" style="font-size: 0.75rem; padding: 0.15rem 0.5rem;">
+                                        <i class="bi bi-x-circle-fill"></i> ไม่ผ่าน
+                                    </span>
+                                @endif
+                            </div>
+                            <div class="text-secondary small text-truncate">{{ $group->subtext }}</div>
+                        </div>
+                        @if($activeTab === 'pending' || ($activeTab === 'completed' && !$group->is_approved))
+                        <div class="ms-2 ps-1 flex-shrink-0">
+                            <input class="form-check-input item-checkbox border-secondary m-0" type="checkbox" value="{{ json_encode($group->log_ids) }}" onchange="updateBulkActionUI()" style="width: 20px; height: 20px;" aria-label="เลือกรายการ {{ $group->name }}">
+                        </div>
+                        @endif
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center bg-light rounded-3 p-2 mb-3">
+                        <div class="d-flex gap-1 flex-wrap align-items-center">
+                            <span class="badge bg-white border text-secondary fw-normal" style="font-size: 0.75rem;"><i class="bi bi-calendar3 me-1"></i>{{ $group->date }} {{ $group->time }}</span>
+                            <span class="badge bg-white border text-secondary fw-normal" style="font-size: 0.75rem;">รอบ {{ $group->round }}</span>
+                            <span class="badge bg-white border text-secondary fw-normal" style="font-size: 0.75rem;">{{ $group->shift }}</span>
+                            @if($group->is_sampling ?? false)
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle fw-medium" style="font-size: 0.75rem;" title="สุ่มตรวจ"><i class="bi bi-shuffle me-1"></i>สุ่มตรวจ</span>
+                            @endif
+                        </div>
+                        @if(!$group->findings->isEmpty())
+                            <span class="text-danger fw-bold small"><i class="bi bi-exclamation-circle me-1"></i>{{ $group->findings->count() }} ข้อผิดพลาด</span>
+                        @endif
+                    </div>
+
+                    <div class="d-grid">
+                        <button class="btn btn-outline-primary rounded-pill w-100 fw-semibold d-flex align-items-center justify-content-center gap-2" onclick="new bootstrap.Modal(document.getElementById('detailModal{{ $group->modal_id }}')).show()" style="min-height: 44px;">
+                            <i class="bi bi-eye"></i>
+                            <span>{{ $group->is_verified ? 'ดูรายละเอียดผลตรวจ' : 'ตรวจสอบ / ยืนยันผล' }}</span>
+                        </button>
                     </div>
                 </div>
                 @empty
-                <div class="text-center py-5 text-muted">
-                    <i class="bi bi-clipboard-check fs-1 d-block mb-3 opacity-25"></i>
+                <div class="text-center py-5">
+                    <div class="rounded-circle bg-light d-inline-flex align-items-center justify-content-center mb-3" style="width: 64px; height: 64px;">
+                        <i class="bi bi-clipboard-check text-secondary fs-2"></i>
+                    </div>
                     @if($activeTab === 'completed')
-                    <p class="fw-semibold mb-1">ไม่พบข้อมูลการตรวจในวันที่เลือก</p>
+                    <p class="fw-bold text-dark mb-1">ไม่พบข้อมูลการตรวจในวันที่เลือก</p>
                     @else
-                    <p class="fw-semibold mb-1 text-success"><i class="bi bi-stars me-1"></i> สุดยอด! ไม่มีงานค้างในระบบ</p>
+                    <p class="fw-bold text-dark mb-1">ไม่มีงานค้างในระบบ</p>
                     @endif
                     <small class="text-secondary">
                         @if($activeTab === 'pending')
-                            ยังไม่มีรายการรอทวนสอบ — จะปรากฏเมื่อ Inspector ส่งผลการตรวจเข้ามา
+                            ยังไม่มีรายการรอทวนสอบ — รายการจะปรากฏเมื่อผู้ตรวจส่งผลการตรวจเข้ามา
                         @elseif($activeTab === 'reclean')
                             ไม่มีรายการสั่งแก้ไข
                         @else
@@ -499,7 +829,12 @@
                             <div class="col-md-4">
                                 <div class="p-2 border rounded-3 bg-white text-center shadow-sm">
                                     <div class="small text-muted mb-1">สถานะวันนี้</div>
-                                    @if($group->traffic_light === 'green')
+                                    @if($group->traffic_light === 'grey')
+                                        {{-- Nothing was actually assessed: everyone was absent, or the
+                                             line was not running. Showing "Excellent" here is what made
+                                             a shift of no-shows look like a perfect round. --}}
+                                        <span class="badge bg-secondary rounded-pill px-3 w-100">ไม่มีการตรวจ ⚪</span>
+                                    @elseif($group->traffic_light === 'green')
                                         <span class="badge bg-success rounded-pill px-3 w-100">Excellent 🟢</span>
                                     @elseif($group->traffic_light === 'yellow')
                                         <span class="badge bg-warning text-dark rounded-pill px-3 w-100">Watch List 🟡</span>
@@ -517,13 +852,18 @@
                             <div class="col-md-4">
                                 <div class="p-2 border rounded-3 bg-white text-center shadow-sm">
                                     <div class="small text-muted mb-1">Hygiene Score</div>
+                                    @if(is_null($group->hygiene_score))
+                                        <div class="fw-bold text-muted">—</div>
+                                        <div class="small text-muted">ไม่มีรายการที่ตรวจจริง</div>
+                                    @else
                                     <div class="d-flex align-items-center justify-content-center">
                                         <div class="fw-bold me-2">{{ $group->hygiene_score }}%</div>
                                         <div class="progress flex-grow-1" style="height: 6px; min-width: 40px;">
-                                            <div class="progress-bar {{ $group->hygiene_score >= 90 ? 'bg-success' : ($group->hygiene_score >= 80 ? 'bg-warning' : 'bg-danger') }}" 
+                                            <div class="progress-bar {{ $group->hygiene_score >= 90 ? 'bg-success' : ($group->hygiene_score >= 80 ? 'bg-warning' : 'bg-danger') }}"
                                                  role="progressbar" style="width: {{ $group->hygiene_score }}%"></div>
                                         </div>
                                     </div>
+                                    @endif
                                 </div>
                             </div>
                         </div>
@@ -554,7 +894,12 @@
                                 $emp = $empLogs->first()->employee;
                                 $empName = $emp->fullname ?? $emp->name ?? 'Unknown';
                                 $empFailed = $empLogs->where('result', 'fail')->count();
-                                $empPassed = $empFailed === 0;
+                                // An employee who did not come to work has zero failures, so the
+                                // old `$empFailed === 0` test labelled them "ผ่าน (10 ข้อ)" —
+                                // crediting them with passing checkpoints nobody assessed.
+                                $empAbsent = $empLogs->isNotEmpty()
+                                    && $empLogs->every(fn($l) => $l->result === 'absent');
+                                $empPassed = !$empAbsent && $empFailed === 0;
                                 $collapseId = 'collapse_' . $group->modal_id . '_' . $empId;
                             @endphp
                             <div class="accordion-item border-0 mb-2 rounded-3 shadow-sm overflow-hidden">
@@ -562,7 +907,7 @@
                                     <button class="accordion-button {{ $empPassed ? '' : '' }} collapsed py-2 px-3" type="button" 
                                             data-bs-toggle="collapse" data-bs-target="#{{ $collapseId }}" 
                                             aria-expanded="false" aria-controls="{{ $collapseId }}"
-                                            style="font-size: 0.9rem; background-color: {{ $empPassed ? '#f0fdf4' : '#fef2f2' }};">
+                                            style="font-size: 0.9rem; background-color: {{ $empAbsent ? '#f8f9fa' : ($empPassed ? '#f0fdf4' : '#fef2f2') }};">
                                         <div class="d-flex align-items-center justify-content-between w-100 me-2">
                                             <div class="d-flex align-items-center">
                                                 @if($emp && $emp->profile_image)
@@ -575,7 +920,11 @@
                                                 <span class="fw-semibold">{{ $empName }}</span>
                                             </div>
                                             <div>
-                                                @if($empPassed)
+                                                @if($empAbsent)
+                                                    <span class="badge bg-secondary rounded-pill px-2 py-1" style="font-size:0.7rem;">
+                                                        <i class="bi bi-person-dash-fill me-1"></i>ไม่มาทำงาน
+                                                    </span>
+                                                @elseif($empPassed)
                                                     <span class="badge bg-success rounded-pill px-2 py-1" style="font-size:0.7rem;">
                                                         <i class="bi bi-check-circle-fill me-1"></i>ผ่าน ({{ $empLogs->count() }} ข้อ)
                                                     </span>
@@ -792,20 +1141,20 @@
                                     @foreach($finalLogs as $log)
                                     @if(isset($log->is_section_header) && $log->is_section_header)
                                         @if($log->type === 'info')
-                                        <tr class="table-primary">
-                                            <td colspan="3" class="fw-bold py-2 text-primary" style="font-size: 1.05rem;">
-                                                <i class="bi {{ $log->icon }} me-2"></i>{{ $log->title }}
+                                        <tr style="background: #f1f5f9;">
+                                            <td colspan="3" class="fw-bold py-2 text-dark" style="font-size: 0.95rem; border-bottom: 2px solid #cbd5e1;">
+                                                <i class="bi {{ $log->icon }} text-primary me-2"></i>{{ $log->title }}
                                             </td>
                                         </tr>
                                         @elseif($log->type === 'na')
-                                        <tr class="table-warning">
-                                            <td colspan="3" class="fw-bold py-2 text-dark {{ isset($log->indent) && $log->indent ? 'ps-4' : '' }}">
+                                        <tr style="background: #f8fafc;">
+                                            <td colspan="3" class="fw-bold py-2 text-secondary {{ isset($log->indent) && $log->indent ? 'ps-4' : '' }}" style="font-size: 0.85rem;">
                                                 <i class="bi bi-slash-circle me-2"></i>{{ $log->title }}
                                             </td>
                                         </tr>
                                         @else
-                                        <tr class="{{ $log->type === 'fail' ? 'table-danger' : 'table-success' }}">
-                                            <td colspan="3" class="fw-bold py-2 {{ $log->type === 'fail' ? 'text-danger' : 'text-success' }} {{ isset($log->indent) && $log->indent ? 'ps-4' : '' }}">
+                                        <tr style="background: {{ $log->type === 'fail' ? '#fff1f2' : '#ecfdf5' }};">
+                                            <td colspan="3" class="fw-bold py-2 {{ $log->type === 'fail' ? 'text-danger' : 'text-success' }} {{ isset($log->indent) && $log->indent ? 'ps-4' : '' }}" style="font-size: 0.85rem;">
                                                 <i class="bi {{ $log->type === 'fail' ? 'bi-x-circle-fill' : 'bi-check-circle-fill' }} me-2"></i>{{ $log->title }}
                                             </td>
                                         </tr>
@@ -1281,23 +1630,20 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 
 {{-- Floating Bulk Action Bar --}}
-<div id="bulkActionBar" class="fixed-bottom bg-white border-top p-3 shadow-lg flex-row align-items-center justify-content-between z-3 d-none">
-    <div class="d-flex align-items-center">
-        <span class="fs-5 fw-bold text-primary me-2" id="selectedCount">0</span>
-        <span class="text-secondary fw-semibold">รายการที่เลือก</span>
+<div id="bulkActionBar" class="fixed-bottom p-3 flex-row align-items-center justify-content-between z-3 d-none v-bulk-bar">
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge rounded-pill bg-primary px-3 py-2 fs-6 fw-bold shadow-xs" id="selectedCount">0</span>
+        <span class="text-dark fw-semibold">รายการที่เลือก</span>
     </div>
     <div class="d-flex gap-2">
         @if($activeTab === 'pending')
-        <button type="button" class="btn btn-primary rounded-pill px-4 shadow-sm" onclick="submitBulkVerify()">
-            <i class="bi bi-check2-all me-1"></i> ยืนยันทั้งหมด
+        <button type="button" class="btn btn-primary rounded-pill px-4 shadow-sm fw-semibold d-inline-flex align-items-center gap-1" onclick="submitBulkVerify()">
+            <i class="bi bi-check2-all"></i> ยืนยันทั้งหมด
         </button>
         @elseif($activeTab === 'completed')
-        {{-- managerApprove() requires the 'approve' gate (QA manager, level >= 5). The
-             button used to render for everyone, so a supervisor could click it and get
-             a bare 403. --}}
         @can('approve')
-        <button type="button" class="btn btn-success rounded-pill px-4 shadow-sm" onclick="submitBulkApprove()">
-            <i class="bi bi-patch-check-fill me-1"></i> อนุมัติทั้งหมด
+        <button type="button" class="btn btn-success rounded-pill px-4 shadow-sm fw-semibold d-inline-flex align-items-center gap-1" onclick="submitBulkApprove()">
+            <i class="bi bi-patch-check-fill"></i> อนุมัติทั้งหมด
         </button>
         @endcan
         @endif

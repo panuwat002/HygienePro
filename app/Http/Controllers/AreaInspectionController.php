@@ -194,8 +194,8 @@ class AreaInspectionController extends Controller
 
     public function storeBulk(Request $request, InspectionSession $session)
     {
-        if ($session->inspector_id !== Auth::id() && !Auth::user()->isAdmin()) {
-            abort(403, 'Unauthorized: not session owner');
+        if (!$this->canManageSession($session)) {
+            abort(403, 'Unauthorized: not session owner or supervisor');
         }
 
         if ($session->isLocked()) {
@@ -596,8 +596,8 @@ class AreaInspectionController extends Controller
      */
     public function storeBulkNoProduction(Request $request, InspectionSession $session, $locationId)
     {
-        if ($session->inspector_id !== Auth::id() && !Auth::user()->isAdmin()) {
-            return response()->json(['success' => false, 'message' => 'Unauthorized: not session owner'], 403);
+        if (!$this->canManageSession($session)) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized: not session owner or supervisor'], 403);
         }
 
         if ($session->isLocked()) {
@@ -770,8 +770,8 @@ class AreaInspectionController extends Controller
      */
     public function storeBulkPass(Request $request, InspectionSession $session, $locationId)
     {
-        if ($session->inspector_id !== Auth::id() && !Auth::user()->isAdmin()) {
-            return response()->json(['success' => false, 'message' => 'Unauthorized: not session owner'], 403);
+        if (!$this->canManageSession($session)) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized: not session owner or supervisor'], 403);
         }
 
         if ($session->isLocked()) {
@@ -891,8 +891,8 @@ class AreaInspectionController extends Controller
      */
     public function storeBulkNoProductionRemainingMachines(Request $request, InspectionSession $session, $locationId)
     {
-        if ($session->inspector_id !== Auth::id() && !Auth::user()->isAdmin()) {
-            return response()->json(['success' => false, 'message' => 'Unauthorized: not session owner'], 403);
+        if (!$this->canManageSession($session)) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized: not session owner or supervisor'], 403);
         }
 
         if ($session->isLocked()) {
@@ -970,5 +970,17 @@ class AreaInspectionController extends Controller
             'logs_created' => $logsCreated,
             'message' => "บันทึก 'ไม่มีผลิต' ให้เครื่องจักรที่ยังไม่ตรวจ จำนวน {$machinesTouched} เครื่อง ({$logsCreated} จุดตรวจ)",
         ]);
+    }
+
+    private function canManageSession(InspectionSession $session): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+
+        return ($session->inspector_id === $user->id)
+            || $user->isAdmin()
+            || ($user->isQA() && ($user->isSupervisor() || $user->isManager()));
     }
 }

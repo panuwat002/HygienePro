@@ -173,7 +173,7 @@
                         <div>
                             <h5 class="fw-bold mb-0 text-dark">การตรวจยังไม่เสร็จสิ้น</h5>
                             <p class="text-primary mb-0 small fw-bold">
-                                {{ $currentSession->department->dept_name }} | กะ{{ $currentSession->shift }}
+                                {{ $currentSession->department->dept_name }} | {{ $currentSession->shift_label }}
                             </p>
                         </div>
                         <div class="ms-auto text-end">
@@ -282,7 +282,7 @@
                     </div>
                     <h5 class="fw-bold mb-1 text-dark">ตรวจสอบครบถ้วนแล้ว</h5>
                     <p class="text-success mb-3 small fw-bold">
-                        {{ $currentSession->department->dept_name }} | กะ{{ $currentSession->shift === 'morning' ? 'เช้า' : 'ดึก' }}
+                        {{ $currentSession->department->dept_name }} | {{ $currentSession->shift_label }}
                     </p>
                     <p class="text-muted small mb-4">คุณได้ทำการตรวจสอบเป้าหมายทั้งหมดในรอบนี้เรียบร้อยแล้ว กรุณากด "จบงาน" เพื่อบันทึกข้อมูลและส่งให้หัวหน้าอนุมัติ</p>
                     
@@ -427,7 +427,7 @@
                             <li class="mb-1">
                                 <strong>{{ $activeSess->inspector->name ?? 'Unknown' }}</strong> กำลังตรวจ 
                                 <strong class="text-primary">{{ $activeSess->department->dept_name ?? 'รวมทั้งหมด' }}</strong> 
-                                กะ{{ $activeSess->shift === 'morning' ? 'เช้า' : ($activeSess->shift === 'afternoon' ? 'บ่าย' : 'ดึก') }} 
+                                {{ $activeSess->shift_label }} 
                                 <span class="badge bg-secondary ms-1">รอบที่ {{ $activeSess->round }}</span>
                             </li>
                         @endforeach
@@ -743,6 +743,11 @@
             locations.forEach((loc, index) => {
                 const total = loc.employees_count;
                 const inspected = loc.inspected_count || 0;
+                // inspected_count counts everyone who has a record, absences included.
+                // Report the two separately so a shift where three people were on leave
+                // does not read as "ตรวจแล้ว 32 คน".
+                const absentCount = loc.absent_count || 0;
+                const actuallyInspected = (loc.actually_inspected_count ?? inspected);
                 const hasEmployees = total > 0;
                 const opacityClass = hasEmployees ? '' : 'opacity-75';
                 const animDelay = (index * 0.05).toFixed(2);
@@ -981,7 +986,7 @@
                                 <p class="text-muted small mb-3 text-truncate">${escapeHtml(loc.description) || '-'}</p>
                                 <div class="d-flex justify-content-between align-items-center mt-auto pt-3 border-top border-light">
                                     <small class="text-muted fw-medium"><i class="bi bi-people-fill text-secondary opacity-75 me-1"></i> มีพนักงาน ${total} คน</small>
-                                    <small class="${inspected > 0 ? 'text-success fw-bold' : 'text-muted fw-medium'}"><i class="bi bi-check-circle-fill me-1 ${inspected > 0 ? '' : 'text-secondary opacity-50'}"></i>ตรวจแล้ว ${inspected} คน</small>
+                                    <small class="${actuallyInspected > 0 ? 'text-success fw-bold' : 'text-muted fw-medium'}"><i class="bi bi-check-circle-fill me-1 ${actuallyInspected > 0 ? '' : 'text-secondary opacity-50'}"></i>ตรวจแล้ว ${actuallyInspected} คน${absentCount > 0 ? ` <span class="text-secondary fw-medium">· ไม่มาทำงาน ${absentCount} คน</span>` : ''}</small>
                                 </div>
                             ` : areaSelectionHtml}
                         </div>
@@ -1385,7 +1390,7 @@
                             <h5 class="fw-bold text-dark">คุณกำลังจะให้ผ่านทั้งหมด</h5>
                             <p class="text-muted mb-0">
                                 พนักงานที่เหลืออีก <strong class="text-success fs-4">{{ $remainingCount }}</strong> คน
-                                ในกะ<strong>{{ $currentSession->shift === 'morning' ? 'เช้า' : ($currentSession->shift === 'afternoon' ? 'บ่าย' : 'ดึก') }}</strong>
+                                ในกะ<strong>{{ $currentSession->shift_label }}</strong>
                                 จะถูกบันทึกว่า <strong class="text-success">"ผ่าน"</strong> ทุกหัวข้อตรวจโดยอัตโนมัติ
                             </p>
                         </div>

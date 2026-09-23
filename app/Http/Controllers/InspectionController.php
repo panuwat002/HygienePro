@@ -406,7 +406,7 @@ class InspectionController extends Controller
                 // counts. Matching shift_name here could never hit one, which left
                 // $totalTargets at 0 — and a zero total made the block below list every
                 // uninspected employee in the department as "remaining".
-                $targetEmployeeIds = $currentSession->getTargetEmployees()->pluck('id')->toArray();
+                $targetEmployeeIds = $currentSession->getSessionTargetEmployees()->pluck('id')->toArray();
                 $totalTargets = count($targetEmployeeIds);
                 
                 // Loop Engineering Fix: Count ANYONE inspected in this session (even if they swapped shifts)
@@ -612,6 +612,15 @@ class InspectionController extends Controller
                     // All inspected employee IDs across all shifts (for dedup)
                     $allInspectedIds = $allTodayLogs->pluck('employee_id')->unique()->toArray();
 
+                    // Employees whose only records today are absences were not inspected —
+                    // they did not come to work. They still count as "handled" so the shift
+                    // can close, but the card reports them separately instead of folding
+                    // them into the inspected figure.
+                    $allAbsentIds = $allTodayLogs->groupBy('employee_id')
+                        ->filter(fn($logs) => $logs->every(fn($l) => $l->result === 'absent'))
+                        ->keys()
+                        ->all();
+
                     $allEmployees = \App\Models\Employee::where('department_id', $deptModel->id)
                                         ->where('is_active', true)
                                         ->get();
@@ -668,11 +677,17 @@ class InspectionController extends Controller
                             continue;
                         }
 
+                        // Split the handled figure so the card can say "ตรวจแล้ว 29 คน ·
+                        // ไม่มาทำงาน 3 คน" rather than implying 32 people were inspected.
+                        $absentFromThisShift = count(array_intersect($shiftEmployeeIds, $allAbsentIds));
+
                         $shiftCards[] = [
                             'id' => 'shift_' . $shiftKey,
                             'location_name' => $shiftLabel,
                             'employees_count' => $empCount,
                             'inspected_count' => $inspectedFromThisShift,
+                            'absent_count' => $absentFromThisShift,
+                            'actually_inspected_count' => max(0, $inspectedFromThisShift - $absentFromThisShift),
                             'description' => $isCurrentShift 
                                 ? '🎯 กะที่ถูกเลือก' 
                                 : 'จำนวนพนักงานที่ตรวจแล้วในกะนี้',
@@ -1250,7 +1265,34 @@ class InspectionController extends Controller
             ->distinct('employee_id')
             ->count('employee_id');
 
-        return view('inspections.scan', compact('session', 'failedCount'));
+        // Build the list of employees still uninspected in this shift so the Bulk Pass
+        // confirmation modal on the scan page can show a checkbox per person —
+        // letting the inspector mark who did not come to work before committing.
+        // Without this the modal had no names and silently credited absentees with a pass.
+        $targetEmployees = $session->getSessionTargetEmployees();
+        $targetEmployeeIds = $targetEmployees->pluck('id')->toArray();
+        $totalEmployees = count($targetEmployeeIds);
+
+        $inspectedIds = \App\Models\InspectionLog::where('session_id', $session->id)
+            ->whereIn('employee_id', $targetEmployeeIds)
+            ->pluck('employee_id')
+            ->unique()
+            ->toArray();
+
+        $shiftRemainingEmployees = $targetEmployees->whereNotIn('id', $inspectedIds)->values();
+        $shiftRemainingCount = $shiftRemainingEmployees->count();
+        $inspectedCount = count($inspectedIds);
+        $progressPercent = $totalEmployees > 0 ? (int) round(($inspectedCount / $totalEmployees) * 100) : 0;
+
+        return view('inspections.scan', compact(
+            'session',
+            'failedCount',
+            'shiftRemainingEmployees',
+            'shiftRemainingCount',
+            'totalEmployees',
+            'inspectedCount',
+            'progressPercent'
+        ));
     }
 
     public function pauseSession(InspectionSession $session)
@@ -1299,11 +1341,10 @@ class InspectionController extends Controller
     {
         $this->authorizeSessionOwner($session);
 
-        // The `|| isQA()` disjunct used to nullify this whole guard: the route sits
-        // behind can:inspect, and Gate 'inspect' -> User::canInspect() already requires
-        // isQA(), so !isQA() was always false and a QA staff account could mark an
-        // entire shift as passed without inspecting anyone.
-        if (!Auth::user()->isSupervisor() && !Auth::user()->isManager() && !Auth::user()->isAdmin()) {
+        // Allow the session's inspector (including QA staff) or supervisors/managers/admins to close out the shift
+        $user = Auth::user();
+        $canBulkPass = $user->isSupervisor() || $user->isManager() || $user->isAdmin() || $session->inspector_id === $user->id;
+        if (!$canBulkPass) {
             if ($request->wantsJson() || $request->ajax()) {
                 return response()->json(['success' => false, 'message' => 'ไม่มีสิทธิ์ใช้งานฟังก์ชันนี้ (Unauthorized)'], 403);
             }
@@ -1319,8 +1360,16 @@ class InspectionController extends Controller
                 ->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถแก้ไขได้ (Session Locked)');
         }
 
+        $request->validate([
+            'absent_employee_ids' => 'nullable|array',
+            'absent_employee_ids.*' => 'integer|exists:employees,id',
+        ]);
+
         try {
-            $count = $this->inspectionService->bulkPassRemaining($session);
+            $count = $this->inspectionService->bulkPassRemaining(
+                $session,
+                $request->input('absent_employee_ids', []) ?? []
+            );
 
             if ($request->wantsJson() || $request->ajax()) {
                 return response()->json([
@@ -1672,9 +1721,9 @@ class InspectionController extends Controller
         $activeTab = $request->input('tab', 'pending');
         
         // Date Range Logic
-        // If no date is provided, 'completed' defaults to today. Actionable tabs default to empty (All time).
-        $defaultDate = ($activeTab === 'completed') ? date('Y-m-d') : '';
-        $dateStr = $request->input('date', $defaultDate);
+        // In Inbox Mode (empty date), all actionable items (pending QA, reclean, pending manager approval) are loaded across all dates, plus today's approved items.
+        // Explicit dates only apply if user selected a date in the date picker.
+        $dateStr = $request->input('date', '');
         
         // Parse Flatpickr Range "YYYY-MM-DD to YYYY-MM-DD"
         $startDate = null;
@@ -1994,8 +2043,18 @@ class InspectionController extends Controller
                 $employee = null; // Unset so UI treats it as a group
 
                 $monthlyFailures = 0;
-                $hygieneScore = 100;
-                $trafficLight = 'green';
+                // Was hardcoded to 100, so a round consisting entirely of people who did
+                // not come to work still displayed "Hygiene Score 100%". Score the actual
+                // results, counting only checkpoints someone was really assessed on —
+                // 'absent' and 'no_production' are not outcomes, they are non-events, and
+                // ReportController already excludes them from its own scoring.
+                $hygieneScore = $this->scoreFromLogs($logsInGroup);
+                $trafficLight = match (true) {
+                    $hygieneScore === null => 'grey',
+                    $hygieneScore >= 90 => 'green',
+                    $hygieneScore >= 70 => 'yellow',
+                    default => 'red',
+                };
             } else {
                 $machineCount = (int) $summary->n_machines;
                 $hasArea = (int) $summary->n_without_machine > 0;
@@ -2005,23 +2064,32 @@ class InspectionController extends Controller
                 // Find the best representation of location
                 $location = $firstLog->location ?? ($firstLog->machine->location ?? null);
                 
+                $sessionDept = $firstLog->session?->department?->dept_name;
                 $name = $location ? $location->location_name : 'พื้นที่ไม่ระบุ';
                 if ($machineCount > 0 && $hasArea) {
                      $name .= " (พื้นที่ + อุปกรณ์ {$machineCount} ชิ้น)";
-                     $subtext = 'การตรวจสอบพื้นที่และเครื่องจักร';
+                     $subtext = $sessionDept ?: 'พื้นที่และเครื่องจักร';
                 } elseif ($machineCount > 0) {
                      $name .= " (ตรวจอุปกรณ์ {$machineCount} ชิ้น)";
-                     $subtext = 'การตรวจสอบเครื่องจักร/อุปกรณ์';
+                     $subtext = $sessionDept ?: 'เครื่องจักร/อุปกรณ์';
                 } else {
-                     $subtext = 'การตรวจสอบพื้นที่';
+                     $subtext = $sessionDept ?: 'พื้นที่';
                 }
                 
                 $modalId = 'loc_' . ($location->id ?? rand()) . '_sess_' . $firstLog->session_id;
                 $imagePath = $location->image ?? null;
                 
                 $monthlyFailures = 0;
-                $hygieneScore = 100;
-                $trafficLight = 'green';
+                // Same fix as the personnel branch: score the real results rather than
+                // reporting a flat 100. 'no_production' areas are excluded the same way
+                // absences are — nothing was assessed.
+                $hygieneScore = $this->scoreFromLogs($logsInGroup);
+                $trafficLight = match (true) {
+                    $hygieneScore === null => 'grey',
+                    $hygieneScore >= 90 => 'green',
+                    $hygieneScore >= 70 => 'yellow',
+                    default => 'red',
+                };
             }
 
             $hasReclean = (int) $summary->n_reclean > 0;
@@ -2281,6 +2349,15 @@ class InspectionController extends Controller
             }
         }
 
+        // Update session verification timestamp and verifier
+        $sessionIds = $logs->pluck('session_id')->unique()->filter();
+        if ($sessionIds->isNotEmpty()) {
+            InspectionSession::whereIn('id', $sessionIds)->update([
+                'verified_at' => now(),
+                'verified_by' => Auth::id(),
+            ]);
+        }
+
         \Log::info('verify: ready for email');
         // 3. Notify QA Manager if this was a normal verification
         if ($status !== 'reclean') {
@@ -2517,6 +2594,12 @@ class InspectionController extends Controller
         $fullyLockedSessions = 0;
 
         foreach ($sessionIds as $sessionId) {
+            // Track approval on session immediately
+            InspectionSession::where('id', $sessionId)->whereNull('approved_by')->update([
+                'approved_by' => Auth::id(),
+                'approved_at' => now(),
+            ]);
+
             $totalLogs = InspectionLog::where('session_id', $sessionId)->count();
             if ($totalLogs === 0) {
                 continue;
@@ -2541,6 +2624,29 @@ class InspectionController extends Controller
             : 'อนุมัติรายการที่เลือกเรียบร้อย (ยังมีรายการอื่นในเซสชันที่รออนุมัติ)';
 
         return back()->with('success', $message);
+    }
+
+    /**
+     * Percentage of assessed checkpoints that passed.
+     *
+     * Only 'pass' and 'fail' are outcomes. 'absent' (nobody came to work) and
+     * 'no_production' (the line was not running) mean nothing was assessed, so they are
+     * excluded from both sides of the ratio — counting them as passes is what let a
+     * shift where three people were on leave report a perfect hygiene score.
+     * ReportController applies the same exclusion to its own figures.
+     *
+     * @return int|null null when nothing was assessed at all, so the UI can show "—"
+     *                  instead of a fabricated 100%.
+     */
+    private function scoreFromLogs($logs): ?int
+    {
+        $assessed = $logs->whereIn('result', ['pass', 'fail']);
+
+        if ($assessed->isEmpty()) {
+            return null;
+        }
+
+        return (int) round($assessed->where('result', 'pass')->count() / $assessed->count() * 100);
     }
 
     /**
@@ -2582,7 +2688,11 @@ class InspectionController extends Controller
 
     private function authorizeSessionOwner(InspectionSession $session): void
     {
-        if ($session->inspector_id !== Auth::id() && !Auth::user()->isAdmin()) {
+        $user = Auth::user();
+        $isOwner = $session->inspector_id === $user->id;
+        $canSupervise = $user->isQA() && ($user->isSupervisor() || $user->isManager());
+
+        if (!$isOwner && !$user->isAdmin() && !$canSupervise) {
             abort(403, 'คุณไม่มีสิทธิ์เข้าถึงเซสชันนี้ (Unauthorized: not session owner)');
         }
     }

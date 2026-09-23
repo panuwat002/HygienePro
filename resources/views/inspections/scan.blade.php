@@ -2,12 +2,12 @@
     @section('header', 'ตรวจพนักงาน')
 
     @php
-        // Calculate progress percentage using target employees for the session's shift(s)
-        $targetEmployees = $session->getTargetEmployees();
-        $totalEmployees = $targetEmployees->count();
+        // $shiftRemainingEmployees and $shiftRemainingCount are passed from InspectionController::scan().
+        // They hold the session-shift employees who have no log yet — exactly the set
+        // that bulkPassRemaining() would process, so the modal list always matches the action.
+        $totalEmployees = $session->getTargetEmployees()->count();
         $inspectedCount = $session->logs()->distinct('employee_id')->count();
         $progressPercent = $totalEmployees > 0 ? round(($inspectedCount / $totalEmployees) * 100) : 0;
-        $shiftRemainingCount = max(0, $totalEmployees - $inspectedCount);
     @endphp
 
     <div class="row justify-content-center align-items-center" style="min-height: 70vh;">
@@ -182,31 +182,49 @@
     @if($shiftRemainingCount > 0)
         @push('modals')
         {{-- Bulk Pass Confirmation Modal --}}
+        {{-- The database cannot tell "on leave" from "inspector ran out of time" — both
+             look like a missing record. Only the inspector knows, so they mark it here.
+             Ticked employees are recorded as 'absent' and stay out of the hygiene score. --}}
         <div class="modal fade" id="bulkPassModal" tabindex="-1" aria-labelledby="bulkPassModalLabel" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
                     <div class="modal-header bg-success text-white border-0 py-3">
                         <h5 class="modal-title fw-bold" id="bulkPassModalLabel">
-                            <i class="bi bi-shield-check me-2"></i>ยืนยัน Bulk Pass (เฉพาะกะปัจจุบัน)
+                            <i class="bi bi-shield-check me-2"></i>ยืนยันปิดรอบ — เหลือ {{ $shiftRemainingCount }} คน
                         </h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body p-4">
-                        <div class="text-center mb-3">
-                            <div class="bg-success bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
-                                <i class="bi bi-people-fill text-success" style="font-size: 2.5rem;"></i>
+                        <p class="text-muted mb-3">
+                            คนที่ <strong>ไม่ได้ติ๊ก</strong> จะถูกบันทึกว่า <strong class="text-success">"ผ่าน"</strong> — ติ๊กเฉพาะคนที่<strong class="text-danger"> ไม่ได้มาทำงาน</strong>
+                        </p>
+                        {{-- Absent checkbox list --}}
+                        <div class="border rounded-3 p-3 mb-3">
+                            <div class="fw-bold text-dark mb-1">
+                                <i class="bi bi-person-dash me-1"></i>มีใครไม่ได้มาทำงานไหม?
                             </div>
-                            <h5 class="fw-bold text-dark">คุณกำลังจะให้ผ่านทั้งหมด</h5>
-                            <p class="text-muted mb-0">
-                                พนักงานที่เหลืออีก <strong class="text-success fs-4">{{ $shiftRemainingCount }}</strong> คน
-                                <strong class="text-danger border-bottom border-danger">เฉพาะ {{ $session->shift_label }}</strong><br>
-                                จะถูกบันทึกว่า <strong class="text-success">"ผ่าน"</strong> ทุกหัวข้อตรวจโดยอัตโนมัติ
+                            <p class="small text-muted mb-3">
+                                ติ๊กเฉพาะคนที่ <strong>ไม่ได้มาทำงาน</strong> (ลา/ขาด) — คนที่ไม่ติ๊กจะถูกบันทึกว่า "ผ่าน"
                             </p>
+                            <div style="max-height: 240px; overflow-y: auto;">
+                                @foreach($shiftRemainingEmployees as $remaining)
+                                    <div class="form-check py-1">
+                                        <input class="form-check-input" type="checkbox"
+                                               name="absent_employee_ids[]"
+                                               value="{{ $remaining->id }}"
+                                               form="bulkPassForm"
+                                               id="absent_scan_{{ $remaining->id }}">
+                                        <label class="form-check-label w-100" for="absent_scan_{{ $remaining->id }}">
+                                            {{ $remaining->fullname ?? $remaining->name }}
+                                        </label>
+                                    </div>
+                                @endforeach
+                            </div>
                         </div>
                         <div class="alert alert-warning d-flex align-items-start rounded-3 mb-0" role="alert">
                             <i class="bi bi-exclamation-triangle-fill me-2 mt-1 flex-shrink-0"></i>
                             <div class="small">
-                                <strong>พนักงานกะอื่นจะไม่ได้รับผลกระทบ:</strong> การดำเนินการนี้จะเปลี่ยนสถานะเฉพาะพนักงานที่มีรอบทำงานตรงกับกะของ Session นี้เท่านั้น (พนักงานกะอื่นจะยังคงสถานะเดิม)
+                                <strong>พนักงานกะอื่นจะไม่ได้รับผลกระทบ:</strong> การดำเนินการนี้จะเปลี่ยนสถานะเฉพาะพนักงานที่มีรอบทำงานตรงกับกะของ Session นี้เท่านั้น
                             </div>
                         </div>
                     </div>

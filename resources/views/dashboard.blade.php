@@ -51,7 +51,7 @@
                                     <div>
                                         <h6 class="fw-bold mb-0 text-dark fs-5">{{ $audit->department->dept_name ?? 'Unknown' }}</h6>
                                         <small class="text-muted">
-                                            <i class="bi bi-clock me-1"></i>กะ{{ $audit->shift === 'morning' ? 'เช้า' : 'บ่าย' }}
+                                            <i class="bi bi-clock me-1"></i>{{ $audit->shift_label }}
                                             <span class="mx-1">•</span>
                                             <i class="bi bi-people me-1"></i>สุ่ม {{ $audit->sample_size }} คน
                                         </small>
@@ -214,7 +214,7 @@
                             </td>
                             <td data-label="กะ / รอบ">
                                 <div>
-                                    <span class="fw-medium">กะ{{ $activeSess->shift === 'morning' ? 'เช้า' : ($activeSess->shift === 'afternoon' ? 'บ่าย' : 'ดึก') }}</span>
+                                    <span class="fw-medium">{{ $activeSess->shift_label }}</span>
                                     <span class="badge bg-secondary ms-1">รอบ {{ $activeSess->round }}</span>
                                 </div>
                             </td>

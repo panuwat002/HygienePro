@@ -423,9 +423,6 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Data from Controller
-            // @json() applies JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT.
-            // Plain json_encode() leaves "<" and "/" intact, so a checkpoint title
-            // or location name containing "</script>" would break out of this block.
             const trendLabels = @json($trendLabels);
             const trendValues = @json($trendValues);
 
