@@ -35,6 +35,11 @@ return new class extends Migration
                     ),
                 ]);
             });
+
+        // Written straight through the query builder, so no model event fired
+        // to drop Shift::cachedAll(). Anything reading shift types after this
+        // in the same process would otherwise still see the un-backfilled rows.
+        Shift::forgetCachedAll();
     }
 
     /**

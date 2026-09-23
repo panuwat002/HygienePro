@@ -197,25 +197,25 @@ class InspectionSession extends Model
             }
         }
 
-        $validShiftIdsQuery = \App\Models\Shift::query();
         $hasCondition = !empty($shiftNames) || !empty($customShiftIds);
-        if ($hasCondition) {
-            $validShiftIdsQuery->where(function ($q) use ($shiftNames, $customShiftIds) {
-                if (!empty($shiftNames)) {
-                    // Shift rows are named "<type> <HH.mm>-<HH.mm>" (e.g. "กะบ่าย 17.00-02.00"),
-                    // so a generic key like 'afternoon' never matches shift_name exactly.
-                    // shift_type holds the canonical กะเช้า/กะบ่าย/กะดึก value it must match on.
-                    $q->orWhereIn('shift_name', $shiftNames)
-                      ->orWhereIn('shift_type', $shiftNames);
-                }
-                if (!empty($customShiftIds)) {
-                    $q->orWhereIn('id', $customShiftIds);
-                }
-            });
-        }
 
         try {
-            $shifts = $hasCondition ? $validShiftIdsQuery->get() : collect();
+            // Matched against the cached table rather than re-queried: this runs
+            // once per session, and a page of 40 sessions paid for 40 identical
+            // SELECTs on a reference table of a dozen rows.
+            //
+            // Shift rows are named "<type> <HH.mm>-<HH.mm>" (e.g. "กะบ่าย 17.00-02.00"),
+            // so a generic key like 'afternoon' never matches shift_name exactly.
+            // shift_type holds the canonical กะเช้า/กะบ่าย/กะดึก value it must match on.
+            $shifts = $hasCondition
+                ? \App\Models\Shift::cachedAll()->filter(function ($shift) use ($shiftNames, $customShiftIds) {
+                    return (! empty($shiftNames) && (
+                            in_array($shift->shift_name, $shiftNames, true)
+                            || in_array($shift->shift_type, $shiftNames, true)
+                        ))
+                        || (! empty($customShiftIds) && in_array((int) $shift->id, $customShiftIds, true));
+                })->values()
+                : collect();
         } catch (\Throwable $e) {
             $shifts = collect();
         }

@@ -7,6 +7,41 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Shift extends Model
 {
+    private const CACHE_KEY = 'shifts.cached_all';
+
+    /**
+     * Shifts are a small, rarely-edited reference table that session code reads
+     * once per session while resolving labels - 40 groups on the verification
+     * page meant 40 identical SELECTs on a dozen rows.
+     *
+     * Scoped, not static: the queue worker runs for an hour at a time, and a
+     * process-lifetime copy would keep serving shifts an admin had since edited.
+     * A scoped binding is rebuilt for each request and each queued job.
+     */
+    public static function cachedAll(): \Illuminate\Support\Collection
+    {
+        if (! app()->bound(self::CACHE_KEY)) {
+            app()->scoped(self::CACHE_KEY, fn () => static::all());
+        }
+
+        return app(self::CACHE_KEY);
+    }
+
+    public static function forgetCachedAll(): void
+    {
+        if (app()->bound(self::CACHE_KEY)) {
+            app()->forgetInstance(self::CACHE_KEY);
+        }
+    }
+
+    protected static function booted(): void
+    {
+        // Covers edits made through the model. A raw query-builder write still
+        // bypasses this, which is why the copy only lasts one request/job.
+        static::saved(fn () => static::forgetCachedAll());
+        static::deleted(fn () => static::forgetCachedAll());
+    }
+
     protected $fillable = [
         'shift_name',
         'shift_type',

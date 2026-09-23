@@ -1703,7 +1703,7 @@ class InspectionController extends Controller
             $filterType = 'person';
         }
 
-        $query = InspectionLog::with(['employee', 'checkpoint', 'employee.department', 'location', 'machine', 'session.inspector', 'verifier', 'correctiveAction.approvals']) 
+        $query = InspectionLog::with(['employee', 'checkpoint', 'employee.department', 'employee.shift', 'location', 'machine', 'session.inspector', 'session.department', 'verifier', 'correctiveAction.approvals']) 
             ->where(function($q) use ($startDate, $endDate, $activeTab) {
                 if ($startDate && $endDate) {
                     // If user EXPLICITLY selected a date range, apply it to ALL items
@@ -1807,7 +1807,25 @@ class InspectionController extends Controller
                 ->pluck('fail_count', 'employee_id');
         }
 
-        $groupedInspections = $groupedInspections->map(function ($logsInGroup) use ($dateStr, $failureCounts) {
+        // Pre-fetch the roster rows too. The map below used to ask for one group's
+        // schedule at a time, so a page of 300 groups issued 300 extra queries -
+        // the reason /verification slowed to a crawl as the backlog grew.
+        $scheduleDates = $logs->map(function ($log) {
+            $date = $log->session?->inspection_date;
+
+            return $date ? $date->toDateString() : now()->toDateString();
+        })->unique()->values();
+
+        $schedulesByEmployeeDate = collect();
+        if ($employeeIds->isNotEmpty() && $scheduleDates->isNotEmpty()) {
+            $schedulesByEmployeeDate = \App\Models\EmployeeSchedule::with('shift')
+                ->whereIn('employee_id', $employeeIds)
+                ->whereIn('date', $scheduleDates)
+                ->get()
+                ->keyBy(fn ($sch) => $sch->employee_id . '|' . $sch->date->toDateString());
+        }
+
+        $groupedInspections = $groupedInspections->map(function ($logsInGroup) use ($dateStr, $failureCounts, $schedulesByEmployeeDate) {
             $firstLog = $logsInGroup->first();
             $session = $firstLog->session;
             
@@ -1828,10 +1846,7 @@ class InspectionController extends Controller
 
             if ($employee && $session) {
                 $schDate = $session->inspection_date ? $session->inspection_date->startOfDay() : now()->startOfDay();
-                $empSch = \App\Models\EmployeeSchedule::with('shift')
-                    ->where('employee_id', $employee->id)
-                    ->whereDate('date', $schDate)
-                    ->first();
+                $empSch = $schedulesByEmployeeDate->get($employee->id . '|' . $schDate->toDateString());
                 if ($empSch && $empSch->shift) {
                     $shiftLabel = $empSch->shift->shift_name;
                 } elseif ($employee->shift) {
