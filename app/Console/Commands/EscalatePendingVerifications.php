@@ -42,7 +42,11 @@ class EscalatePendingVerifications extends Command
             $lastUpdated = $session->updated_at ?? $session->created_at;
             if (!$lastUpdated) continue;
 
-            $hoursPending = Carbon::now()->diffInHours($lastUpdated);
+            // Diff forward from the older moment. Carbon 3 returns a signed
+            // value, so now()->diffInHours($past) is negative and both
+            // thresholds below were unreachable - this command has never
+            // reminded or escalated anyone.
+            $hoursPending = $lastUpdated->diffInHours(Carbon::now());
 
             if ($hoursPending >= 24 && is_null($session->escalated_at)) {
                 $managers = User::where('department_id', $session->department_id)

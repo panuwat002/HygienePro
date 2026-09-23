@@ -75,8 +75,11 @@ class CheckMissedSchedules extends Command
                 
                 $endDateTime = $status['window_end'];
                 
-                // Alert if end_time was in the last 60 minutes
-                if ($now->gt($endDateTime) && $now->diffInMinutes($endDateTime) < 60) {
+                // Alert if end_time was in the last 60 minutes. Diff forward
+                // from the window end: Carbon 3's signed diff made
+                // $now->diffInMinutes($past) negative, so "< 60" was true for
+                // every missed schedule ever and the throttle did nothing.
+                if ($now->gt($endDateTime) && $endDateTime->diffInMinutes($now) < 60) {
                      $this->error("Missed Schedule: {$schedule->title}");
                      
                      // Notify Supervisor of that department

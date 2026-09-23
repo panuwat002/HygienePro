@@ -38,6 +38,13 @@ class InspectionSession extends Model
         'round',
         'status',
         'locked_at',
+        // These three are "we already told someone" markers, written with
+        // update(). Left out of $fillable they were silently dropped, so the
+        // session stayed eligible and the hourly commands renotified the same
+        // people about the same session on every tick, forever.
+        'notified_at',
+        'reminded_at',
+        'escalated_at',
         'finished_notified_at',
         'audit_escalated_at',
         'verified_by',
@@ -53,6 +60,9 @@ class InspectionSession extends Model
     protected $casts = [
         'inspection_date' => 'date',
         'locked_at' => 'datetime',
+        'notified_at' => 'datetime',
+        'reminded_at' => 'datetime',
+        'escalated_at' => 'datetime',
         'finished_notified_at' => 'datetime',
         'audit_escalated_at' => 'datetime',
         'verified_at' => 'datetime',
