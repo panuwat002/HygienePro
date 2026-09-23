@@ -82,6 +82,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/verification', [InspectionController::class, 'verification'])
             ->middleware('can:access-verification')
             ->name('inspection.verification');
+        // The detail modal fetches its own body, so the page does not have to
+        // render one per card up front. Same gate as the page it opens from.
+        Route::get('/verification/detail', [InspectionController::class, 'verificationDetail'])
+            ->middleware('can:access-verification')
+            ->name('inspection.verification.detail');
         Route::post('/verification/verify', [InspectionController::class, 'verify'])
             ->middleware('can:verify')
             ->name('inspection.verify');

@@ -1726,15 +1726,7 @@ class InspectionController extends Controller
         $dateStr = $request->input('date', '');
         
         // Parse Flatpickr Range "YYYY-MM-DD to YYYY-MM-DD"
-        $startDate = null;
-        $endDate = null;
-        if (!empty($dateStr)) {
-            // Support both English ' to ' and Thai ' ถึง ' from Flatpickr localization
-            $separator = str_contains($dateStr, ' ถึง ') ? ' ถึง ' : ' to ';
-            $dates = explode($separator, $dateStr);
-            $startDate = trim($dates[0]);
-            $endDate = trim($dates[1] ?? $dates[0]); // If single date selected, end = start
-        }
+        [$startDate, $endDate] = $this->verificationDateRange($dateStr);
 
         $user = Auth::user();
 
@@ -1757,48 +1749,7 @@ class InspectionController extends Controller
         // only the groups this page shows. Both have to select exactly the same
         // rows, so the predicate lives in one place. Columns are qualified
         // because the summary joins machines, which has a location_id too.
-        $baseQuery = function () use ($startDate, $endDate, $scopeDeptId) {
-            $query = InspectionLog::query()
-                ->where(function($q) use ($startDate, $endDate) {
-                    if ($startDate && $endDate) {
-                        // An explicitly picked range applies to every status, so the
-                        // tab badges still add up within that window.
-                        $q->whereBetween('inspection_logs.inspected_at', [
-                            $startDate . ' 00:00:00',
-                            $endDate . ' 23:59:59'
-                        ]);
-                    } else {
-                        // Inbox Mode: everything still waiting on somebody, plus
-                        // today's finished work for context.
-                        $q->whereNull('inspection_logs.verified_at')
-                          ->orWhereIn('inspection_logs.verification_status', ['reclean', 'verified']);
-
-                        $q->orWhere(function($subQ) {
-                            $subQ->whereIn('inspection_logs.verification_status', ['approved', 'auto_verified'])
-                                 ->whereDate('inspection_logs.inspected_at', date('Y-m-d'));
-                        });
-                    }
-                })
-                ->where(function($q) {
-                    $q->whereNull('inspection_logs.location_id')
-                      ->orWhereDoesntHave('location', function ($sub) {
-                          $sub->doesntHave('checkpoints')
-                              ->doesntHave('machines');
-                      });
-                });
-
-            if ($scopeDeptId !== null) {
-                $query->where(function($q) use ($scopeDeptId) {
-                    $q->whereHas('employee', fn($subQ) => $subQ->where('department_id', $scopeDeptId))
-                      ->orWhere(function($q2) use ($scopeDeptId) {
-                          $q2->whereNull('inspection_logs.employee_id')
-                             ->whereHas('session', fn($sq) => $sq->where('department_id', $scopeDeptId));
-                      });
-                });
-            }
-
-            return $query;
-        };
+        $baseQuery = fn () => $this->verificationLogQuery($startDate, $endDate, $scopeDeptId);
 
         // --- Summarise every group in SQL -------------------------------------
         // The page shows 20 groups, but it used to hydrate every matching log to
@@ -1807,58 +1758,7 @@ class InspectionController extends Controller
         // has ever verified. These aggregates answer "which groups exist, and what
         // status is each" in a single pass over narrow columns, so only the 20 on
         // screen are ever loaded in full.
-        $summaryRows = $baseQuery()
-            ->leftJoin('machines', function ($join) {
-                // Matches the model side, which resolves a soft-deleted machine
-                // to null and lands the group under 'unknown'.
-                $join->on('machines.id', '=', 'inspection_logs.machine_id')
-                     ->whereNull('machines.deleted_at');
-            })
-            ->selectRaw(implode(', ', [
-                'inspection_logs.session_id as session_id',
-                'case when inspection_logs.employee_id is null then 0 else 1 end as is_person',
-                // A personnel round is one group per session; an area round is one
-                // group per location, and a machine counts as its location.
-                'case when inspection_logs.employee_id is not null then null'
-                    . ' else coalesce(inspection_logs.location_id, machines.location_id) end as loc_id',
-                'count(*) as n_total',
-                'sum(case when inspection_logs.verified_at is null then 1 else 0 end) as n_unverified',
-                "sum(case when inspection_logs.verification_status = 'rejected' then 1 else 0 end) as n_rejected",
-                "sum(case when inspection_logs.verification_status = 'reclean' then 1 else 0 end) as n_reclean",
-                "sum(case when inspection_logs.verification_status = 'approved' then 1 else 0 end) as n_approved",
-                "sum(case when inspection_logs.verification_status = 'auto_verified' then 1 else 0 end) as n_auto",
-                "sum(case when inspection_logs.verification_status = 'verified' then 1 else 0 end) as n_verified",
-                'max(inspection_logs.inspected_at) as last_inspected_at',
-                // Everything the card prints about itself. Counting here rather than
-                // walking the group's logs a dozen times is what takes the date casts
-                // off the page: reading one datetime column builds a fresh Carbon every
-                // time, and at ~46us a read that was the single largest cost on the page.
-                'count(distinct inspection_logs.employee_id) as n_employees',
-                'count(distinct inspection_logs.machine_id) as n_machines',
-                'sum(case when inspection_logs.machine_id is null then 1 else 0 end) as n_without_machine',
-                "sum(case when inspection_logs.result = 'pass' then 1 else 0 end) as n_pass",
-                "sum(case when inspection_logs.result = 'fail' then 1 else 0 end) as n_fail",
-                "sum(case when inspection_logs.result = 'no_production' then 1 else 0 end) as n_no_production",
-                "sum(case when inspection_logs.result = 'absent' then 1 else 0 end) as n_absent",
-                // A failure nobody has signed off yet - what makes a group read as failed.
-                "sum(case when inspection_logs.result = 'fail' and (inspection_logs.verification_status is null"
-                    . " or inspection_logs.verification_status not in ('approved', 'auto_verified'))"
-                    . ' then 1 else 0 end) as n_outstanding_fail',
-                'sum(case when inspection_logs.acknowledged_at is null then 1 else 0 end) as n_unacknowledged',
-            ]))
-            ->groupBy('session_id', 'is_person', 'loc_id')
-            ->orderByDesc('last_inspected_at')
-            ->toBase()
-            ->get()
-            ->map(function ($row) {
-                $row->is_person = (bool) $row->is_person;
-                $row->group_key = $row->is_person
-                    ? $row->session_id . '_personnel'
-                    : $row->session_id . '_loc_' . ($row->loc_id ?? 'unknown');
-                $row->group_status = $this->groupStatusFromCounts($row);
-
-                return $row;
-            });
+        $summaryRows = $this->verificationGroupSummary($baseQuery());
 
         $matchesTab = function (string $status) use ($activeTab) {
             if ($activeTab === 'pending') {
@@ -1913,19 +1813,7 @@ class InspectionController extends Controller
                 ->get();
         }
 
-        $groupedLogs = $logs->groupBy(function($log) {
-            if ($log->employee_id) {
-                // Group all personnel logs by session ONLY, so that all logs for a
-                // session stay together in a single card, regardless of pass/fail mix.
-                return $log->session_id . '_personnel';
-            } else {
-                $locId = $log->location_id ?? ($log->machine->location_id ?? 'unknown');
-
-                // Group all area/machine logs by session and location ONLY, so passed
-                // and failed machines in the same room stay together.
-                return $log->session_id . '_loc_' . $locId;
-            }
-        });
+        $groupedLogs = $logs->groupBy(fn ($log) => $this->verificationGroupKey($log));
 
         // Walk the summary rather than the loaded logs, so the page keeps the
         // newest-first order the aggregate query already settled.
@@ -1954,205 +1842,9 @@ class InspectionController extends Controller
                 ->keyBy(fn ($sch) => $sch->employee_id . '|' . $sch->date->toDateString());
         }
 
-        $groupedInspections = $displayGroups->map(function ($pair) use ($schedulesByEmployeeDate) {
-            [$summary, $logsInGroup] = $pair;
-            $firstLog = $logsInGroup->first();
-
-            // One Carbon for the card's timestamp. The row carries max(inspected_at)
-            // already; asking the collection for it walked every log, and each read of
-            // a date column parses a fresh Carbon - twice over, for the date and time.
-            $lastInspectedAt = $summary->last_inspected_at
-                ? \Illuminate\Support\Carbon::parse($summary->last_inspected_at)
-                : null;
-            $session = $firstLog->session;
-            
-            // BUG-009 Fix: Inconsistent Type Check
-            $type = $firstLog->machine_id ? 'machine' : 'area'; 
-            if ($firstLog->employee_id) {
-                 $type = 'person';
-            }
-
-            $shift = $session->shift;
-            $round = $session->round ?? 1; 
-            $inspectorName = $session->inspector->name ?? 'Unknown';
-            $shiftLabel = $session ? $session->shift_label : '-';
-
-            $employee = $firstLog->employee;
-            $location = $firstLog->location;
-            $machine = $firstLog->machine;
-
-            if ($employee && $session) {
-                $schDate = $session->inspection_date ? $session->inspection_date->startOfDay() : now()->startOfDay();
-                $empSch = $schedulesByEmployeeDate->get($employee->id . '|' . $schDate->toDateString());
-                if ($empSch && $empSch->shift) {
-                    $shiftLabel = $empSch->shift->shift_name;
-                } elseif ($employee->shift) {
-                    $shiftLabel = $employee->shift->shift_name;
-                }
-            }
-            
-            $failedLogs = $logsInGroup->filter(function ($log) {
-                return $log->result === 'fail';
-            });
-
-            // A group reads as passed when no failure is left unsigned-off. Counted
-            // in SQL: the old version filtered the failures again per group.
-            $isPass = (int) $summary->n_outstanding_fail === 0;
-
-            // Check for 100% no_production or absent
-            $isAllNoProduction = (int) $summary->n_no_production === (int) $summary->n_total;
-            $isAllAbsent = (int) $summary->n_absent === (int) $summary->n_total;
-
-            $status = 'pass';
-            $isActionRequired = true;
-
-            if ($isAllNoProduction) {
-                $status = 'no_production';
-                $isActionRequired = true; // Loop Engineering: User wants to manually verify N/A to keep logs
-            } elseif ($isAllAbsent) {
-                $status = 'absent';
-                $isActionRequired = true; // Loop Engineering: User wants to manually verify Absent to keep logs
-            } elseif (!$isPass) {
-                $status = 'fail';
-            }
-
-            if ($firstLog->employee_id) {
-                $type = 'person';
-                $employeeCount = (int) $summary->n_employees;
-                $isFailedGroup = (int) $summary->n_fail > 0;
-
-                $isAutoVerifiedGroup = (int) $summary->n_auto + (int) $summary->n_approved
-                    + (int) $summary->n_verified === (int) $summary->n_total;
-
-                $name = "ตรวจพนักงาน จำนวน {$employeeCount} คน";
-                if ($isFailedGroup) {
-                    $name .= " (พบข้อบกพร่อง)";
-                } elseif ($isAutoVerifiedGroup) {
-                    $name .= " (ผ่านอัตโนมัติ)";
-                } else {
-                    $name .= " (รอทวนสอบทั้งหมด)";
-                }
-
-                $subtext = $firstLog->session->department->dept_name ?? '-';
-                
-                $statusType = $isFailedGroup ? 'failed' : 'passed';
-                $verifyGroup = $isAutoVerifiedGroup ? 'verified' : 'pending';
-                $modalId = 'sess_personnel_' . $firstLog->session_id . '_' . $statusType . '_' . $verifyGroup;
-                
-                $imagePath = null;
-                $employee = null; // Unset so UI treats it as a group
-
-                $monthlyFailures = 0;
-                // Was hardcoded to 100, so a round consisting entirely of people who did
-                // not come to work still displayed "Hygiene Score 100%". Score the actual
-                // results, counting only checkpoints someone was really assessed on —
-                // 'absent' and 'no_production' are not outcomes, they are non-events, and
-                // ReportController already excludes them from its own scoring.
-                $hygieneScore = $this->scoreFromLogs($logsInGroup);
-                $trafficLight = match (true) {
-                    $hygieneScore === null => 'grey',
-                    $hygieneScore >= 90 => 'green',
-                    $hygieneScore >= 70 => 'yellow',
-                    default => 'red',
-                };
-            } else {
-                $machineCount = (int) $summary->n_machines;
-                $hasArea = (int) $summary->n_without_machine > 0;
-                $type = 'machine'; // Default to machine so it shows the machine icon, or area if only area
-                if ($machineCount === 0) $type = 'area';
-                
-                // Find the best representation of location
-                $location = $firstLog->location ?? ($firstLog->machine->location ?? null);
-                
-                $sessionDept = $firstLog->session?->department?->dept_name;
-                $name = $location ? $location->location_name : 'พื้นที่ไม่ระบุ';
-                if ($machineCount > 0 && $hasArea) {
-                     $name .= " (พื้นที่ + อุปกรณ์ {$machineCount} ชิ้น)";
-                     $subtext = $sessionDept ?: 'พื้นที่และเครื่องจักร';
-                } elseif ($machineCount > 0) {
-                     $name .= " (ตรวจอุปกรณ์ {$machineCount} ชิ้น)";
-                     $subtext = $sessionDept ?: 'เครื่องจักร/อุปกรณ์';
-                } else {
-                     $subtext = $sessionDept ?: 'พื้นที่';
-                }
-                
-                $modalId = 'loc_' . ($location->id ?? rand()) . '_sess_' . $firstLog->session_id;
-                $imagePath = $location->image ?? null;
-                
-                $monthlyFailures = 0;
-                // Same fix as the personnel branch: score the real results rather than
-                // reporting a flat 100. 'no_production' areas are excluded the same way
-                // absences are — nothing was assessed.
-                $hygieneScore = $this->scoreFromLogs($logsInGroup);
-                $trafficLight = match (true) {
-                    $hygieneScore === null => 'grey',
-                    $hygieneScore >= 90 => 'green',
-                    $hygieneScore >= 70 => 'yellow',
-                    default => 'red',
-                };
-            }
-
-            $hasReclean = (int) $summary->n_reclean > 0;
-            // reject() stamps verified_at alongside verification_status = 'rejected', so
-            // a rejected group used to fail the is_null(verified_at) test, fall through
-            // the ladder below and be filed as 'verified' — rejected work vanished from
-            // the queue into the completed tab and was never signed off by anyone.
-            // A rejection means the work still needs attention: treat it as pending.
-            $hasRejected = (int) $summary->n_rejected > 0;
-            $hasPending = $hasRejected || (int) $summary->n_unverified > 0;
-
-            // The same ladder the summary query's status already walked - see
-            // groupStatusFromCounts(). Reading it back costs nothing; deriving it here
-            // meant five more passes over every log in the group, one of them touching
-            // verified_at and so building a Carbon per log.
-            $groupStatus = $summary->group_status;
-            $isGroupApproved = $groupStatus === 'approved';
-            $isGroupAutoVerified = $groupStatus === 'auto_verified';
-
-            return (object) [
-                'type' => $type,
-                'name' => $name,
-                'subtext' => $subtext,
-                'modal_id' => $modalId,
-                'image_path' => str_replace('/storage/', '', $imagePath),
-                'employee' => $employee,
-                'machine' => $machine,
-                'location' => $location,
-                'inspector_name' => $inspectorName,
-                'shift' => $shiftLabel,
-                'round' => $round,
-                'session_id' => $session->id, // Important for Approval
-                'is_sampling' => $session->is_sampling ?? false, // Loop Engineering: Flag to identify random audit
-                'date' => $lastInspectedAt?->format('d/m/Y') ?? '-',
-                'time' => $lastInspectedAt?->format('H:i') ?? '-',
-                'status' => $status,
-                'is_action_required' => $isActionRequired,
-                'findings' => $failedLogs->values(),
-                'all_logs' => $logsInGroup->values(),
-                'is_verified' => !$hasPending && !$hasReclean,
-                'is_approved' => $isGroupApproved || $isGroupAutoVerified,
-                // Each shift runs a single QA inspector, so the person who inspected is
-                // usually also the one who verified. That is accepted operationally, but
-                // it must be visible: an FM-QA-22 auditor needs to see which rounds
-                // carried only one signature rather than have it look like two people
-                // signed. The real second signature is the manager approval step.
-                'self_verified' => $logsInGroup->contains(
-                    fn($l) => !is_null($l->verifier_id) && $l->verifier_id === $session->inspector_id
-                ),
-                'is_acknowledged' => (int) $summary->n_unacknowledged === 0, // Gap 3: Check if acknowledged
-                'department_id' => $employee ? $employee->department_id : null, // Gap 3: For Acknowledge permission check
-                'log_ids' => $logsInGroup->pluck('id')->toArray(),
-                'monthly_failures' => $monthlyFailures,
-                'hygiene_score' => $hygieneScore,
-                'traffic_light' => $trafficLight,
-                'verification_status' => $groupStatus, 
-                'verification_comment' => $firstLog->verification_comment,
-                'verifier_name' => $firstLog->verifier->name ?? null,
-                'verified_at' => $firstLog->verified_at ? $firstLog->verified_at->format('d/m/Y H:i') : null,
-                'approved_by_name' => $session->approvedBy->name ?? null,
-                'approved_at' => $session->approved_at ? $session->approved_at->format('d/m/Y H:i') : null,
-            ];
-        });
+        $groupedInspections = $displayGroups->map(
+            fn ($pair) => $this->buildVerificationGroup($pair[0], $pair[1], $schedulesByEmployeeDate)
+        );
 
         // The old code filtered out groups whose is_action_required was false.
         // Nothing ever set it false, so the filter has been dropped rather than
@@ -2647,6 +2339,422 @@ class InspectionController extends Controller
         }
 
         return (int) round($assessed->where('result', 'pass')->count() / $assessed->count() * 100);
+    }
+
+    /**
+     * The body of one card's detail modal.
+     *
+     * The page used to render all twenty modals inline, which is why it loaded
+     * every log of twenty rounds - 5,620 rows on the UAT database - to build
+     * markup that stayed hidden until someone clicked. The card now ships empty
+     * and asks for its contents here.
+     *
+     * Reuses the page's own predicate, summary and builder, so a card opened
+     * here shows exactly what the page would have shown inline.
+     */
+    public function verificationDetail(Request $request)
+    {
+        $request->validate([
+            'session_id' => 'required|integer',
+            'group_key' => 'required|string',
+            'date' => 'nullable|string',
+        ]);
+
+        $user = Auth::user();
+        $scopeDeptId = $user->hasGlobalVisibility() ? null : $user->scopedDepartmentId();
+
+        [$startDate, $endDate] = $this->verificationDateRange((string) $request->input('date', ''));
+        $sessionId = (int) $request->input('session_id');
+        $groupKey = (string) $request->input('group_key');
+
+        $base = fn () => $this->verificationLogQuery($startDate, $endDate, $scopeDeptId)
+            ->where('inspection_logs.session_id', $sessionId);
+
+        // Scope is enforced by the predicate itself: a round outside this user's
+        // department summarises to nothing, and they get a 404 rather than a card.
+        $summary = $this->verificationGroupSummary($base())->firstWhere('group_key', $groupKey);
+
+        abort_if($summary === null, 404);
+
+        $logs = $base()
+            ->with(['employee', 'checkpoint', 'employee.department', 'employee.shift', 'location', 'machine', 'session.inspector', 'session.department', 'verifier', 'correctiveAction.approvals'])
+            ->orderBy('inspection_logs.inspected_at', 'desc')
+            ->get()
+            ->filter(fn ($log) => $this->verificationGroupKey($log) === $groupKey)
+            ->values();
+
+        abort_if($logs->isEmpty(), 404);
+
+        $schedulesByEmployeeDate = collect();
+        $employeeIds = $logs->pluck('employee_id')->unique()->filter()->values();
+        if ($employeeIds->isNotEmpty()) {
+            $date = $logs->first()->session?->inspection_date;
+            $schedulesByEmployeeDate = \App\Models\EmployeeSchedule::with('shift')
+                ->whereIn('employee_id', $employeeIds)
+                ->where('date', $date ? $date->toDateString() : now()->toDateString())
+                ->get()
+                ->keyBy(fn ($sch) => $sch->employee_id . '|' . $sch->date->toDateString());
+        }
+
+        return view('inspections.partials.verification-detail', [
+            'group' => $this->buildVerificationGroup($summary, $logs, $schedulesByEmployeeDate),
+        ]);
+    }
+
+    /**
+     * The key a log's card is filed under: a personnel round is one group per
+     * session, an area round one per location, and a machine counts as its
+     * location. Mirrors the loc_id expression in verificationGroupSummary().
+     */
+    private function verificationGroupKey(InspectionLog $log): string
+    {
+        if ($log->employee_id) {
+            return $log->session_id . '_personnel';
+        }
+
+        return $log->session_id . '_loc_' . ($log->location_id ?? ($log->machine->location_id ?? 'unknown'));
+    }
+
+    /**
+     * Flatpickr hands back "YYYY-MM-DD to YYYY-MM-DD", localised to " ถึง " in Thai.
+     * An empty string means inbox mode, which has no date bound.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function verificationDateRange(string $dateStr): array
+    {
+        if (empty($dateStr)) {
+            return [null, null];
+        }
+
+        $separator = str_contains($dateStr, ' ถึง ') ? ' ถึง ' : ' to ';
+        $dates = explode($separator, $dateStr);
+        $start = trim($dates[0]);
+
+        // A single date selected means start = end.
+        return [$start, trim($dates[1] ?? $dates[0])];
+    }
+
+    /**
+     * One narrow row per group, with every count a card shows.
+     *
+     * The page renders 20 groups but used to hydrate every log the predicate
+     * matched to work out which 20 those were - 17,993 rows on the UAT database,
+     * growing with every round ever verified. Counting here instead means the
+     * tab, the badges and the page slice are all settled before a log is read.
+     */
+    private function verificationGroupSummary($query): \Illuminate\Support\Collection
+    {
+        return $query
+            ->leftJoin('machines', function ($join) {
+                // Matches the model side, which resolves a soft-deleted machine
+                // to null and lands the group under 'unknown'.
+                $join->on('machines.id', '=', 'inspection_logs.machine_id')
+                     ->whereNull('machines.deleted_at');
+            })
+            ->selectRaw(implode(', ', [
+                'inspection_logs.session_id as session_id',
+                'case when inspection_logs.employee_id is null then 0 else 1 end as is_person',
+                // A personnel round is one group per session; an area round is one
+                // group per location, and a machine counts as its location.
+                'case when inspection_logs.employee_id is not null then null'
+                    . ' else coalesce(inspection_logs.location_id, machines.location_id) end as loc_id',
+                'count(*) as n_total',
+                'sum(case when inspection_logs.verified_at is null then 1 else 0 end) as n_unverified',
+                "sum(case when inspection_logs.verification_status = 'rejected' then 1 else 0 end) as n_rejected",
+                "sum(case when inspection_logs.verification_status = 'reclean' then 1 else 0 end) as n_reclean",
+                "sum(case when inspection_logs.verification_status = 'approved' then 1 else 0 end) as n_approved",
+                "sum(case when inspection_logs.verification_status = 'auto_verified' then 1 else 0 end) as n_auto",
+                "sum(case when inspection_logs.verification_status = 'verified' then 1 else 0 end) as n_verified",
+                'max(inspection_logs.inspected_at) as last_inspected_at',
+                // Everything the card prints about itself. Counting here rather than
+                // walking the group's logs a dozen times is what takes the date casts
+                // off the page: reading one datetime column builds a fresh Carbon every
+                // time, and at ~46us a read that was the single largest cost on the page.
+                'count(distinct inspection_logs.employee_id) as n_employees',
+                'count(distinct inspection_logs.machine_id) as n_machines',
+                'sum(case when inspection_logs.machine_id is null then 1 else 0 end) as n_without_machine',
+                "sum(case when inspection_logs.result = 'pass' then 1 else 0 end) as n_pass",
+                "sum(case when inspection_logs.result = 'fail' then 1 else 0 end) as n_fail",
+                "sum(case when inspection_logs.result = 'no_production' then 1 else 0 end) as n_no_production",
+                "sum(case when inspection_logs.result = 'absent' then 1 else 0 end) as n_absent",
+                // A failure nobody has signed off yet - what makes a group read as failed.
+                "sum(case when inspection_logs.result = 'fail' and (inspection_logs.verification_status is null"
+                    . " or inspection_logs.verification_status not in ('approved', 'auto_verified'))"
+                    . ' then 1 else 0 end) as n_outstanding_fail',
+                'sum(case when inspection_logs.acknowledged_at is null then 1 else 0 end) as n_unacknowledged',
+            ]))
+            ->groupBy('session_id', 'is_person', 'loc_id')
+            ->orderByDesc('last_inspected_at')
+            ->toBase()
+            ->get()
+            ->map(function ($row) {
+                $row->is_person = (bool) $row->is_person;
+                $row->group_key = $row->is_person
+                    ? $row->session_id . '_personnel'
+                    : $row->session_id . '_loc_' . ($row->loc_id ?? 'unknown');
+                $row->group_status = $this->groupStatusFromCounts($row);
+
+                return $row;
+            });
+    }
+
+    /**
+     * The rows /verification works from, for a given date window and scope.
+     *
+     * The page summarises these in SQL and then loads only the groups it shows;
+     * the detail endpoint reuses the same predicate for one group, so the two
+     * can never disagree about which logs belong to a card. Columns are
+     * qualified because the summary joins machines, which has a location_id too.
+     */
+    private function verificationLogQuery(?string $startDate, ?string $endDate, ?int $scopeDeptId)
+    {
+        $query = InspectionLog::query()
+            ->where(function($q) use ($startDate, $endDate) {
+                if ($startDate && $endDate) {
+                    // An explicitly picked range applies to every status, so the
+                    // tab badges still add up within that window.
+                    $q->whereBetween('inspection_logs.inspected_at', [
+                        $startDate . ' 00:00:00',
+                        $endDate . ' 23:59:59'
+                    ]);
+                } else {
+                    // Inbox Mode: everything still waiting on somebody, plus
+                    // today's finished work for context.
+                    $q->whereNull('inspection_logs.verified_at')
+                      ->orWhereIn('inspection_logs.verification_status', ['reclean', 'verified']);
+
+                    $q->orWhere(function($subQ) {
+                        $subQ->whereIn('inspection_logs.verification_status', ['approved', 'auto_verified'])
+                             ->whereDate('inspection_logs.inspected_at', date('Y-m-d'));
+                    });
+                }
+            })
+            ->where(function($q) {
+                $q->whereNull('inspection_logs.location_id')
+                  ->orWhereDoesntHave('location', function ($sub) {
+                      $sub->doesntHave('checkpoints')
+                          ->doesntHave('machines');
+                  });
+            });
+
+        if ($scopeDeptId !== null) {
+            $query->where(function($q) use ($scopeDeptId) {
+                $q->whereHas('employee', fn($subQ) => $subQ->where('department_id', $scopeDeptId))
+                  ->orWhere(function($q2) use ($scopeDeptId) {
+                      $q2->whereNull('inspection_logs.employee_id')
+                         ->whereHas('session', fn($sq) => $sq->where('department_id', $scopeDeptId));
+                  });
+            });
+        }
+
+        return $query;
+    }
+
+    /**
+     * Build the card the verification page (and its detail modal) renders for
+     * one group: the summary row carries its counts, the logs its detail.
+     */
+    private function buildVerificationGroup(object $summary, $logsInGroup, $schedulesByEmployeeDate): object
+    {
+        $firstLog = $logsInGroup->first();
+
+        // One Carbon for the card's timestamp. The row carries max(inspected_at)
+        // already; asking the collection for it walked every log, and each read of
+        // a date column parses a fresh Carbon - twice over, for the date and time.
+        $lastInspectedAt = $summary->last_inspected_at
+            ? \Illuminate\Support\Carbon::parse($summary->last_inspected_at)
+            : null;
+        $session = $firstLog->session;
+        
+        // BUG-009 Fix: Inconsistent Type Check
+        $type = $firstLog->machine_id ? 'machine' : 'area'; 
+        if ($firstLog->employee_id) {
+             $type = 'person';
+        }
+
+        $shift = $session->shift;
+        $round = $session->round ?? 1; 
+        $inspectorName = $session->inspector->name ?? 'Unknown';
+        $shiftLabel = $session ? $session->shift_label : '-';
+
+        $employee = $firstLog->employee;
+        $location = $firstLog->location;
+        $machine = $firstLog->machine;
+
+        if ($employee && $session) {
+            $schDate = $session->inspection_date ? $session->inspection_date->startOfDay() : now()->startOfDay();
+            $empSch = $schedulesByEmployeeDate->get($employee->id . '|' . $schDate->toDateString());
+            if ($empSch && $empSch->shift) {
+                $shiftLabel = $empSch->shift->shift_name;
+            } elseif ($employee->shift) {
+                $shiftLabel = $employee->shift->shift_name;
+            }
+        }
+        
+        $failedLogs = $logsInGroup->filter(function ($log) {
+            return $log->result === 'fail';
+        });
+
+        // A group reads as passed when no failure is left unsigned-off. Counted
+        // in SQL: the old version filtered the failures again per group.
+        $isPass = (int) $summary->n_outstanding_fail === 0;
+
+        // Check for 100% no_production or absent
+        $isAllNoProduction = (int) $summary->n_no_production === (int) $summary->n_total;
+        $isAllAbsent = (int) $summary->n_absent === (int) $summary->n_total;
+
+        $status = 'pass';
+        $isActionRequired = true;
+
+        if ($isAllNoProduction) {
+            $status = 'no_production';
+            $isActionRequired = true; // Loop Engineering: User wants to manually verify N/A to keep logs
+        } elseif ($isAllAbsent) {
+            $status = 'absent';
+            $isActionRequired = true; // Loop Engineering: User wants to manually verify Absent to keep logs
+        } elseif (!$isPass) {
+            $status = 'fail';
+        }
+
+        if ($firstLog->employee_id) {
+            $type = 'person';
+            $employeeCount = (int) $summary->n_employees;
+            $isFailedGroup = (int) $summary->n_fail > 0;
+
+            $isAutoVerifiedGroup = (int) $summary->n_auto + (int) $summary->n_approved
+                + (int) $summary->n_verified === (int) $summary->n_total;
+
+            $name = "ตรวจพนักงาน จำนวน {$employeeCount} คน";
+            if ($isFailedGroup) {
+                $name .= " (พบข้อบกพร่อง)";
+            } elseif ($isAutoVerifiedGroup) {
+                $name .= " (ผ่านอัตโนมัติ)";
+            } else {
+                $name .= " (รอทวนสอบทั้งหมด)";
+            }
+
+            $subtext = $firstLog->session->department->dept_name ?? '-';
+            
+            $statusType = $isFailedGroup ? 'failed' : 'passed';
+            $verifyGroup = $isAutoVerifiedGroup ? 'verified' : 'pending';
+            $modalId = 'sess_personnel_' . $firstLog->session_id . '_' . $statusType . '_' . $verifyGroup;
+            
+            $imagePath = null;
+            $employee = null; // Unset so UI treats it as a group
+
+            $monthlyFailures = 0;
+            // Was hardcoded to 100, so a round consisting entirely of people who did
+            // not come to work still displayed "Hygiene Score 100%". Score the actual
+            // results, counting only checkpoints someone was really assessed on —
+            // 'absent' and 'no_production' are not outcomes, they are non-events, and
+            // ReportController already excludes them from its own scoring.
+            $hygieneScore = $this->scoreFromLogs($logsInGroup);
+            $trafficLight = match (true) {
+                $hygieneScore === null => 'grey',
+                $hygieneScore >= 90 => 'green',
+                $hygieneScore >= 70 => 'yellow',
+                default => 'red',
+            };
+        } else {
+            $machineCount = (int) $summary->n_machines;
+            $hasArea = (int) $summary->n_without_machine > 0;
+            $type = 'machine'; // Default to machine so it shows the machine icon, or area if only area
+            if ($machineCount === 0) $type = 'area';
+            
+            // Find the best representation of location
+            $location = $firstLog->location ?? ($firstLog->machine->location ?? null);
+            
+            $sessionDept = $firstLog->session?->department?->dept_name;
+            $name = $location ? $location->location_name : 'พื้นที่ไม่ระบุ';
+            if ($machineCount > 0 && $hasArea) {
+                 $name .= " (พื้นที่ + อุปกรณ์ {$machineCount} ชิ้น)";
+                 $subtext = $sessionDept ?: 'พื้นที่และเครื่องจักร';
+            } elseif ($machineCount > 0) {
+                 $name .= " (ตรวจอุปกรณ์ {$machineCount} ชิ้น)";
+                 $subtext = $sessionDept ?: 'เครื่องจักร/อุปกรณ์';
+            } else {
+                 $subtext = $sessionDept ?: 'พื้นที่';
+            }
+            
+            $modalId = 'loc_' . ($location->id ?? rand()) . '_sess_' . $firstLog->session_id;
+            $imagePath = $location->image ?? null;
+            
+            $monthlyFailures = 0;
+            // Same fix as the personnel branch: score the real results rather than
+            // reporting a flat 100. 'no_production' areas are excluded the same way
+            // absences are — nothing was assessed.
+            $hygieneScore = $this->scoreFromLogs($logsInGroup);
+            $trafficLight = match (true) {
+                $hygieneScore === null => 'grey',
+                $hygieneScore >= 90 => 'green',
+                $hygieneScore >= 70 => 'yellow',
+                default => 'red',
+            };
+        }
+
+        $hasReclean = (int) $summary->n_reclean > 0;
+        // reject() stamps verified_at alongside verification_status = 'rejected', so
+        // a rejected group used to fail the is_null(verified_at) test, fall through
+        // the ladder below and be filed as 'verified' — rejected work vanished from
+        // the queue into the completed tab and was never signed off by anyone.
+        // A rejection means the work still needs attention: treat it as pending.
+        $hasRejected = (int) $summary->n_rejected > 0;
+        $hasPending = $hasRejected || (int) $summary->n_unverified > 0;
+
+        // The same ladder the summary query's status already walked - see
+        // groupStatusFromCounts(). Reading it back costs nothing; deriving it here
+        // meant five more passes over every log in the group, one of them touching
+        // verified_at and so building a Carbon per log.
+        $groupStatus = $summary->group_status;
+        $isGroupApproved = $groupStatus === 'approved';
+        $isGroupAutoVerified = $groupStatus === 'auto_verified';
+
+        return (object) [
+            'type' => $type,
+            'name' => $name,
+            'subtext' => $subtext,
+            'modal_id' => $modalId,
+            'image_path' => str_replace('/storage/', '', $imagePath),
+            'employee' => $employee,
+            'machine' => $machine,
+            'location' => $location,
+            'inspector_name' => $inspectorName,
+            'shift' => $shiftLabel,
+            'round' => $round,
+            'session_id' => $session->id, // Important for Approval
+            // Lets a card ask the server for its own detail body.
+            'group_key' => $summary->group_key,
+            'is_sampling' => $session->is_sampling ?? false, // Loop Engineering: Flag to identify random audit
+            'date' => $lastInspectedAt?->format('d/m/Y') ?? '-',
+            'time' => $lastInspectedAt?->format('H:i') ?? '-',
+            'status' => $status,
+            'is_action_required' => $isActionRequired,
+            'findings' => $failedLogs->values(),
+            'all_logs' => $logsInGroup->values(),
+            'is_verified' => !$hasPending && !$hasReclean,
+            'is_approved' => $isGroupApproved || $isGroupAutoVerified,
+            // Each shift runs a single QA inspector, so the person who inspected is
+            // usually also the one who verified. That is accepted operationally, but
+            // it must be visible: an FM-QA-22 auditor needs to see which rounds
+            // carried only one signature rather than have it look like two people
+            // signed. The real second signature is the manager approval step.
+            'self_verified' => $logsInGroup->contains(
+                fn($l) => !is_null($l->verifier_id) && $l->verifier_id === $session->inspector_id
+            ),
+            'is_acknowledged' => (int) $summary->n_unacknowledged === 0, // Gap 3: Check if acknowledged
+            'department_id' => $employee ? $employee->department_id : null, // Gap 3: For Acknowledge permission check
+            'log_ids' => $logsInGroup->pluck('id')->toArray(),
+            'monthly_failures' => $monthlyFailures,
+            'hygiene_score' => $hygieneScore,
+            'traffic_light' => $trafficLight,
+            'verification_status' => $groupStatus, 
+            'verification_comment' => $firstLog->verification_comment,
+            'verifier_name' => $firstLog->verifier->name ?? null,
+            'verified_at' => $firstLog->verified_at ? $firstLog->verified_at->format('d/m/Y H:i') : null,
+            'approved_by_name' => $session->approvedBy->name ?? null,
+            'approved_at' => $session->approved_at ? $session->approved_at->format('d/m/Y H:i') : null,
+        ];
     }
 
     /**

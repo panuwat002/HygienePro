@@ -508,3 +508,98 @@ it('counts machines and bare area checks separately in one location', function (
     expect($group->name)->toBe('Packing room (พื้นที่ + อุปกรณ์ 2 ชิ้น)')
         ->and($group->type)->toBe('machine');
 });
+
+/**
+ * The detail modal is fetched, not rendered with the page.
+ *
+ * Twenty cards meant twenty modal bodies in the HTML, each listing every log of
+ * a whole round - markup for 5,620 logs on the UAT database, of which a viewer
+ * ever sees one card's worth.
+ */
+it('leaves the detail out of the page and points at where to get it', function () {
+    personGroup($this, ['verified', 'verified']);
+
+    $html = $this->actingAs($this->verifier)
+        ->get('/verification?filter_type=person&tab=completed')
+        ->assertSuccessful()
+        ->assertSee('data-detail-url', false)
+        ->getContent();
+
+    // The accordion only exists in the detail partial.
+    expect($html)->not->toContain('accordion_');
+});
+
+it('serves one card its detail', function () {
+    personGroup($this, ['verified', 'verified']);
+
+    $group = pageData($this, 'filter_type=person&tab=completed')['groups']->first();
+
+    $this->actingAs($this->verifier)
+        ->get(route('inspection.verification.detail', [
+            'session_id' => $group->session_id,
+            'group_key' => $group->group_key,
+        ]))
+        ->assertSuccessful()
+        ->assertSee('accordion_', false)
+        ->assertSee('Worker 1');
+});
+
+it('refuses a group key that does not belong to the session', function () {
+    $session = personGroup($this, ['verified']);
+
+    $this->actingAs($this->verifier)
+        ->get(route('inspection.verification.detail', [
+            'session_id' => $session->id,
+            'group_key' => $session->id . '_loc_999',
+        ]))
+        ->assertNotFound();
+});
+
+it('serves the detail for one location of a multi-location round', function () {
+    $packing = stockedLocation('Packing room');
+    $cold = stockedLocation('Cold store');
+
+    $session = areaGroup($this, $packing, ['verified']);
+    areaGroup($this, $cold, ['verified'], $session);
+
+    $groups = pageData($this, 'filter_type=machine&tab=completed')['groups'];
+    $packingGroup = $groups->first(fn ($g) => $g->name === 'Packing room');
+
+    $html = $this->actingAs($this->verifier)
+        ->get(route('inspection.verification.detail', [
+            'session_id' => $packingGroup->session_id,
+            'group_key' => $packingGroup->group_key,
+        ]))
+        ->assertSuccessful()
+        ->getContent();
+
+    expect($html)->toContain('Packing room')
+        ->and($html)->not->toContain('Cold store');
+});
+
+/**
+ * access-verification resolves to canVerify()/canApprove(), both of which
+ * require isQA() - so the detail endpoint is gated the same way the page is,
+ * and a supervisor outside QA never reaches either.
+ */
+it('is closed to anyone who cannot open the verification page', function () {
+    $other = Department::create([
+        'dept_name' => 'Production', 'dept_code' => 'PRD', 'visibility_type' => 'isolated',
+    ]);
+    $outsider = User::create([
+        'name' => 'Prod Sup', 'email' => 'prod@example.com', 'password' => bcrypt('password'),
+        'role' => 'supervisor', 'level' => 4, 'department_id' => $other->id,
+    ]);
+    $outsider->forceFill(['email_verified_at' => now()])->save();
+
+    $session = personGroup($this, ['verified']);
+
+    $this->actingAs($outsider)->get('/verification')->assertForbidden();
+
+    $this->actingAs($outsider)
+        ->get(route('inspection.verification.detail', [
+            'session_id' => $session->id,
+            'group_key' => $session->id . '_personnel',
+        ]))
+        ->assertForbidden();
+});

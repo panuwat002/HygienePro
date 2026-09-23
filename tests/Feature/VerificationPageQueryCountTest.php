@@ -124,13 +124,20 @@ it('does not issue more roster queries as groups grow', function () {
     expect($large)->toBeLessThanOrEqual($small);
 });
 
-it('still shows the roster shift on the page', function () {
+// Employee names live in the detail modal, which is fetched rather than
+// rendered with the page, so this checks the resolved value on the card
+// instead of looking for it in the page's markup.
+it('still resolves the roster shift for a card', function () {
     seedPendingGroups($this, 2);
 
-    $this->actingAs($this->verifier)
+    $response = $this->actingAs($this->verifier)
         ->get('/verification?tab=pending')
-        ->assertSuccessful()
-        ->assertSee('Worker 1');
+        ->assertSuccessful();
+
+    $shifts = collect($response->viewData('groupedInspections')->items())->pluck('shift');
+
+    expect($shifts)->not->toBeEmpty()
+        ->and($shifts->unique()->all())->toEqual(['morning']);
 });
 
 function tableQueryCount(callable $work, string $table): int

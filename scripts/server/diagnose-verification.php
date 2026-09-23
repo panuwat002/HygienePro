@@ -122,7 +122,9 @@ foreach ($urls as $url) {
     );
 }
 
-echo "\n=== เวลาไปไหน: แยก SQL ออกจาก PHP ===\n";
+echo "\n=== ต้นทุนต่อแถว (อ้างอิง) ===\n";
+echo "บรรทัดที่ขึ้นต้นด้วย [เลิกทำแล้ว] จำลองวิธีเดิมเพื่อวัดว่าตัดอะไรออกไป\n";
+echo "ไม่ใช่สิ่งที่หน้าเว็บทำอยู่ตอนนี้\n\n";
 
 // The controller's own detail load, repeated here so each phase can be timed.
 $sessionIds = DB::table('inspection_logs')
@@ -165,7 +167,7 @@ foreach ($groups as $g) {
     $g->contains(fn ($l) => is_null($l->verified_at));
     $g->every(fn ($l) => ! is_null($l->acknowledged_at));
 }
-line('อ่านคอลัมน์วันที่ (Carbon cast)', round((microtime(true) - $start) * 1000) . ' ms');
+line('  [เลิกทำแล้ว] อ่านคอลัมน์วันที่ซ้ำ', round((microtime(true) - $start) * 1000) . ' ms');
 
 $start = microtime(true);
 foreach ($groups as $g) {
@@ -180,7 +182,7 @@ foreach ($groups as $g) {
     $g->pluck('id')->toArray();
     $g->whereIn('result', ['pass', 'fail'])->count();
 }
-line('งาน collection ที่เหลือ', round((microtime(true) - $start) * 1000) . ' ms');
+line('  [เลิกทำแล้ว] เดินวน log นับซ้ำ', round((microtime(true) - $start) * 1000) . ' ms');
 
 echo "\n";
 line('หน่วยความจำสูงสุดที่ใช้', round(memory_get_peak_usage(true) / 1048576) . ' MB');
