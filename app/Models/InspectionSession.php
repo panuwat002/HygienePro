@@ -109,6 +109,16 @@ class InspectionSession extends Model
         return (bool) $this->is_locked;
     }
 
+    /**
+     * The verification page filters by person|area|machine, while a session
+     * calls its own type 'personnel'. Link builders go through here so an
+     * area round does not quietly open on the person tab.
+     */
+    public function verificationFilterType(): string
+    {
+        return $this->type === 'personnel' ? 'person' : $this->type;
+    }
+
     public function hasPendingRecleans(): bool
     {
         return $this->logs()

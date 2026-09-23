@@ -54,7 +54,7 @@ class PendingVerificationDigestNotification extends Notification implements Shou
             'count' => $this->sessions->count(),
             'title' => '📋 สรุปงานรอตรวจสอบ ' . $this->sessions->count() . ' รายการ',
             'message' => 'มีงานตรวจสอบความสะอาดส่งเข้ามาใหม่ ' . $this->sessions->count() . ' รายการ รอให้คุณยืนยันผล',
-            'url' => route('inspection.verification.dashboard', 'daily'), // default to daily for now
+            'url' => route('inspection.verification', ['tab' => 'pending']),
         ];
     }
 }

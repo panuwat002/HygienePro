@@ -44,7 +44,11 @@ class VerificationEscalatedNotification extends Notification implements ShouldQu
             'session_id' => $this->session->id,
             'title' => '🚨 ด่วน: งานทวนสอบค้างเกิน 24 ชั่วโมง',
             'message' => 'รายงานงานตรวจกะ ' . $this->session->shift . ' แผนก ' . ($this->session->department->dept_name ?? 'N/A') . ' ถูกทิ้งร้างและยังไม่ได้รับการยืนยันจาก Supervisor นานกว่า 24 ชั่วโมงแล้ว กรุณาตรวจสอบหรือติดตามผลด่วน',
-            'url' => route('inspection.verification.dashboard', $this->session->type),
+            'url' => route('inspection.verification', [
+                'filter_type' => $this->session->verificationFilterType(),
+                'date' => optional($this->session->inspection_date)->format('Y-m-d'),
+                'tab' => 'pending',
+            ]),
         ];
     }
 }

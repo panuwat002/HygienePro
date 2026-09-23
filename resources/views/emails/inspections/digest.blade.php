@@ -33,6 +33,6 @@
 <p style="margin-top: 30px; color: #4b5563;">กรุณาเข้าสู่ระบบเพื่อตรวจสอบและยืนยันผลการตรวจสอบ</p>
 
 <div style="text-align: center; margin-top: 30px;">
-    <a href="{{ route('inspection.verification.dashboard', 'daily') }}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">ไปที่หน้าตรวจสอบ (Dashboard)</a>
+    <a href="{{ route('inspection.verification', ['tab' => 'pending']) }}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">ไปที่หน้าตรวจสอบ (Dashboard)</a>
 </div>
 @endsection
