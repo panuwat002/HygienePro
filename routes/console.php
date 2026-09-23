@@ -15,7 +15,7 @@ Schedule::command('inspections:auto-close-stale')->everyFifteenMinutes();
 
 Schedule::command('inspection:escalate-verifications')->hourly();
 
-Schedule::command('inspection:send-smart-digest')->everyThirtyMinutes();
+Schedule::command('inspection:send-smart-digest')->hourly();
 
 // แจ้งเตือน CAR ที่เกินกำหนด (email ถึง admin + LINE) — ส่งวันละครั้งตอนเช้า
 Schedule::command('car:check-overdue')->dailyAt('08:30');

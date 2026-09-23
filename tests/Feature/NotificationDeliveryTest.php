@@ -79,7 +79,7 @@ it('does not claim emails were sent when nobody is a recipient', function () {
     ]);
 });
 
-it('logs the recipient count when finished emails do go out', function () {
+it('hands a finished round to the digest instead of mailing it', function () {
     $qa = Department::create([
         'dept_name' => 'QA', 'dept_code' => 'QA', 'visibility_type' => 'isolated',
     ]);
@@ -110,7 +110,9 @@ it('logs the recipient count when finished emails do go out', function () {
     $notify->setAccessible(true);
     $notify->invoke($service, $session);
 
-    Mail::assertSent(\App\Mail\InspectionSessionFinished::class);
+    // Finishing used to mail every QA supervisor directly, on top of the
+    // digest that lists the same round within the hour. Only the digest now.
+    Mail::assertNothingSent();
 });
 
 it('defaults every email event to on for UAT', function (string $event) {

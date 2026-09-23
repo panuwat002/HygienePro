@@ -411,22 +411,15 @@ class InspectionService
                 ->get()
                 ->filter(fn($u) => $u->isQA());
 
-            $emails = [];
             foreach ($supervisors as $supervisor) {
-                // Send in-app database notification individually
+                // In-app only. A round starting is not something a supervisor
+                // acts on, and the work it produces reaches them in the hourly
+                // digest - mailing it as well was the largest share of the
+                // traffic UAT asked us to cut.
                 $supervisor->notify(new \App\Notifications\InspectionStartedNotification($session));
-                if ($supervisor->email && $supervisor->wantsEmailFor('email_session_started')) {
-                    $emails[] = $supervisor->email;
-                }
             }
 
-            // Send ONE grouped email to all supervisors
-            if (count($emails) > 0) {
-                \Illuminate\Support\Facades\Mail::bcc($emails)->send(new \App\Mail\InspectionSessionStarted($session));
-                \Log::info("Session {$session->id} started: queued email to " . count($emails) . " QA supervisor(s).");
-            } else {
-                \Log::warning("Session {$session->id} started: NO email sent - {$supervisors->count()} QA supervisor(s) found, none opted in to 'email_session_started'.");
-            }
+            \Log::info("Session {$session->id} started: notified {$supervisors->count()} QA supervisor(s) in-app.");
         } catch (\Exception $e) {
             \Log::error('Failed to send Inspection Started email: ' . $e->getMessage());
         }
@@ -469,25 +462,10 @@ class InspectionService
             // Determine which event type this is
             $eventName = $stats['fail'] > 0 ? 'email_session_finished_fail' : 'email_session_finished_pass';
 
-            $emails = [];
-            foreach ($supervisors as $supervisor) {
-                // Send in-app database notification individually if needed
-                // $supervisor->notify(new \App\Notifications\InspectionFinishedNotification($session));
-                if ($supervisor->email && $supervisor->wantsEmailFor($eventName)) {
-                    $emails[] = $supervisor->email;
-                }
-            }
-
-            // Send ONE grouped email to all supervisors.
-            // Log inside the guard: this line used to sit outside it and reported
-            // "emails sent" even when $emails was empty, which made a system that
-            // was delivering nothing look healthy in the log.
-            if (count($emails) > 0) {
-                \Illuminate\Support\Facades\Mail::bcc($emails)->send(new \App\Mail\InspectionSessionFinished($session, $stats));
-                \Log::info("Session {$session->id} finished: queued '{$eventName}' email to " . count($emails) . " QA supervisor(s).");
-            } else {
-                \Log::warning("Session {$session->id} finished: NO email sent - {$supervisors->count()} QA supervisor(s) found, none opted in to '{$eventName}'.");
-            }
+            // No mail here either: inspection:send-smart-digest lists exactly
+            // this round, to exactly these people, within the hour - and drops
+            // it again if they get to it first.
+            \Log::info("Session {$session->id} finished ({$eventName}): left to the hourly digest for {$supervisors->count()} QA supervisor(s).");
         } catch (\Exception $e) {
             \Log::error('Failed to process Inspection Finished event: ' . $e->getMessage());
         }
@@ -654,9 +632,18 @@ class InspectionService
      * Bulk Pass: Create "pass" logs for all remaining (uninspected) employees in a session.
      * Only targets employees whose shift matches the session's shift.
      *
-     * @return int Number of employees bulk-passed
+     * @param  array<int>  $absentEmployeeIds  Employees the inspector confirmed did not
+     *                                         come to work. Recorded as 'absent' instead
+     *                                         of 'pass'. Only the inspector can tell the
+     *                                         two apart — in the database an employee on
+     *                                         leave and one the inspector simply ran out
+     *                                         of time for look identical (no log at all),
+     *                                         so passing everyone silently credited
+     *                                         absentees with an inspection they were
+     *                                         never present for.
+     * @return int Number of employees closed out (passed + marked absent)
      */
-    public function bulkPassRemaining(InspectionSession $session): int
+    public function bulkPassRemaining(InspectionSession $session, array $absentEmployeeIds = []): int
     {
         if ($session->is_locked) {
             throw ValidationException::withMessages(['session' => 'Session is Locked.']);
@@ -674,7 +661,11 @@ class InspectionService
             throw ValidationException::withMessages(['session' => 'Bulk Pass is disabled during Random Audits. Please inspect employees individually.']);
         }
 
-        return DB::transaction(function () use ($session) {
+        // Normalise to an int-keyed lookup so the per-employee check below is O(1) and
+        // is not thrown off by ids arriving as strings from the form.
+        $absentLookup = array_flip(array_map('intval', $absentEmployeeIds));
+
+        return DB::transaction(function () use ($session, $absentLookup) {
             // 1. Get all active personnel checkpoints (global fallback)
             $globalCheckpointIds = Checkpoint::where('type', 'person')
                 ->where('is_active', true)
@@ -745,12 +736,16 @@ class InspectionService
                     $empCheckpointIds = $globalCheckpointIds;
                 }
 
+                // Anyone the inspector ticked as not at work is recorded as absent, which
+                // keeps them out of the hygiene score instead of counting as a clean pass.
+                $result = isset($absentLookup[(int) $employeeId]) ? 'absent' : 'pass';
+
                 foreach ($empCheckpointIds as $checkpointId) {
                     $bulkData[] = [
                         'session_id' => $session->id,
                         'employee_id' => $employeeId,
                         'checkpoint_id' => $checkpointId,
-                        'result' => 'pass',
+                        'result' => $result,
                         'inspected_at' => $now,
                         'dept_snapshot' => $deptSnapshot,
                         'created_at' => $now,
@@ -764,10 +759,16 @@ class InspectionService
                 InspectionLog::insert($chunk);
             }
 
+            $absentCount = count(array_filter(
+                $remainingIds,
+                fn($id) => isset($absentLookup[(int) $id])
+            ));
+
             \Log::info('Bulk Pass executed', [
                 'session_id' => $session->id,
                 'inspector_id' => $session->inspector_id,
-                'employees_passed' => count($remainingIds),
+                'employees_passed' => count($remainingIds) - $absentCount,
+                'employees_absent' => $absentCount,
                 'logs_created' => count($bulkData),
             ]);
 
