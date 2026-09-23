@@ -1778,7 +1778,24 @@ class InspectionController extends Controller
                 "sum(case when inspection_logs.verification_status = 'reclean' then 1 else 0 end) as n_reclean",
                 "sum(case when inspection_logs.verification_status = 'approved' then 1 else 0 end) as n_approved",
                 "sum(case when inspection_logs.verification_status = 'auto_verified' then 1 else 0 end) as n_auto",
+                "sum(case when inspection_logs.verification_status = 'verified' then 1 else 0 end) as n_verified",
                 'max(inspection_logs.inspected_at) as last_inspected_at',
+                // Everything the card prints about itself. Counting here rather than
+                // walking the group's logs a dozen times is what takes the date casts
+                // off the page: reading one datetime column builds a fresh Carbon every
+                // time, and at ~46us a read that was the single largest cost on the page.
+                'count(distinct inspection_logs.employee_id) as n_employees',
+                'count(distinct inspection_logs.machine_id) as n_machines',
+                'sum(case when inspection_logs.machine_id is null then 1 else 0 end) as n_without_machine',
+                "sum(case when inspection_logs.result = 'pass' then 1 else 0 end) as n_pass",
+                "sum(case when inspection_logs.result = 'fail' then 1 else 0 end) as n_fail",
+                "sum(case when inspection_logs.result = 'no_production' then 1 else 0 end) as n_no_production",
+                "sum(case when inspection_logs.result = 'absent' then 1 else 0 end) as n_absent",
+                // A failure nobody has signed off yet - what makes a group read as failed.
+                "sum(case when inspection_logs.result = 'fail' and (inspection_logs.verification_status is null"
+                    . " or inspection_logs.verification_status not in ('approved', 'auto_verified'))"
+                    . ' then 1 else 0 end) as n_outstanding_fail',
+                'sum(case when inspection_logs.acknowledged_at is null then 1 else 0 end) as n_unacknowledged',
             ]))
             ->groupBy('session_id', 'is_person', 'loc_id')
             ->orderByDesc('last_inspected_at')
@@ -1863,9 +1880,12 @@ class InspectionController extends Controller
 
         // Walk the summary rather than the loaded logs, so the page keeps the
         // newest-first order the aggregate query already settled.
+        // Each entry pairs the group's SQL summary with its logs. The summary
+        // supplies every count the card shows; the logs are only there for the
+        // detail list and the findings.
         $displayGroups = $pageRows
-            ->map(fn($row) => $groupedLogs->get($row->group_key))
-            ->filter();
+            ->map(fn($row) => [$row, $groupedLogs->get($row->group_key)])
+            ->filter(fn($pair) => $pair[1] !== null);
 
         // Pre-fetch the roster rows for the groups on screen. This used to ask for
         // one group's schedule at a time, over every group in the backlog.
@@ -1885,8 +1905,16 @@ class InspectionController extends Controller
                 ->keyBy(fn ($sch) => $sch->employee_id . '|' . $sch->date->toDateString());
         }
 
-        $groupedInspections = $displayGroups->map(function ($logsInGroup) use ($schedulesByEmployeeDate) {
+        $groupedInspections = $displayGroups->map(function ($pair) use ($schedulesByEmployeeDate) {
+            [$summary, $logsInGroup] = $pair;
             $firstLog = $logsInGroup->first();
+
+            // One Carbon for the card's timestamp. The row carries max(inspected_at)
+            // already; asking the collection for it walked every log, and each read of
+            // a date column parses a fresh Carbon - twice over, for the date and time.
+            $lastInspectedAt = $summary->last_inspected_at
+                ? \Illuminate\Support\Carbon::parse($summary->last_inspected_at)
+                : null;
             $session = $firstLog->session;
             
             // BUG-009 Fix: Inconsistent Type Check
@@ -1917,19 +1945,15 @@ class InspectionController extends Controller
             $failedLogs = $logsInGroup->filter(function ($log) {
                 return $log->result === 'fail';
             });
-            
-            // Check if all failures are essentially "resolved" (approved)
-            // If so, we can visually show the group as "Pass" (or at least not active Fail)
-            $outstandingFailures = $failedLogs->filter(function($log) {
-                return !in_array($log->verification_status, ['approved', 'auto_verified']);
-            });
 
-            $isPass = $outstandingFailures->isEmpty();
+            // A group reads as passed when no failure is left unsigned-off. Counted
+            // in SQL: the old version filtered the failures again per group.
+            $isPass = (int) $summary->n_outstanding_fail === 0;
 
             // Check for 100% no_production or absent
-            $isAllNoProduction = $logsInGroup->every(fn($l) => $l->result === 'no_production');
-            $isAllAbsent = $logsInGroup->every(fn($l) => $l->result === 'absent');
-            
+            $isAllNoProduction = (int) $summary->n_no_production === (int) $summary->n_total;
+            $isAllAbsent = (int) $summary->n_absent === (int) $summary->n_total;
+
             $status = 'pass';
             $isActionRequired = true;
 
@@ -1945,10 +1969,11 @@ class InspectionController extends Controller
 
             if ($firstLog->employee_id) {
                 $type = 'person';
-                $employeeCount = $logsInGroup->pluck('employee_id')->unique()->count();
-                $isFailedGroup = $logsInGroup->contains('result', 'fail');
-                
-                $isAutoVerifiedGroup = $logsInGroup->every(fn($l) => in_array($l->verification_status, ['auto_verified', 'approved', 'verified']));
+                $employeeCount = (int) $summary->n_employees;
+                $isFailedGroup = (int) $summary->n_fail > 0;
+
+                $isAutoVerifiedGroup = (int) $summary->n_auto + (int) $summary->n_approved
+                    + (int) $summary->n_verified === (int) $summary->n_total;
 
                 $name = "ตรวจพนักงาน จำนวน {$employeeCount} คน";
                 if ($isFailedGroup) {
@@ -1972,8 +1997,8 @@ class InspectionController extends Controller
                 $hygieneScore = 100;
                 $trafficLight = 'green';
             } else {
-                $machineCount = $logsInGroup->pluck('machine_id')->unique()->filter()->count();
-                $hasArea = $logsInGroup->contains(fn($l) => is_null($l->machine_id));
+                $machineCount = (int) $summary->n_machines;
+                $hasArea = (int) $summary->n_without_machine > 0;
                 $type = 'machine'; // Default to machine so it shows the machine icon, or area if only area
                 if ($machineCount === 0) $type = 'area';
                 
@@ -1999,40 +2024,22 @@ class InspectionController extends Controller
                 $trafficLight = 'green';
             }
 
-            $hasReclean = $logsInGroup->contains('verification_status', 'reclean');
+            $hasReclean = (int) $summary->n_reclean > 0;
             // reject() stamps verified_at alongside verification_status = 'rejected', so
             // a rejected group used to fail the is_null(verified_at) test, fall through
             // the ladder below and be filed as 'verified' — rejected work vanished from
             // the queue into the completed tab and was never signed off by anyone.
             // A rejection means the work still needs attention: treat it as pending.
-            $hasRejected = $logsInGroup->contains('verification_status', 'rejected');
-            $hasPending = $hasRejected || $logsInGroup->contains(fn($l) => is_null($l->verified_at));
+            $hasRejected = (int) $summary->n_rejected > 0;
+            $hasPending = $hasRejected || (int) $summary->n_unverified > 0;
 
-            // Check Session Approval (Manager Level)
-            // Check Group Approval (Log Level)
-            $isGroupApproved = $logsInGroup->every(fn($l) => $l->verification_status === 'approved');
-            $isGroupAutoVerified = $logsInGroup->every(fn($l) => $l->verification_status === 'auto_verified');
-            
-            // Mix of approved and auto_verified
-            if (!$isGroupApproved && !$isGroupAutoVerified) {
-                $isGroupApprovedMix = $logsInGroup->every(fn($l) => in_array($l->verification_status, ['approved', 'auto_verified']));
-                if ($isGroupApprovedMix) {
-                    $isGroupApproved = true;
-                }
-            }
-
-            // Determine Group Status Priority: Approved > Auto-verified > Pending > Re-clean > Verified
-            if ($isGroupApproved) {
-                $groupStatus = 'approved';
-            } elseif ($isGroupAutoVerified) {
-                $groupStatus = 'auto_verified';
-            } elseif ($hasPending) {
-                $groupStatus = 'pending'; 
-            } elseif ($hasReclean) {
-                $groupStatus = 'reclean';
-            } else {
-                $groupStatus = 'verified';
-            }
+            // The same ladder the summary query's status already walked - see
+            // groupStatusFromCounts(). Reading it back costs nothing; deriving it here
+            // meant five more passes over every log in the group, one of them touching
+            // verified_at and so building a Carbon per log.
+            $groupStatus = $summary->group_status;
+            $isGroupApproved = $groupStatus === 'approved';
+            $isGroupAutoVerified = $groupStatus === 'auto_verified';
 
             return (object) [
                 'type' => $type,
@@ -2048,8 +2055,8 @@ class InspectionController extends Controller
                 'round' => $round,
                 'session_id' => $session->id, // Important for Approval
                 'is_sampling' => $session->is_sampling ?? false, // Loop Engineering: Flag to identify random audit
-                'date' => $logsInGroup->max('inspected_at')?->format('d/m/Y') ?? '-',
-                'time' => $logsInGroup->max('inspected_at')?->format('H:i') ?? '-',
+                'date' => $lastInspectedAt?->format('d/m/Y') ?? '-',
+                'time' => $lastInspectedAt?->format('H:i') ?? '-',
                 'status' => $status,
                 'is_action_required' => $isActionRequired,
                 'findings' => $failedLogs->values(),
@@ -2064,7 +2071,7 @@ class InspectionController extends Controller
                 'self_verified' => $logsInGroup->contains(
                     fn($l) => !is_null($l->verifier_id) && $l->verifier_id === $session->inspector_id
                 ),
-                'is_acknowledged' => $logsInGroup->every(fn($l) => !is_null($l->acknowledged_at)), // Gap 3: Check if acknowledged
+                'is_acknowledged' => (int) $summary->n_unacknowledged === 0, // Gap 3: Check if acknowledged
                 'department_id' => $employee ? $employee->department_id : null, // Gap 3: For Acknowledge permission check
                 'log_ids' => $logsInGroup->pluck('id')->toArray(),
                 'monthly_failures' => $monthlyFailures,

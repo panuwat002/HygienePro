@@ -428,3 +428,83 @@ it('does not load the other category', function () {
     // loaded and grouped alongside the person ones.
     expect($counter->n)->toBeLessThan(10);
 });
+
+/**
+ * The card's counts now come from the summary query rather than from walking
+ * the group's logs. These pin the values that move, so a wrong aggregate shows
+ * up as a wrong card rather than as a number nobody checks.
+ */
+it('stamps the card with the newest log in the group, whatever order they load in', function () {
+    $session = newSession($this, 'personnel');
+    $employee = Employee::create([
+        'employee_id' => 'E1', 'fullname' => 'Worker 1', 'department_id' => $this->dept->id,
+        'shift_id' => $this->shift->id, 'qr_code_hash' => 'h1', 'is_active' => true,
+    ]);
+
+    $newest = now()->subMinutes(5);
+    foreach ([now()->subHours(3), $newest, now()->subHours(2)] as $at) {
+        InspectionLog::create([
+            'session_id' => $session->id, 'checkpoint_id' => $this->personCheckpoint->id,
+            'employee_id' => $employee->id, 'result' => 'pass', 'inspected_at' => $at,
+            'verification_status' => 'verified', 'verified_at' => now(),
+        ]);
+    }
+
+    $group = pageData($this, 'filter_type=person&tab=completed')['groups']->first();
+
+    expect($group->date)->toBe($newest->format('d/m/Y'))
+        ->and($group->time)->toBe($newest->format('H:i'));
+});
+
+it('counts the people and the failures in a mixed round', function () {
+    $session = newSession($this, 'personnel');
+
+    foreach (range(1, 3) as $i) {
+        $employee = Employee::create([
+            'employee_id' => "E{$i}", 'fullname' => "Worker {$i}", 'department_id' => $this->dept->id,
+            'shift_id' => $this->shift->id, 'qr_code_hash' => "h{$i}", 'is_active' => true,
+        ]);
+
+        foreach (['pass', $i === 3 ? 'fail' : 'pass'] as $result) {
+            InspectionLog::create([
+                'session_id' => $session->id, 'checkpoint_id' => $this->personCheckpoint->id,
+                'employee_id' => $employee->id, 'result' => $result,
+                'inspected_at' => now()->subSeconds(1000 - (++$this->clock)),
+                'verification_status' => 'verified', 'verified_at' => now(),
+                'acknowledged_at' => $i === 1 ? now() : null,
+            ]);
+        }
+    }
+
+    $group = pageData($this, 'filter_type=person&tab=completed')['groups']->first();
+
+    expect($group->name)->toContain('3 คน')
+        ->and($group->name)->toContain('พบข้อบกพร่อง')
+        ->and($group->status)->toBe('fail')
+        ->and($group->findings)->toHaveCount(1)
+        ->and($group->all_logs)->toHaveCount(6)
+        // Only one of the three was acknowledged.
+        ->and($group->is_acknowledged)->toBeFalse();
+});
+
+it('counts machines and bare area checks separately in one location', function () {
+    $location = stockedLocation('Packing room');
+    $mixer = Machine::create(['location_id' => $location->id, 'name' => 'Mixer', 'is_active' => true]);
+    $oven = Machine::create(['location_id' => $location->id, 'name' => 'Oven', 'is_active' => true]);
+
+    $session = newSession($this, 'area');
+    foreach ([$mixer->id, $oven->id, null] as $machineId) {
+        InspectionLog::create([
+            'session_id' => $session->id, 'checkpoint_id' => $this->areaCheckpoint->id,
+            'employee_id' => null,
+            'location_id' => $location->id, 'machine_id' => $machineId,
+            'result' => 'pass', 'inspected_at' => now()->subSeconds(1000 - (++$this->clock)),
+            'verification_status' => 'verified', 'verified_at' => now(),
+        ]);
+    }
+
+    $group = pageData($this, 'filter_type=machine&tab=completed')['groups']->first();
+
+    expect($group->name)->toBe('Packing room (พื้นที่ + อุปกรณ์ 2 ชิ้น)')
+        ->and($group->type)->toBe('machine');
+});
