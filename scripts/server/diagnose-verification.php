@@ -20,6 +20,7 @@ ini_set('memory_limit', '-1');
 
 use App\Models\InspectionLog;
 use App\Models\User;
+use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -81,20 +82,32 @@ DB::listen(function ($q) use (&$sqlMs, &$sqlCount) {
     $sqlCount++;
 });
 
-$urls = [
-    '/verification?filter_type=person&tab=pending',
-    '/verification?filter_type=person&tab=completed',
-    '/verification?filter_type=person&tab=reclean',
-    '/verification?filter_type=machine&tab=pending',
-    '/verification?filter_type=machine&tab=completed',
-    '/verification?filter_type=machine&tab=reclean',
-];
+// date= with nothing in it is what the page's own filter form submits, and
+// ConvertEmptyStringsToNull makes that a different input from no date at all.
+// Measuring only the tidy URLs once hid a 500 on every link the page builds.
+$urls = [];
+foreach (['person', 'machine'] as $type) {
+    foreach (['pending', 'completed', 'reclean'] as $tab) {
+        $urls[] = "/verification?filter_type={$type}&tab={$tab}";
+        $urls[] = "/verification?date=&filter_type={$type}&tab={$tab}";
+    }
+}
 
 $controller = $app->make(App\Http\Controllers\InspectionController::class);
+$failures = [];
 
 printf("%-38s %8s %8s %7s %8s %8s\n", 'url', 'total', 'sql', 'queries', 'php', 'rows');
 foreach ($urls as $url) {
     $request = Request::create($url, 'GET');
+
+    // The controller is called directly so the auth guard stays simple, but the
+    // one middleware that changes its input has to run: without it date= arrives
+    // as an empty string here and as null in the browser, which is exactly the
+    // difference that let a 500 through while this script reported milliseconds.
+    (new ConvertEmptyStringsToNull())->handle($request, function ($prepared) use (&$request) {
+        $request = $prepared;
+    });
+
     $request->setUserResolver(fn () => $verifier);
     $app->instance('request', $request);
 
@@ -103,23 +116,33 @@ foreach ($urls as $url) {
     $sqlCount = 0;
 
     $start = microtime(true);
-    $view = $controller->verification($request);
     try {
-        $view->render();
+        $controller->verification($request)->render();
+        $failure = null;
     } catch (\Throwable $e) {
-        // Rendering can fail outside a real request; the timings still stand.
+        // Never swallowed: a page that throws is the finding, not a missing row.
+        // Hiding this once left the page returning 500 while this script said fine.
+        $failure = get_class($e) . ': ' . $e->getMessage();
+        $failures[] = str_replace('/verification?', '', $url) . "\n    " . $failure;
     }
     $totalMs = round((microtime(true) - $start) * 1000);
 
     printf(
         "%-38s %8s %8s %7s %8s %8s\n",
         str_replace('/verification?', '', $url),
-        $totalMs . ' ms',
+        $failure ? 'ERROR' : $totalMs . ' ms',
         round($sqlMs) . ' ms',
         $sqlCount,
         ($totalMs - round($sqlMs)) . ' ms',
         number_format($hydrated)
     );
+}
+
+if ($failures) {
+    echo "\n!!! มีหน้าที่พัง " . count($failures) . " หน้า !!!\n";
+    foreach ($failures as $f) {
+        echo '  ' . $f . "\n";
+    }
 }
 
 echo "\n=== ต้นทุนต่อแถว (อ้างอิง) ===\n";

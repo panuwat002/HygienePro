@@ -1723,7 +1723,7 @@ class InspectionController extends Controller
         // Date Range Logic
         // In Inbox Mode (empty date), all actionable items (pending QA, reclean, pending manager approval) are loaded across all dates, plus today's approved items.
         // Explicit dates only apply if user selected a date in the date picker.
-        $dateStr = $request->input('date', '');
+        $dateStr = (string) ($request->input('date') ?? '');
         
         // Parse Flatpickr Range "YYYY-MM-DD to YYYY-MM-DD"
         [$startDate, $endDate] = $this->verificationDateRange($dateStr);
@@ -2417,11 +2417,16 @@ class InspectionController extends Controller
 
     /**
      * Flatpickr hands back "YYYY-MM-DD to YYYY-MM-DD", localised to " ถึง " in Thai.
-     * An empty string means inbox mode, which has no date bound.
+     * Nothing selected means inbox mode, which has no date bound.
+     *
+     * Nullable on purpose: the page's own filter form submits date= with nothing
+     * in it, and ConvertEmptyStringsToNull turns that into null before the
+     * controller sees it - so every link the page builds for itself arrives here
+     * as null rather than as the empty string the query string suggests.
      *
      * @return array{0: ?string, 1: ?string}
      */
-    private function verificationDateRange(string $dateStr): array
+    private function verificationDateRange(?string $dateStr): array
     {
         if (empty($dateStr)) {
             return [null, null];

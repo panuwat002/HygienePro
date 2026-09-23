@@ -603,3 +603,35 @@ it('is closed to anyone who cannot open the verification page', function () {
         ]))
         ->assertForbidden();
 });
+
+/**
+ * The page's own filter form submits date= with nothing in it, and the web
+ * middleware group converts an empty string to null before the controller sees
+ * it. Every link the page builds for itself therefore arrives this way.
+ */
+it('accepts an empty date parameter, which is what the page itself sends', function () {
+    personGroup($this, ['verified']);
+    personGroup($this, ['verified', null]);
+
+    foreach (['person', 'machine'] as $type) {
+        foreach (['pending', 'completed', 'reclean'] as $tab) {
+            $this->actingAs($this->verifier)
+                ->get("/verification?date=&filter_type={$type}&tab={$tab}")
+                ->assertSuccessful();
+        }
+    }
+});
+
+it('serves a card its detail when the date parameter is empty', function () {
+    personGroup($this, ['verified']);
+
+    $group = pageData($this, 'date=&filter_type=person&tab=completed')['groups']->first();
+
+    $this->actingAs($this->verifier)
+        ->get(route('inspection.verification.detail', [
+            'session_id' => $group->session_id,
+            'group_key' => $group->group_key,
+            'date' => '',
+        ]))
+        ->assertSuccessful();
+});
