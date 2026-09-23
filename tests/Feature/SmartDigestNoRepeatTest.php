@@ -101,7 +101,7 @@ it('still picks up a session that has not been notified yet', function () {
     $newSession = InspectionSession::create([
         'inspector_id' => $this->supervisor->id,
         'department_id' => $this->dept->id,
-        'type' => 'machine',
+        'type' => 'area', // machine rounds are deliberately out of the digest
         'inspection_date' => '2026-09-23',
         'shift' => 'afternoon',
         'round' => 1,

@@ -36,11 +36,13 @@ class SendSmartDigestNotifications extends Command
             // still needs a supervisor. Without this the digest listed every
             // session ever completed, most of them rows of "0 pending, 0 auto".
             ->whereHas('logs', fn ($q) => $q->whereNull('verification_status'))
-            // Counted here so rendering the table does not fire two more
-            // queries per row.
+            // Machine rounds cover 16-26 machines per room, so they dominated
+            // the email without changing what a supervisor does about it.
+            ->whereIn('type', ['personnel', 'area'])
+            // Counted here so rendering the table does not fire one more query
+            // per row.
             ->withCount([
                 'logs as pending_logs_count' => fn ($q) => $q->whereNull('verification_status'),
-                'logs as auto_verified_logs_count' => fn ($q) => $q->where('verification_status', 'auto_verified'),
             ])
             ->get();
 
@@ -49,21 +51,29 @@ class SendSmartDigestNotifications extends Command
             return;
         }
 
-        $sessionsByDepartment = $sessions->groupBy('department_id');
+        // Recipients are the people who can actually act: verifying requires
+        // canVerify(), which is QA-only. Addressing the inspected department's
+        // supervisors instead sent Production 67 rows they get 403 on, while QA
+        // - the only ones who could clear them - were never told.
+        $verifiers = User::with('department')
+            ->whereNotNull('email')
+            ->where(fn ($q) => $q->where('role', 'supervisor')->orWhere('level', 4))
+            ->get()
+            ->filter(fn (User $u) => $u->canVerify());
 
-        foreach ($sessionsByDepartment as $departmentId => $deptSessions) {
-            $supervisors = User::where('department_id', $departmentId)
-                ->whereIn('level', [3, 4])
-                ->get();
-
-            if ($supervisors->isNotEmpty()) {
-                Notification::send($supervisors, new PendingVerificationDigestNotification($deptSessions));
-                
-                foreach ($deptSessions as $session) {
-                    $session->update(['notified_at' => Carbon::now()]);
-                }
-                $this->info("Sent digest for department {$departmentId} with {$deptSessions->count()} sessions.");
-            }
+        if ($verifiers->isEmpty()) {
+            $this->warn('No QA supervisor can receive the digest - nothing sent.');
+            return;
         }
+
+        // QA verifies for every department, so one digest carries them all; the
+        // table names the department per row.
+        Notification::send($verifiers, new PendingVerificationDigestNotification($sessions));
+
+        foreach ($sessions as $session) {
+            $session->update(['notified_at' => Carbon::now()]);
+        }
+
+        $this->info("Sent digest with {$sessions->count()} session(s) to {$verifiers->count()} QA supervisor(s).");
     }
 }

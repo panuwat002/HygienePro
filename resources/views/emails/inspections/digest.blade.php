@@ -21,7 +21,6 @@
             <th style="font-size: 13px; color: #4b5563; text-transform: uppercase; font-weight: 600;">แผนก</th>
             <th style="font-size: 13px; color: #4b5563; text-transform: uppercase; font-weight: 600;">ผู้ส่งตรวจ</th>
             <th style="font-size: 13px; color: #4b5563; text-transform: uppercase; font-weight: 600;">ต้องตรวจเอง 🔍</th>
-            <th style="font-size: 13px; color: #4b5563; text-transform: uppercase; font-weight: 600;">ผ่านออโต้ 🤖</th>
         </tr>
     </thead>
     <tbody>
@@ -31,7 +30,6 @@
             <td style="color: #4b5563;">{{ $session->department->dept_name ?? 'N/A' }}</td>
             <td style="color: #4b5563;">{{ $session->inspector->name ?? 'N/A' }}</td>
             <td style="color: #f59e0b; font-weight: bold;">{{ $session->pending_logs_count ?? $session->logs->whereNull('verification_status')->count() }}</td>
-            <td style="color: #10b981; font-weight: bold;">{{ $session->auto_verified_logs_count ?? $session->logs->where('verification_status', 'auto_verified')->count() }}</td>
         </tr>
         @endforeach
     </tbody>

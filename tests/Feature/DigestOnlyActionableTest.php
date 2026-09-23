@@ -126,10 +126,10 @@ it('counts pending logs without a query per row', function () {
         function (PendingVerificationDigestNotification $n) {
             $row = $n->sessions->first();
 
-            // Counted by the query, so rendering the table does not fire two
-            // more queries for every row in it.
-            return $row->pending_logs_count === 2
-                && $row->auto_verified_logs_count === 1;
+            // Counted by the query, so rendering the table does not fire
+            // another query for every row in it. The auto-verified figure is
+            // no longer shown, so it is no longer counted.
+            return $row->pending_logs_count === 2;
         }
     );
 });
