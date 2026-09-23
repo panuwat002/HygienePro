@@ -1703,113 +1703,173 @@ class InspectionController extends Controller
             $filterType = 'person';
         }
 
-        $query = InspectionLog::with(['employee', 'checkpoint', 'employee.department', 'employee.shift', 'location', 'machine', 'session.inspector', 'session.department', 'verifier', 'correctiveAction.approvals']) 
-            ->where(function($q) use ($startDate, $endDate, $activeTab) {
-                if ($startDate && $endDate) {
-                    // If user EXPLICITLY selected a date range, apply it to ALL items
-                    // We must fetch all statuses in this range so the tab badges calculate correctly
-                    $q->whereBetween('inspected_at', [
-                        $startDate . ' 00:00:00',
-                        $endDate . ' 23:59:59'
-                    ]);
-                } else {
-                    // No date filter (Inbox Mode Default)
-                    // Fetch all actionable items regardless of date (Pending QA, Reclean, Pending Manager Approval)
-                    $q->whereNull('verified_at')
-                      ->orWhereIn('verification_status', ['reclean', 'verified']);
-                    
-                    // For fully completed items, limit to today to prevent overloading
-                    $q->orWhere(function($subQ) {
-                        $subQ->whereIn('verification_status', ['approved', 'auto_verified'])
-                             ->whereDate('inspected_at', date('Y-m-d'));
-                    });
-                }
-            })
-            ->where(function($q) {
-                $q->whereNull('location_id')
-                  ->orWhereDoesntHave('location', function ($sub) {
-                      $sub->doesntHave('checkpoints')
-                          ->doesntHave('machines');
-                  });
-            })
-            ->where(function($q) use ($filterType) {
-                if ($filterType === 'person') {
-                    $q->whereNotNull('employee_id');
-                } else {
-                    $q->whereNull('employee_id');
-                }
-            })
-            ->orderBy('inspected_at', 'desc');
+        // --- One predicate, used twice ---------------------------------------
+        // Once to summarise every group in SQL, and again to load the logs of
+        // only the groups this page shows. Both have to select exactly the same
+        // rows, so the predicate lives in one place. Columns are qualified
+        // because the summary joins machines, which has a location_id too.
+        $baseQuery = function () use ($startDate, $endDate, $scopeDeptId) {
+            $query = InspectionLog::query()
+                ->where(function($q) use ($startDate, $endDate) {
+                    if ($startDate && $endDate) {
+                        // An explicitly picked range applies to every status, so the
+                        // tab badges still add up within that window.
+                        $q->whereBetween('inspection_logs.inspected_at', [
+                            $startDate . ' 00:00:00',
+                            $endDate . ' 23:59:59'
+                        ]);
+                    } else {
+                        // Inbox Mode: everything still waiting on somebody, plus
+                        // today's finished work for context.
+                        $q->whereNull('inspection_logs.verified_at')
+                          ->orWhereIn('inspection_logs.verification_status', ['reclean', 'verified']);
 
-        if ($scopeDeptId !== null) {
-            $query->where(function($q) use ($scopeDeptId) {
-                $q->whereHas('employee', fn($subQ) => $subQ->where('department_id', $scopeDeptId))
-                  ->orWhere(function($q2) use ($scopeDeptId) {
-                      $q2->whereNull('employee_id')
-                         ->whereHas('session', fn($sq) => $sq->where('department_id', $scopeDeptId));
-                  });
+                        $q->orWhere(function($subQ) {
+                            $subQ->whereIn('inspection_logs.verification_status', ['approved', 'auto_verified'])
+                                 ->whereDate('inspection_logs.inspected_at', date('Y-m-d'));
+                        });
+                    }
+                })
+                ->where(function($q) {
+                    $q->whereNull('inspection_logs.location_id')
+                      ->orWhereDoesntHave('location', function ($sub) {
+                          $sub->doesntHave('checkpoints')
+                              ->doesntHave('machines');
+                      });
+                });
+
+            if ($scopeDeptId !== null) {
+                $query->where(function($q) use ($scopeDeptId) {
+                    $q->whereHas('employee', fn($subQ) => $subQ->where('department_id', $scopeDeptId))
+                      ->orWhere(function($q2) use ($scopeDeptId) {
+                          $q2->whereNull('inspection_logs.employee_id')
+                             ->whereHas('session', fn($sq) => $sq->where('department_id', $scopeDeptId));
+                      });
+                });
+            }
+
+            return $query;
+        };
+
+        // --- Summarise every group in SQL -------------------------------------
+        // The page shows 20 groups, but it used to hydrate every matching log to
+        // work out what those 20 were: on the UAT database that meant 17,993 rows
+        // and ~2.6s before anything rendered, growing with every round the system
+        // has ever verified. These aggregates answer "which groups exist, and what
+        // status is each" in a single pass over narrow columns, so only the 20 on
+        // screen are ever loaded in full.
+        $summaryRows = $baseQuery()
+            ->leftJoin('machines', function ($join) {
+                // Matches the model side, which resolves a soft-deleted machine
+                // to null and lands the group under 'unknown'.
+                $join->on('machines.id', '=', 'inspection_logs.machine_id')
+                     ->whereNull('machines.deleted_at');
+            })
+            ->selectRaw(implode(', ', [
+                'inspection_logs.session_id as session_id',
+                'case when inspection_logs.employee_id is null then 0 else 1 end as is_person',
+                // A personnel round is one group per session; an area round is one
+                // group per location, and a machine counts as its location.
+                'case when inspection_logs.employee_id is not null then null'
+                    . ' else coalesce(inspection_logs.location_id, machines.location_id) end as loc_id',
+                'count(*) as n_total',
+                'sum(case when inspection_logs.verified_at is null then 1 else 0 end) as n_unverified',
+                "sum(case when inspection_logs.verification_status = 'rejected' then 1 else 0 end) as n_rejected",
+                "sum(case when inspection_logs.verification_status = 'reclean' then 1 else 0 end) as n_reclean",
+                "sum(case when inspection_logs.verification_status = 'approved' then 1 else 0 end) as n_approved",
+                "sum(case when inspection_logs.verification_status = 'auto_verified' then 1 else 0 end) as n_auto",
+                'max(inspection_logs.inspected_at) as last_inspected_at',
+            ]))
+            ->groupBy('session_id', 'is_person', 'loc_id')
+            ->orderByDesc('last_inspected_at')
+            ->toBase()
+            ->get()
+            ->map(function ($row) {
+                $row->is_person = (bool) $row->is_person;
+                $row->group_key = $row->is_person
+                    ? $row->session_id . '_personnel'
+                    : $row->session_id . '_loc_' . ($row->loc_id ?? 'unknown');
+                $row->group_status = $this->groupStatusFromCounts($row);
+
+                return $row;
             });
+
+        $matchesTab = function (string $status) use ($activeTab) {
+            if ($activeTab === 'pending') {
+                return $status === 'pending';
+            } elseif ($activeTab === 'completed') {
+                return in_array($status, ['verified', 'approved', 'auto_verified']);
+            } elseif ($activeTab === 'reclean') {
+                return $status === 'reclean';
+            }
+            return true;
+        };
+
+        // 2. Status Counts (KPI cards and tab badges) for the CURRENT category.
+        // Counted across every tab, so the badges do NOT drop to 0 when the user
+        // navigates between tabs.
+        $currentTypeRows = $summaryRows->filter(
+            fn($row) => $filterType === 'person' ? $row->is_person : ! $row->is_person
+        );
+
+        $counts = [
+            'pending' => $currentTypeRows->where('group_status', 'pending')->count(),
+            'completed' => $currentTypeRows->whereIn('group_status', ['verified', 'approved', 'auto_verified'])->count(),
+            'reclean' => $currentTypeRows->where('group_status', 'reclean')->count(),
+            'total' => $currentTypeRows->count(),
+        ];
+
+        // 3. Type Counts (badges on the 'พนักงาน' and 'พื้นที่ / เครื่องจักร' buttons),
+        // for the open tab across both categories.
+        $activeTabRows = $summaryRows->filter(fn($row) => $matchesTab($row->group_status));
+
+        $typeCounts = [
+            'person' => $activeTabRows->filter(fn($row) => $row->is_person)->count(),
+            'machine' => $activeTabRows->reject(fn($row) => $row->is_person)->count(),
+        ];
+
+        // 4. The rows this tab shows, and 5. the slice of them on this page.
+        // Both happen before any log is loaded - that is the whole point.
+        $itemsToDisplay = $currentTypeRows->filter(fn($row) => $matchesTab($row->group_status))->values();
+
+        $perPage = 20;
+        $currentPage = \Illuminate\Pagination\LengthAwarePaginator::resolveCurrentPage();
+        $pageRows = $itemsToDisplay->slice(($currentPage - 1) * $perPage, $perPage)->values();
+
+        // Loading by session pulls in at most a handful of extra location groups
+        // belonging to the same round; they are dropped again below.
+        $logs = collect();
+        if ($pageRows->isNotEmpty()) {
+            $logs = $baseQuery()
+                ->with(['employee', 'checkpoint', 'employee.department', 'employee.shift', 'location', 'machine', 'session.inspector', 'session.department', 'verifier', 'correctiveAction.approvals'])
+                ->whereIn('inspection_logs.session_id', $pageRows->pluck('session_id')->unique()->values())
+                ->orderBy('inspection_logs.inspected_at', 'desc')
+                ->get();
         }
 
-        $logs = $query->get();
-
-        // Count for type badges (Query total actionable items by type without date filter to show accurate badge)
-        $badgeQuery = InspectionLog::whereNull('verified_at')
-            ->orWhereIn('verification_status', ['reclean', 'verified']);
-            
-        if ($scopeDeptId) {
-            $badgeQuery->where(function($q) use ($scopeDeptId) {
-                $q->whereHas('employee', fn($subQ) => $subQ->where('department_id', $scopeDeptId))
-                  ->orWhere(function($q2) use ($scopeDeptId) {
-                      $q2->whereNull('employee_id')
-                         ->whereHas('session', fn($sq) => $sq->where('department_id', $scopeDeptId));
-                  });
-            });
-        }
-        
-        // Loop Engineering: Remove inaccurate DB raw counts. We will calculate this from grouped collections later.
-        $typeCounts = ['person' => 0, 'machine' => 0];
-
-        // Pre-calculate which employees failed to group them together (session-specific)
-        $failedEmployeeIdsPerSession = collect($logs)->where('result', 'fail')
-            ->groupBy('session_id')
-            ->map(function($sessionLogs) {
-                return $sessionLogs->pluck('employee_id')->unique()->filter()->values()->toArray();
-            })->toArray();
-
-        $groupedInspections = $logs->groupBy(function($log) use ($failedEmployeeIdsPerSession) {
+        $groupedLogs = $logs->groupBy(function($log) {
             if ($log->employee_id) {
-                // Loop Engineering: Group all personnel logs by session ONLY.
-                // Do not split by statusType or verifyGroup, so that all logs for a session 
-                // stay together in a single card, regardless of pass/fail mix.
+                // Group all personnel logs by session ONLY, so that all logs for a
+                // session stay together in a single card, regardless of pass/fail mix.
                 return $log->session_id . '_personnel';
             } else {
                 $locId = $log->location_id ?? ($log->machine->location_id ?? 'unknown');
-                
-                // Loop Engineering: Group all area/machine logs by session and location ONLY.
-                // Do not split by statusType, so passed and failed machines in the same room stay together.
+
+                // Group all area/machine logs by session and location ONLY, so passed
+                // and failed machines in the same room stay together.
                 return $log->session_id . '_loc_' . $locId;
             }
         });
 
-        // Pre-fetch monthly failure counts to avoid N+1 queries in the map loop
-        $month = now()->month;
-        $year = now()->year;
-        $employeeIds = $logs->pluck('employee_id')->unique()->filter()->values();
-        $failureCounts = collect();
-        if ($employeeIds->isNotEmpty()) {
-            $failureCounts = InspectionLog::whereIn('employee_id', $employeeIds)
-                ->whereYear('inspected_at', $year)
-                ->whereMonth('inspected_at', $month)
-                ->where('result', 'fail')
-                ->selectRaw('employee_id, COUNT(*) as fail_count')
-                ->groupBy('employee_id')
-                ->pluck('fail_count', 'employee_id');
-        }
+        // Walk the summary rather than the loaded logs, so the page keeps the
+        // newest-first order the aggregate query already settled.
+        $displayGroups = $pageRows
+            ->map(fn($row) => $groupedLogs->get($row->group_key))
+            ->filter();
 
-        // Pre-fetch the roster rows too. The map below used to ask for one group's
-        // schedule at a time, so a page of 300 groups issued 300 extra queries -
-        // the reason /verification slowed to a crawl as the backlog grew.
+        // Pre-fetch the roster rows for the groups on screen. This used to ask for
+        // one group's schedule at a time, over every group in the backlog.
+        $employeeIds = $logs->pluck('employee_id')->unique()->filter()->values();
         $scheduleDates = $logs->map(function ($log) {
             $date = $log->session?->inspection_date;
 
@@ -1825,7 +1885,7 @@ class InspectionController extends Controller
                 ->keyBy(fn ($sch) => $sch->employee_id . '|' . $sch->date->toDateString());
         }
 
-        $groupedInspections = $groupedInspections->map(function ($logsInGroup) use ($dateStr, $failureCounts, $schedulesByEmployeeDate) {
+        $groupedInspections = $displayGroups->map(function ($logsInGroup) use ($schedulesByEmployeeDate) {
             $firstLog = $logsInGroup->first();
             $session = $firstLog->session;
             
@@ -2019,60 +2079,19 @@ class InspectionController extends Controller
             ];
         });
 
-        // Filter out groups that do not require any action (e.g. 100% no_production)
-        $groupedInspections = $groupedInspections->filter(function($g) {
-            return $g->is_action_required;
-        });
-
-        // Filter the full list by activeTab first to calculate context-aware typeCounts
-        $activeTab = $request->input('tab', 'pending');
-        $tabFilteredInspections = $groupedInspections->filter(function($g) use ($activeTab) {
-            if ($activeTab === 'pending') {
-                return $g->verification_status === 'pending';
-            } elseif ($activeTab === 'completed') {
-                return in_array($g->verification_status, ['verified', 'approved', 'auto_verified']);
-            } elseif ($activeTab === 'reclean') {
-                return $g->verification_status === 'reclean';
-            }
-            return true;
-        });
-
-        // 1. Calculate Type Counts based on the CURRENT active tab
-        $typeCounts = [
-            'person' => $tabFilteredInspections->filter(fn($g) => $g->type === 'person')->count(),
-            'machine' => $tabFilteredInspections->filter(fn($g) => in_array($g->type, ['area', 'machine']))->count(),
-        ];
-        
-        // 2. Type Filtering (Filter by Person or Machine based on URL param)
-        $tabFilteredInspections = $tabFilteredInspections->filter(function($g) use ($filterType) {
-            if ($filterType === 'person') {
-                return $g->type === 'person';
-            } else {
-                return in_array($g->type, ['area', 'machine']);
-            }
-        });
-        // -----------------------------------------------------------
-
-        // 3. Calculate Status Counts (For the selected type)
-        $counts = [
-            'pending' => $tabFilteredInspections->filter(fn($g) => $g->verification_status === 'pending')->count(),
-            'completed' => $tabFilteredInspections->filter(fn($g) => in_array($g->verification_status, ['verified', 'approved', 'auto_verified']))->count(),
-            'reclean' => $tabFilteredInspections->filter(fn($g) => $g->verification_status === 'reclean')->count(),
-            'total' => $tabFilteredInspections->count(),
-        ];
-
-        // 4. Status Tab Filtering (We already did it conceptually, now apply to the actual list)
-        $groupedInspections = $tabFilteredInspections;
-
-        // 5. Manual Pagination (20 items per page)
-        $perPage = 20;
-        $currentPage = \Illuminate\Pagination\LengthAwarePaginator::resolveCurrentPage();
-        $currentItems = $groupedInspections->slice(($currentPage - 1) * $perPage, $perPage)->values();
-        $paginatedInspections = new \Illuminate\Pagination\LengthAwarePaginator($currentItems, $groupedInspections->count(), $perPage, $currentPage, [
-            'path' => \Illuminate\Pagination\LengthAwarePaginator::resolveCurrentPath(),
-            'query' => $request->query(),
-        ]);
-
+        // The old code filtered out groups whose is_action_required was false.
+        // Nothing ever set it false, so the filter has been dropped rather than
+        // carried over - the flag itself is still on each group for the view.
+        $paginatedInspections = new \Illuminate\Pagination\LengthAwarePaginator(
+            $groupedInspections->values(),
+            $itemsToDisplay->count(),
+            $perPage,
+            $currentPage,
+            [
+                'path' => \Illuminate\Pagination\LengthAwarePaginator::resolveCurrentPath(),
+                'query' => $request->query(),
+            ]
+        );
         return view('inspections.verification', [
             'groupedInspections' => $paginatedInspections,
             'date' => $dateStr,
@@ -2515,6 +2534,43 @@ class InspectionController extends Controller
             : 'อนุมัติรายการที่เลือกเรียบร้อย (ยังมีรายการอื่นในเซสชันที่รออนุมัติ)';
 
         return back()->with('success', $message);
+    }
+
+    /**
+     * The tab a group belongs in, worked out from SQL counters instead of from
+     * its loaded logs — so /verification can decide which 20 groups to show
+     * before loading a single one of them.
+     *
+     * Mirrors the ladder the group builder applies: a group made only of
+     * approved and auto-verified logs counts as approved, and anything
+     * unverified or rejected outranks a re-clean.
+     */
+    private function groupStatusFromCounts(object $row): string
+    {
+        $total = (int) $row->n_total;
+        $approved = (int) $row->n_approved;
+        $autoVerified = (int) $row->n_auto;
+
+        $isAutoVerified = $autoVerified === $total;
+        $isApproved = ($approved + $autoVerified) === $total && ! $isAutoVerified;
+
+        if ($isApproved) {
+            return 'approved';
+        }
+
+        if ($isAutoVerified) {
+            return 'auto_verified';
+        }
+
+        if ((int) $row->n_rejected > 0 || (int) $row->n_unverified > 0) {
+            return 'pending';
+        }
+
+        if ((int) $row->n_reclean > 0) {
+            return 'reclean';
+        }
+
+        return 'verified';
     }
 
     private function authorizeSessionOwner(InspectionSession $session): void
