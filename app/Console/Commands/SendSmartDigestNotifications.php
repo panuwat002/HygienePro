@@ -32,6 +32,16 @@ class SendSmartDigestNotifications extends Command
     {
         $sessions = InspectionSession::where('status', 'completed')
             ->whereNull('notified_at')
+            // A completed session is only worth an email while something on it
+            // still needs a supervisor. Without this the digest listed every
+            // session ever completed, most of them rows of "0 pending, 0 auto".
+            ->whereHas('logs', fn ($q) => $q->whereNull('verification_status'))
+            // Counted here so rendering the table does not fire two more
+            // queries per row.
+            ->withCount([
+                'logs as pending_logs_count' => fn ($q) => $q->whereNull('verification_status'),
+                'logs as auto_verified_logs_count' => fn ($q) => $q->where('verification_status', 'auto_verified'),
+            ])
             ->get();
 
         if ($sessions->isEmpty()) {

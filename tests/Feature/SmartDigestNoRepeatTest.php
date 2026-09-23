@@ -1,6 +1,9 @@
 <?php
 
+use App\Models\Checkpoint;
 use App\Models\Department;
+use App\Models\Employee;
+use App\Models\InspectionLog;
 use App\Models\InspectionSession;
 use App\Models\User;
 use App\Notifications\PendingVerificationDigestNotification;
@@ -27,7 +30,32 @@ beforeEach(function () {
         'round' => 1,
         'status' => 'completed',
     ]);
+
+    // The digest only picks up sessions with something still awaiting a
+    // supervisor, so give each one a log that has not been verified yet.
+    $this->checkpoint = Checkpoint::create([
+        'title' => 'Hand wash', 'is_active' => true, 'type' => 'person',
+    ]);
+    $this->employee = Employee::create([
+        'employee_id' => 'E001', 'fullname' => 'Worker',
+        'department_id' => $this->dept->id, 'qr_code_hash' => 'h1', 'is_active' => true,
+    ]);
+
+    pendingLogFor($this, $this->session);
 });
+
+/** A log with no verification_status - i.e. still waiting on a supervisor. */
+function pendingLogFor($ctx, InspectionSession $session): void
+{
+    InspectionLog::create([
+        'session_id' => $session->id,
+        'checkpoint_id' => $ctx->checkpoint->id,
+        'employee_id' => $ctx->employee->id,
+        'result' => 'pass',
+        'inspected_at' => now(),
+        'verification_status' => null,
+    ]);
+}
 
 /** Ages a session's updated_at without Eloquent stamping it back to now. */
 function staleSession(InspectionSession $session, int $hours): void
@@ -79,6 +107,7 @@ it('still picks up a session that has not been notified yet', function () {
         'round' => 1,
         'status' => 'completed',
     ]);
+    pendingLogFor($this, $newSession);
 
     $this->artisan('inspection:send-smart-digest')->assertSuccessful();
 

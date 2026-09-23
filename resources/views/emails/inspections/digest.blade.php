@@ -5,7 +5,14 @@
 @section('header_subtitle', '(Pending Verification Digest)')
 
 @section('content')
-<p style="margin-top: 0; font-size: 16px;">คุณมีเซสชันการตรวจสอบความสะอาดที่รอการยืนยันผลใหม่ จำนวน <strong>{{ $sessions->count() }}</strong> รายการ ดังต่อไปนี้:</p>
+@php
+    // Keep the email readable: show the first rows, count the rest.
+    $maxRows = 10;
+    $shown = $sessions->take($maxRows);
+    $remaining = $sessions->count() - $shown->count();
+@endphp
+
+<p style="margin-top: 0; font-size: 16px;">คุณมีเซสชันการตรวจสอบความสะอาดที่รอการยืนยันผลใหม่ จำนวน <strong>{{ $sessions->count() }}</strong> รายการ@if($remaining > 0) แสดง {{ $shown->count() }} รายการแรก@endif:</p>
 
 <table width="100%" cellpadding="12" cellspacing="0" border="0" style="border-collapse: collapse; text-align: left; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; margin-top: 20px;">
     <thead>
@@ -18,17 +25,21 @@
         </tr>
     </thead>
     <tbody>
-        @foreach($sessions as $session)
+        @foreach($shown as $session)
         <tr style="border-bottom: 1px solid #f3f4f6;">
             <td style="font-weight: 500; color: #1f2937;">{{ $session->shift_label }}</td>
             <td style="color: #4b5563;">{{ $session->department->dept_name ?? 'N/A' }}</td>
             <td style="color: #4b5563;">{{ $session->inspector->name ?? 'N/A' }}</td>
-            <td style="color: #f59e0b; font-weight: bold;">{{ $session->logs->whereNull('verification_status')->count() }}</td>
-            <td style="color: #10b981; font-weight: bold;">{{ $session->logs->where('verification_status', 'auto_verified')->count() }}</td>
+            <td style="color: #f59e0b; font-weight: bold;">{{ $session->pending_logs_count ?? $session->logs->whereNull('verification_status')->count() }}</td>
+            <td style="color: #10b981; font-weight: bold;">{{ $session->auto_verified_logs_count ?? $session->logs->where('verification_status', 'auto_verified')->count() }}</td>
         </tr>
         @endforeach
     </tbody>
 </table>
+
+@if($remaining > 0)
+<p style="margin-top: 16px; color: #6b7280; font-size: 14px;">และอีก <strong>{{ $remaining }}</strong> รายการ — ดูทั้งหมดได้ที่หน้าทวนสอบ</p>
+@endif
 
 <p style="margin-top: 30px; color: #4b5563;">กรุณาเข้าสู่ระบบเพื่อตรวจสอบและยืนยันผลการตรวจสอบ</p>
 
