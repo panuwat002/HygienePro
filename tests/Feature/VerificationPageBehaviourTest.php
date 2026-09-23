@@ -20,6 +20,7 @@ use App\Models\Location;
 use App\Models\Machine;
 use App\Models\Shift;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     $this->dept = Department::create([
@@ -634,4 +635,57 @@ it('serves a card its detail when the date parameter is empty', function () {
             'date' => '',
         ]))
         ->assertSuccessful();
+});
+
+/**
+ * The summary query runs over the whole backlog, so it carries only what the
+ * tabs and badges need. The columns a rendered card wants - two count(distinct)
+ * among them - are fetched in a second pass restricted to the groups on screen.
+ */
+function distinctCountingQueries(callable $work): array
+{
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+
+    $work();
+
+    $queries = collect(DB::getQueryLog())
+        ->pluck('query')
+        ->filter(fn ($q) => str_contains($q, 'count(distinct'))
+        ->values()
+        ->all();
+
+    DB::disableQueryLog();
+
+    return $queries;
+}
+
+it('counts the card columns once, for the groups on the page only', function () {
+    foreach (range(1, 25) as $i) {
+        personGroup($this, ['verified']);
+    }
+
+    $queries = distinctCountingQueries(function () {
+        $this->actingAs($this->verifier)
+            ->get('/verification?filter_type=person&tab=completed')
+            ->assertSuccessful();
+    });
+
+    expect($queries)->toHaveCount(1)
+        // Restricted to this page's sessions, not the whole backlog.
+        ->and($queries[0])->toContain('"session_id" in (');
+});
+
+it('does not count card columns at all for a tab with nothing on it', function () {
+    foreach (range(1, 10) as $i) {
+        personGroup($this, ['verified']);
+    }
+
+    $queries = distinctCountingQueries(function () {
+        $this->actingAs($this->verifier)
+            ->get('/verification?filter_type=person&tab=reclean')
+            ->assertSuccessful();
+    });
+
+    expect($queries)->toBeEmpty();
 });

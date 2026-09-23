@@ -1802,6 +1802,21 @@ class InspectionController extends Controller
         $currentPage = \Illuminate\Pagination\LengthAwarePaginator::resolveCurrentPage();
         $pageRows = $itemsToDisplay->slice(($currentPage - 1) * $perPage, $perPage)->values();
 
+        // Now that the page knows which twenty groups it shows, ask for the
+        // columns only a rendered card needs. Counting those for every group in
+        // the backlog cost ~110ms on every page view, the empty tabs included.
+        if ($pageRows->isNotEmpty()) {
+            $cardDetail = $this->verificationGroupSummary(
+                $baseQuery()->whereIn(
+                    'inspection_logs.session_id',
+                    $pageRows->pluck('session_id')->unique()->values()
+                ),
+                true
+            )->keyBy('group_key');
+
+            $pageRows = $pageRows->map(fn($row) => $cardDetail->get($row->group_key))->filter()->values();
+        }
+
         // Loading by session pulls in at most a handful of extra location groups
         // belonging to the same round; they are dropped again below.
         $logs = collect();
@@ -2372,7 +2387,7 @@ class InspectionController extends Controller
 
         // Scope is enforced by the predicate itself: a round outside this user's
         // department summarises to nothing, and they get a 404 rather than a card.
-        $summary = $this->verificationGroupSummary($base())->firstWhere('group_key', $groupKey);
+        $summary = $this->verificationGroupSummary($base(), true)->firstWhere('group_key', $groupKey);
 
         abort_if($summary === null, 404);
 
@@ -2448,8 +2463,27 @@ class InspectionController extends Controller
      * growing with every round ever verified. Counting here instead means the
      * tab, the badges and the page slice are all settled before a log is read.
      */
-    private function verificationGroupSummary($query): \Illuminate\Support\Collection
+    private function verificationGroupSummary($query, bool $withCardDetail = false): \Illuminate\Support\Collection
     {
+        // Only the twenty groups on screen need the card columns. Counting them
+        // for all 215 - two count(distinct) among them - put ~110ms on every
+        // page, including the tabs that show nothing at all.
+        $cardDetail = $withCardDetail ? [
+            "sum(case when inspection_logs.verification_status = 'verified' then 1 else 0 end) as n_verified",
+            'count(distinct inspection_logs.employee_id) as n_employees',
+            'count(distinct inspection_logs.machine_id) as n_machines',
+            'sum(case when inspection_logs.machine_id is null then 1 else 0 end) as n_without_machine',
+            "sum(case when inspection_logs.result = 'pass' then 1 else 0 end) as n_pass",
+            "sum(case when inspection_logs.result = 'fail' then 1 else 0 end) as n_fail",
+            "sum(case when inspection_logs.result = 'no_production' then 1 else 0 end) as n_no_production",
+            "sum(case when inspection_logs.result = 'absent' then 1 else 0 end) as n_absent",
+            // A failure nobody has signed off yet - what makes a group read as failed.
+            "sum(case when inspection_logs.result = 'fail' and (inspection_logs.verification_status is null"
+                . " or inspection_logs.verification_status not in ('approved', 'auto_verified'))"
+                . ' then 1 else 0 end) as n_outstanding_fail',
+            'sum(case when inspection_logs.acknowledged_at is null then 1 else 0 end) as n_unacknowledged',
+        ] : [];
+
         return $query
             ->leftJoin('machines', function ($join) {
                 // Matches the model side, which resolves a soft-deleted machine
@@ -2457,7 +2491,7 @@ class InspectionController extends Controller
                 $join->on('machines.id', '=', 'inspection_logs.machine_id')
                      ->whereNull('machines.deleted_at');
             })
-            ->selectRaw(implode(', ', [
+            ->selectRaw(implode(', ', array_merge([
                 'inspection_logs.session_id as session_id',
                 'case when inspection_logs.employee_id is null then 0 else 1 end as is_person',
                 // A personnel round is one group per session; an area round is one
@@ -2470,25 +2504,8 @@ class InspectionController extends Controller
                 "sum(case when inspection_logs.verification_status = 'reclean' then 1 else 0 end) as n_reclean",
                 "sum(case when inspection_logs.verification_status = 'approved' then 1 else 0 end) as n_approved",
                 "sum(case when inspection_logs.verification_status = 'auto_verified' then 1 else 0 end) as n_auto",
-                "sum(case when inspection_logs.verification_status = 'verified' then 1 else 0 end) as n_verified",
                 'max(inspection_logs.inspected_at) as last_inspected_at',
-                // Everything the card prints about itself. Counting here rather than
-                // walking the group's logs a dozen times is what takes the date casts
-                // off the page: reading one datetime column builds a fresh Carbon every
-                // time, and at ~46us a read that was the single largest cost on the page.
-                'count(distinct inspection_logs.employee_id) as n_employees',
-                'count(distinct inspection_logs.machine_id) as n_machines',
-                'sum(case when inspection_logs.machine_id is null then 1 else 0 end) as n_without_machine',
-                "sum(case when inspection_logs.result = 'pass' then 1 else 0 end) as n_pass",
-                "sum(case when inspection_logs.result = 'fail' then 1 else 0 end) as n_fail",
-                "sum(case when inspection_logs.result = 'no_production' then 1 else 0 end) as n_no_production",
-                "sum(case when inspection_logs.result = 'absent' then 1 else 0 end) as n_absent",
-                // A failure nobody has signed off yet - what makes a group read as failed.
-                "sum(case when inspection_logs.result = 'fail' and (inspection_logs.verification_status is null"
-                    . " or inspection_logs.verification_status not in ('approved', 'auto_verified'))"
-                    . ' then 1 else 0 end) as n_outstanding_fail',
-                'sum(case when inspection_logs.acknowledged_at is null then 1 else 0 end) as n_unacknowledged',
-            ]))
+            ], $cardDetail)))
             ->groupBy('session_id', 'is_person', 'loc_id')
             ->orderByDesc('last_inspected_at')
             ->toBase()
