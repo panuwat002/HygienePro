@@ -123,6 +123,30 @@
             </div>
         </div>
 
+        {{-- Card 2b: รออนุมัติ — only for whoever can actually sign it off.
+             A QA manager's whole job lives behind this number, and until it was
+             here the dashboard only showed them somebody else's queue. --}}
+        @can('approve')
+        <div class="col-xl-3 col-md-6">
+            <a href="{{ route('inspection.verification', ['tab' => 'awaiting_approval']) }}" class="text-decoration-none">
+                <div class="card h-100 position-relative summary-stat-card glass-card">
+                    <div class="position-absolute top-0 start-0 bottom-0" style="width: 4px; background: var(--hygiene-success); border-radius: 4px 0 0 4px;"></div>
+                    <div class="card-body p-4 ps-4">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <p class="text-muted mb-2 small fw-semibold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.08em;">รออนุมัติ</p>
+                                <h2 class="fw-bold mb-0 text-dark" style="font-size: 1.75rem; line-height: 1;">{{ $awaitingApprovalCount }}</h2>
+                            </div>
+                            <div class="d-flex align-items-center justify-content-center rounded-3" style="width: 52px; height: 52px; background: var(--hygiene-success-soft);">
+                                <i class="bi bi-hourglass-split" style="font-size: 1.4rem; color: var(--hygiene-success);"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        @endcan
+
         {{-- Card 3: สั่งแก้ไขใหม่ --}}
         <div class="col-xl-3 col-md-6">
             <a href="{{ route('corrective.index') }}" class="text-decoration-none">

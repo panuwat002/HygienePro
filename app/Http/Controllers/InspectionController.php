@@ -112,8 +112,21 @@ class InspectionController extends Controller
 
         // DB-level grouping key for unique inspection entities
         $dailyStatsCacheKey = "dashboard_daily_stats_{$today}_" . ($scopeDeptId ?? 'all');
-        $dailyStats = \Illuminate\Support\Facades\Cache::remember($dailyStatsCacheKey, 60, function () use ($today, $applyScope) {
-            $entityExpr = "CONCAT(session_id, '_', CASE WHEN machine_id IS NOT NULL THEN CONCAT('m', machine_id) WHEN employee_id IS NOT NULL THEN CONCAT('e', employee_id) ELSE CONCAT('l', COALESCE(location_id, 0)) END)";
+        $dailyStats = \Illuminate\Support\Facades\Cache::remember($dailyStatsCacheKey, 60, function () use ($today, $applyScope, $scopeDeptId) {
+            // CONCAT is MySQL's; SQLite spells it ||, and there is no portable
+            // form. Hard-coding CONCAT made this whole method unrunnable under
+            // the test database, so the dashboard had no coverage at all.
+            $cat = fn (array $parts) => \Illuminate\Support\Facades\DB::connection()->getDriverName() === 'sqlite'
+                ? '(' . implode(' || ', $parts) . ')'
+                : 'CONCAT(' . implode(', ', $parts) . ')';
+
+            $entityExpr = $cat([
+                'session_id',
+                "'_'",
+                'CASE WHEN machine_id IS NOT NULL THEN ' . $cat(["'m'", 'machine_id'])
+                    . ' WHEN employee_id IS NOT NULL THEN ' . $cat(["'e'", 'employee_id'])
+                    . ' ELSE ' . $cat(["'l'", 'COALESCE(location_id, 0)']) . ' END',
+            ]);
 
             $todayBase = InspectionLog::whereDate('inspected_at', $today);
             $applyScope($todayBase);
@@ -143,11 +156,26 @@ class InspectionController extends Controller
             $monthlyTotalFail = (clone $monthlyBase)->where('result', 'fail')->count();
             $monthlyPassRate = ($monthlyTotalPass + $monthlyTotalFail) > 0 ? round(($monthlyTotalPass / ($monthlyTotalPass + $monthlyTotalFail)) * 100) : 100;
 
-            return compact('inspectionsToday', 'pendingVerificationCount', 'recleanCount', 'passRate', 'monthlyPassRate');
+            // Counted the way the verification page counts, so the card and the
+            // tab it links to show the same number: one per group, where every
+            // log in the group is verified and none of it is approved yet.
+            $awaitingApprovalCount = $this->verificationGroupSummary(
+                $this->verificationLogQuery(null, null, $scopeDeptId)
+            )->where('group_status', 'verified')->count();
+
+            return compact(
+                'inspectionsToday',
+                'pendingVerificationCount',
+                'awaitingApprovalCount',
+                'recleanCount',
+                'passRate',
+                'monthlyPassRate'
+            );
         });
 
         $inspectionsToday = $dailyStats['inspectionsToday'];
         $pendingVerificationCount = $dailyStats['pendingVerificationCount'];
+        $awaitingApprovalCount = $dailyStats['awaitingApprovalCount'];
         $recleanCount = $dailyStats['recleanCount'];
         $passRate = $dailyStats['passRate'];
         $monthlyPassRate = $dailyStats['monthlyPassRate'];
@@ -296,6 +324,7 @@ class InspectionController extends Controller
         return view('dashboard', compact(
             'inspectionsToday',
             'pendingVerificationCount',
+            'awaitingApprovalCount',
             'recleanCount',
             'passRate',
             'monthlyPassRate',
