@@ -196,7 +196,12 @@
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
                             <p class="text-muted mb-1 small fw-semibold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.08em;">อัตราผ่าน</p>
-                            <h2 class="fw-bold mb-0 text-dark" style="font-size: 1.75rem; line-height: 1;">{{ $passRate }}%</h2>
+                            {{-- null means nothing was assessed today. A dash, not a green 100%. --}}
+                            @if(is_null($passRate))
+                                <h2 class="fw-bold mb-0 text-muted" style="font-size: 1.75rem; line-height: 1;" title="ยังไม่มีรายการที่ประเมินผลวันนี้">—</h2>
+                            @else
+                                <h2 class="fw-bold mb-0 text-dark" style="font-size: 1.75rem; line-height: 1;">{{ $passRate }}%</h2>
+                            @endif
                         </div>
                         <div class="d-flex align-items-center justify-content-center rounded-3" style="width: 44px; height: 44px; background: var(--hygiene-success-soft);">
                             <i class="bi bi-graph-up-arrow" style="font-size: 1.15rem; color: var(--hygiene-success);"></i>
@@ -455,13 +460,20 @@
                         <svg width="120" height="120" viewBox="0 0 120 120">
                             <!-- Background Circle -->
                             <circle cx="60" cy="60" r="54" fill="none" class="text-light" stroke="currentColor" stroke-width="8"></circle>
+                            {{-- No assessed work this month means no arc to draw, not a full one. --}}
+                            @unless(is_null($monthlyPassRate))
                             <!-- Progress Circle -->
-                            <circle cx="60" cy="60" r="54" fill="none" class="text-success" stroke="currentColor" stroke-width="8" stroke-linecap="round" 
-                                    stroke-dasharray="339.29" stroke-dashoffset="{{ 339.29 * (1 - ($monthlyPassRate/100)) }}" 
+                            <circle cx="60" cy="60" r="54" fill="none" class="text-success" stroke="currentColor" stroke-width="8" stroke-linecap="round"
+                                    stroke-dasharray="339.29" stroke-dashoffset="{{ 339.29 * (1 - ($monthlyPassRate/100)) }}"
                                     style="transform: rotate(-90deg); transform-origin: 50% 50%;"></circle>
+                            @endunless
                         </svg>
                         <div class="position-absolute top-50 start-50 translate-middle">
-                            <h3 class="fw-bold mb-0 text-dark">{{ $monthlyPassRate }}%</h3>
+                            @if(is_null($monthlyPassRate))
+                                <h3 class="fw-bold mb-0 text-muted">—</h3>
+                            @else
+                                <h3 class="fw-bold mb-0 text-dark">{{ $monthlyPassRate }}%</h3>
+                            @endif
                         </div>
                     </div>
                 </div>

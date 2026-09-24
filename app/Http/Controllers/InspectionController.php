@@ -147,14 +147,14 @@ class InspectionController extends Controller
 
             $totalPass = (clone $todayBase)->where('result', 'pass')->count();
             $totalFail = (clone $todayBase)->where('result', 'fail')->count();
-            $passRate = ($totalPass + $totalFail) > 0 ? round(($totalPass / ($totalPass + $totalFail)) * 100) : 100;
-            
+            $passRate = $this->passRate($totalPass, $totalFail);
+
             // Calculate Monthly Pass Rate for the big Hygiene Index dial
             $monthlyBase = InspectionLog::where('inspected_at', '>=', now()->startOfMonth());
             $applyScope($monthlyBase);
             $monthlyTotalPass = (clone $monthlyBase)->where('result', 'pass')->count();
             $monthlyTotalFail = (clone $monthlyBase)->where('result', 'fail')->count();
-            $monthlyPassRate = ($monthlyTotalPass + $monthlyTotalFail) > 0 ? round(($monthlyTotalPass / ($monthlyTotalPass + $monthlyTotalFail)) * 100) : 100;
+            $monthlyPassRate = $this->passRate($monthlyTotalPass, $monthlyTotalFail);
 
             // Counted the way the verification page counts, so the card and the
             // tab it links to show the same number: one per group, where every
@@ -2402,6 +2402,28 @@ class InspectionController extends Controller
         }
 
         return (int) round($assessed->where('result', 'pass')->count() / $assessed->count() * 100);
+    }
+
+    /**
+     * The same ratio as scoreFromLogs, for callers that already counted in SQL.
+     *
+     * Both dashboard figures used to fall back to a literal 100 when nothing
+     * had been assessed, so a morning where no one had inspected anything yet
+     * rendered a green "อัตราผ่าน 100%" beside "งานตรวจวันนี้ 0". Green reads
+     * as all-clear, which is the opposite of what an untouched shift means.
+     *
+     * @return int|null null when nothing was assessed, so the page can print
+     *                  "—" instead of inventing a perfect score.
+     */
+    private function passRate(int $pass, int $fail): ?int
+    {
+        $assessed = $pass + $fail;
+
+        if ($assessed === 0) {
+            return null;
+        }
+
+        return (int) round($pass / $assessed * 100);
     }
 
     /**
