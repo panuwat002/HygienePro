@@ -75,3 +75,23 @@ it('drops the badge once everything is read', function () {
         ->assertSuccessful()
         ->assertDontSee('data-unread-count', false);
 });
+
+/**
+ * .btn carries overflow: hidden for its ripple effect, so anything inside the
+ * bell button that overhangs it is cropped - which is what reduced the count
+ * to a red sliver. The badge has to be a sibling of the button.
+ */
+it('keeps the badge outside the button that would crop it', function () {
+    $user = bellUser();
+    notifyTimes($user, 5);
+
+    $html = $this->actingAs($user)->get('/dashboard')->assertSuccessful()->getContent();
+
+    $bellStart = strpos($html, 'aria-label="การแจ้งเตือน');
+    expect($bellStart)->not->toBeFalse();
+
+    $buttonEnd = strpos($html, '</button>', $bellStart);
+    $badgeAt = strpos($html, 'data-unread-count', $bellStart);
+
+    expect($badgeAt)->toBeGreaterThan($buttonEnd);
+});

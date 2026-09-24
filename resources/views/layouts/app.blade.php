@@ -268,20 +268,22 @@
                             $unreadNotifications = Auth::check() ? Auth::user()->unreadNotifications : collect();
                             $unreadCount = $unreadNotifications->count();
                         @endphp
-                        <div class="dropdown">
-                            <button class="btn btn-white border rounded-circle position-relative p-2" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="การแจ้งเตือน{{ $unreadCount > 0 ? ' — ยังไม่ได้อ่าน ' . $unreadCount . ' รายการ' : '' }}" style="width: 40px; height: 40px;">
+                        <div class="dropdown position-relative">
+                            <button class="btn btn-white border rounded-circle p-2" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="การแจ้งเตือน{{ $unreadCount > 0 ? ' — ยังไม่ได้อ่าน ' . $unreadCount . ' รายการ' : '' }}" style="width: 40px; height: 40px;">
                                 <i class="bi bi-bell" aria-hidden="true"></i>
-                                @if($unreadCount > 0)
-                                    {{-- Was 0.65rem inside p-1, which rendered the digit as a red
-                                         speck: it said "something happened" but never how much. --}}
-                                    <span class="position-absolute translate-middle badge rounded-pill bg-danger border border-2 border-white fw-bold"
-                                          data-unread-count="{{ $unreadCount }}"
-                                          style="top: 3px; left: 100%; font-size: 0.7rem; line-height: 1; min-width: 20px; padding: 0.25rem 0.35rem;">
-                                        {{ $unreadCount > 99 ? '99+' : $unreadCount }}
-                                        <span class="visually-hidden">รายการที่ยังไม่ได้อ่าน</span>
-                                    </span>
-                                @endif
                             </button>
+                            @if($unreadCount > 0)
+                                {{-- Deliberately a sibling of the button, not a child: .btn sets
+                                     overflow: hidden for its ripple, which cropped the badge to a
+                                     red sliver the moment it overhung the bell. pointer-events are
+                                     off so the part covering the bell still opens the dropdown. --}}
+                                <span class="position-absolute translate-middle badge rounded-pill bg-danger border border-2 border-white fw-bold"
+                                      data-unread-count="{{ $unreadCount }}"
+                                      style="top: 4px; left: 100%; z-index: 2; pointer-events: none; font-size: 0.7rem; line-height: 1; min-width: 20px; padding: 0.25rem 0.35rem;">
+                                    {{ $unreadCount > 99 ? '99+' : $unreadCount }}
+                                    <span class="visually-hidden">รายการที่ยังไม่ได้อ่าน</span>
+                                </span>
+                            @endif
                             <div class="dropdown-menu dropdown-menu-end shadow-sm border-0 mt-2 p-0 animate-slide-down" style="width: 320px; max-height: 400px; overflow-y:auto;">
                                 <div class="px-3 py-2 border-bottom d-flex justify-content-between align-items-center bg-light rounded-top">
                                     <h6 class="mb-0 fw-bold text-secondary" style="font-size: 0.85rem;">การแจ้งเตือน (Notifications)</h6>
