@@ -17,6 +17,10 @@ Schedule::command('inspection:escalate-verifications')->hourly();
 
 Schedule::command('inspection:send-smart-digest')->hourly();
 
+// แจ้งเตือน QA Manager ว่ามีงานรออนุมัติ — วันละครั้งตอนเช้า ไม่ใช่รายชั่วโมง
+// เพราะการอนุมัติเป็นงานที่นั่งทำรอบเดียวจบ ไม่ใช่งานที่ต้องตามทั้งวัน
+Schedule::command('inspection:send-approval-digest')->dailyAt('09:00');
+
 // แจ้งเตือน CAR ที่เกินกำหนด (email ถึง admin + LINE) — ส่งวันละครั้งตอนเช้า
 Schedule::command('car:check-overdue')->dailyAt('08:30');
 
