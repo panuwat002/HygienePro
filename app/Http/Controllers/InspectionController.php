@@ -1760,11 +1760,17 @@ class InspectionController extends Controller
         // screen are ever loaded in full.
         $summaryRows = $this->verificationGroupSummary($baseQuery());
 
+        // 'verified' means QA has signed it off and it is now waiting on a manager,
+        // which is a different job from work that is finished. They shared a tab
+        // labelled "รออนุมัติ / ผ่านแล้ว", so a manager had no way to see what was
+        // actually left for them - 17,993 logs had piled up behind that.
         $matchesTab = function (string $status) use ($activeTab) {
             if ($activeTab === 'pending') {
                 return $status === 'pending';
+            } elseif ($activeTab === 'awaiting_approval') {
+                return $status === 'verified';
             } elseif ($activeTab === 'completed') {
-                return in_array($status, ['verified', 'approved', 'auto_verified']);
+                return in_array($status, ['approved', 'auto_verified']);
             } elseif ($activeTab === 'reclean') {
                 return $status === 'reclean';
             }
@@ -1780,7 +1786,8 @@ class InspectionController extends Controller
 
         $counts = [
             'pending' => $currentTypeRows->where('group_status', 'pending')->count(),
-            'completed' => $currentTypeRows->whereIn('group_status', ['verified', 'approved', 'auto_verified'])->count(),
+            'awaiting_approval' => $currentTypeRows->where('group_status', 'verified')->count(),
+            'completed' => $currentTypeRows->whereIn('group_status', ['approved', 'auto_verified'])->count(),
             'reclean' => $currentTypeRows->where('group_status', 'reclean')->count(),
             'total' => $currentTypeRows->count(),
         ];

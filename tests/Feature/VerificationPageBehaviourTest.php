@@ -211,9 +211,17 @@ it('counts the badges for the chosen category, not the chosen tab', function () 
     personGroup($this, ['reclean']);
 
     // Same numbers whichever tab is open: the badges describe the category.
-    foreach (['pending', 'completed', 'reclean'] as $tab) {
+    foreach (['pending', 'awaiting_approval', 'completed', 'reclean'] as $tab) {
         expect(pageData($this, "filter_type=person&tab={$tab}")['counts'])
-            ->toEqual(['pending' => 1, 'completed' => 3, 'reclean' => 1, 'total' => 5]);
+            ->toEqual([
+                'pending' => 1,
+                // Verified by QA, still waiting on a manager.
+                'awaiting_approval' => 1,
+                // Approved, plus the auto-verified round nobody has to sign.
+                'completed' => 2,
+                'reclean' => 1,
+                'total' => 5,
+            ]);
     }
 });
 
@@ -229,7 +237,7 @@ it('counts both categories for the open tab', function () {
     expect(pageData($this, 'filter_type=person&tab=pending')['typeCounts'])
         ->toEqual(['person' => 2, 'machine' => 1]);
 
-    expect(pageData($this, 'filter_type=person&tab=completed')['typeCounts'])
+    expect(pageData($this, 'filter_type=person&tab=awaiting_approval')['typeCounts'])
         ->toEqual(['person' => 1, 'machine' => 1]);
 });
 
@@ -242,19 +250,19 @@ it('shows only the open tab in the table', function () {
         ->toEqual(['pending']);
     expect(pageData($this, 'filter_type=person&tab=reclean')['groups']->pluck('verification_status')->all())
         ->toEqual(['reclean']);
-    expect(pageData($this, 'filter_type=person&tab=completed')['groups']->pluck('verification_status')->all())
+    expect(pageData($this, 'filter_type=person&tab=awaiting_approval')['groups']->pluck('verification_status')->all())
         ->toEqual(['verified']);
 });
 
 it('keeps a person round in one group and never on the area tab', function () {
     personGroup($this, ['verified', 'verified', 'verified']);
 
-    $person = pageData($this, 'filter_type=person&tab=completed');
+    $person = pageData($this, 'filter_type=person&tab=awaiting_approval');
     expect($person['groups'])->toHaveCount(1)
         ->and($person['groups']->first()->type)->toBe('person')
         ->and($person['groups']->first()->all_logs)->toHaveCount(3);
 
-    expect(pageData($this, 'filter_type=machine&tab=completed')['groups'])->toHaveCount(0);
+    expect(pageData($this, 'filter_type=machine&tab=awaiting_approval')['groups'])->toHaveCount(0);
 });
 
 it('splits one area round into a group per location', function () {
@@ -264,7 +272,7 @@ it('splits one area round into a group per location', function () {
     $session = areaGroup($this, $packing, ['verified', 'verified']);
     areaGroup($this, $cold, ['verified'], $session);
 
-    $groups = pageData($this, 'filter_type=machine&tab=completed')['groups'];
+    $groups = pageData($this, 'filter_type=machine&tab=awaiting_approval')['groups'];
 
     expect($groups)->toHaveCount(2)
         ->and($groups->pluck('name')->sort()->values()->all())
@@ -277,7 +285,7 @@ it('groups a machine round by the location the machine sits in', function () {
 
     machineGroup($this, $mixer, ['verified', 'verified']);
 
-    $groups = pageData($this, 'filter_type=machine&tab=completed')['groups'];
+    $groups = pageData($this, 'filter_type=machine&tab=awaiting_approval')['groups'];
 
     expect($groups)->toHaveCount(1)
         ->and($groups->first()->type)->toBe('machine')
@@ -289,7 +297,7 @@ it('puts the most recent round first', function () {
     $middle = personGroup($this, ['verified']);
     $newest = personGroup($this, ['verified']);
 
-    expect(pageData($this, 'filter_type=person&tab=completed')['groups']->pluck('session_id')->all())
+    expect(pageData($this, 'filter_type=person&tab=awaiting_approval')['groups']->pluck('session_id')->all())
         ->toEqual([$newest->id, $middle->id, $oldest->id]);
 });
 
@@ -298,12 +306,12 @@ it('fills a page with twenty groups and reports the true total', function () {
         personGroup($this, ['verified']);
     }
 
-    $first = pageData($this, 'filter_type=person&tab=completed');
+    $first = pageData($this, 'filter_type=person&tab=awaiting_approval');
     expect($first['groups'])->toHaveCount(20)
         ->and($first['total'])->toBe(23)
-        ->and($first['counts']['completed'])->toBe(23);
+        ->and($first['counts']['awaiting_approval'])->toBe(23);
 
-    expect(pageData($this, 'filter_type=person&tab=completed&page=2')['groups'])->toHaveCount(3);
+    expect(pageData($this, 'filter_type=person&tab=awaiting_approval&page=2')['groups'])->toHaveCount(3);
 });
 
 it('does not show a page of one tab on another tab', function () {
@@ -345,7 +353,7 @@ it('leaves out a location that has neither checkpoints nor machines', function (
         'verified_at' => now(),
     ]);
 
-    expect(pageData($this, 'filter_type=machine&tab=completed')['groups'])->toHaveCount(0);
+    expect(pageData($this, 'filter_type=machine&tab=awaiting_approval')['groups'])->toHaveCount(0);
 });
 
 /**
@@ -403,7 +411,7 @@ it('loads a page worth of logs, not a tab worth', function () {
     }
 
     $counter->n = 0;
-    $this->actingAs($this->verifier)->get('/verification?filter_type=person&tab=completed')->assertSuccessful();
+    $this->actingAs($this->verifier)->get('/verification?filter_type=person&tab=awaiting_approval')->assertSuccessful();
 
     // 20 groups x 3 logs, with room for the odd extra; nowhere near all 180.
     expect($counter->n)->toBeLessThanOrEqual(70);
@@ -451,7 +459,7 @@ it('stamps the card with the newest log in the group, whatever order they load i
         ]);
     }
 
-    $group = pageData($this, 'filter_type=person&tab=completed')['groups']->first();
+    $group = pageData($this, 'filter_type=person&tab=awaiting_approval')['groups']->first();
 
     expect($group->date)->toBe($newest->format('d/m/Y'))
         ->and($group->time)->toBe($newest->format('H:i'));
@@ -477,7 +485,7 @@ it('counts the people and the failures in a mixed round', function () {
         }
     }
 
-    $group = pageData($this, 'filter_type=person&tab=completed')['groups']->first();
+    $group = pageData($this, 'filter_type=person&tab=awaiting_approval')['groups']->first();
 
     expect($group->name)->toContain('3 คน')
         ->and($group->name)->toContain('พบข้อบกพร่อง')
@@ -504,7 +512,7 @@ it('counts machines and bare area checks separately in one location', function (
         ]);
     }
 
-    $group = pageData($this, 'filter_type=machine&tab=completed')['groups']->first();
+    $group = pageData($this, 'filter_type=machine&tab=awaiting_approval')['groups']->first();
 
     expect($group->name)->toBe('Packing room (พื้นที่ + อุปกรณ์ 2 ชิ้น)')
         ->and($group->type)->toBe('machine');
@@ -521,7 +529,7 @@ it('leaves the detail out of the page and points at where to get it', function (
     personGroup($this, ['verified', 'verified']);
 
     $html = $this->actingAs($this->verifier)
-        ->get('/verification?filter_type=person&tab=completed')
+        ->get('/verification?filter_type=person&tab=awaiting_approval')
         ->assertSuccessful()
         ->assertSee('data-detail-url', false)
         ->getContent();
@@ -533,7 +541,7 @@ it('leaves the detail out of the page and points at where to get it', function (
 it('serves one card its detail', function () {
     personGroup($this, ['verified', 'verified']);
 
-    $group = pageData($this, 'filter_type=person&tab=completed')['groups']->first();
+    $group = pageData($this, 'filter_type=person&tab=awaiting_approval')['groups']->first();
 
     $this->actingAs($this->verifier)
         ->get(route('inspection.verification.detail', [
@@ -563,7 +571,7 @@ it('serves the detail for one location of a multi-location round', function () {
     $session = areaGroup($this, $packing, ['verified']);
     areaGroup($this, $cold, ['verified'], $session);
 
-    $groups = pageData($this, 'filter_type=machine&tab=completed')['groups'];
+    $groups = pageData($this, 'filter_type=machine&tab=awaiting_approval')['groups'];
     $packingGroup = $groups->first(fn ($g) => $g->name === 'Packing room');
 
     $html = $this->actingAs($this->verifier)
@@ -626,7 +634,7 @@ it('accepts an empty date parameter, which is what the page itself sends', funct
 it('serves a card its detail when the date parameter is empty', function () {
     personGroup($this, ['verified']);
 
-    $group = pageData($this, 'date=&filter_type=person&tab=completed')['groups']->first();
+    $group = pageData($this, 'date=&filter_type=person&tab=awaiting_approval')['groups']->first();
 
     $this->actingAs($this->verifier)
         ->get(route('inspection.verification.detail', [
@@ -667,7 +675,7 @@ it('counts the card columns once, for the groups on the page only', function () 
 
     $queries = distinctCountingQueries(function () {
         $this->actingAs($this->verifier)
-            ->get('/verification?filter_type=person&tab=completed')
+            ->get('/verification?filter_type=person&tab=awaiting_approval')
             ->assertSuccessful();
     });
 
@@ -688,4 +696,100 @@ it('does not count card columns at all for a tab with nothing on it', function (
     });
 
     expect($queries)->toBeEmpty();
+});
+
+/**
+ * Approval is the QA manager's whole job, and the button that does it was
+ * gated on level >= 5 while the route, the bulk button and canApprove() all
+ * ask isQA() && (role === 'manager' || level >= 5). A QA manager carrying the
+ * role but not the level could see "อนุมัติทั้งหมด" and no per-card button.
+ */
+function qaManager($ctx, int $level): User
+{
+    $manager = User::create([
+        'name' => 'QA Manager', 'email' => "mgr{$level}@example.com",
+        'password' => bcrypt('password'), 'role' => 'manager', 'level' => $level,
+        'department_id' => $ctx->dept->id,
+    ]);
+    $manager->forceFill(['email_verified_at' => now()])->save();
+
+    return $manager;
+}
+
+it('offers the approve button to a QA manager whatever their level', function (int $level) {
+    $manager = qaManager($this, $level);
+    expect($manager->canApprove())->toBeTrue();
+
+    personGroup($this, ['verified', 'verified']);
+
+    $this->actingAs($manager)
+        ->get('/verification?filter_type=person&tab=awaiting_approval')
+        ->assertSuccessful()
+        ->assertSee('อนุมัติการตรวจสอบ', false);
+})->with([4, 5, 6]);
+
+it('does not offer it for work already approved', function () {
+    $manager = qaManager($this, 5);
+
+    personGroup($this, ['approved', 'approved']);
+
+    $this->actingAs($manager)
+        ->get('/verification?filter_type=person&tab=completed')
+        ->assertSuccessful()
+        ->assertDontSee('อนุมัติการตรวจสอบ', false);
+});
+
+/**
+ * Work QA has signed off and work a manager has approved used to share a tab
+ * called "รออนุมัติ / ผ่านแล้ว". A manager could see a number but not what was
+ * left for them, which is how 17,993 logs came to be sitting at 'verified'.
+ */
+it('separates work waiting on a manager from work already approved', function () {
+    personGroup($this, ['verified', 'verified']);   // waiting on a manager
+    personGroup($this, ['verified']);               // waiting on a manager
+    personGroup($this, ['approved']);               // done
+    personGroup($this, ['auto_verified']);          // done, nothing to sign
+
+    expect(pageData($this, 'filter_type=person&tab=awaiting_approval')['groups']
+        ->pluck('verification_status')->all())->toEqual(['verified', 'verified']);
+
+    expect(pageData($this, 'filter_type=person&tab=completed')['groups']
+        ->pluck('verification_status')->sort()->values()->all())
+        ->toEqual(['approved', 'auto_verified']);
+
+    expect(pageData($this, 'filter_type=person&tab=pending')['counts'])
+        ->toEqual([
+            'pending' => 0,
+            'awaiting_approval' => 2,
+            'completed' => 2,
+            'reclean' => 0,
+            'total' => 4,
+        ]);
+});
+
+it('offers bulk approval on the tab that has work to approve', function () {
+    $manager = qaManager($this, 5);
+
+    personGroup($this, ['verified']);
+    personGroup($this, ['approved']);
+
+    $this->actingAs($manager)
+        ->get('/verification?filter_type=person&tab=awaiting_approval')
+        ->assertSuccessful()
+        ->assertSee('อนุมัติทั้งหมด', false);
+
+    // Nothing on the approved tab can be approved again.
+    $this->actingAs($manager)
+        ->get('/verification?filter_type=person&tab=completed')
+        ->assertSuccessful()
+        ->assertDontSee('อนุมัติทั้งหมด', false);
+});
+
+it('does not offer bulk approval to someone who only verifies', function () {
+    personGroup($this, ['verified']);
+
+    $this->actingAs($this->verifier)
+        ->get('/verification?filter_type=person&tab=awaiting_approval')
+        ->assertSuccessful()
+        ->assertDontSee('อนุมัติทั้งหมด', false);
 });

@@ -334,8 +334,8 @@
                 </div>
                 <div class="v-kpi-card">
                     <div>
-                        <div class="v-kpi-label">รออนุมัติ / ผ่านแล้ว</div>
-                        <div class="v-kpi-number text-success">{{ $counts['completed'] }}</div>
+                        <div class="v-kpi-label">รออนุมัติ</div>
+                        <div class="v-kpi-number text-success">{{ $counts['awaiting_approval'] }}</div>
                     </div>
                     <div class="v-kpi-icon" style="background: #ecfdf5; color: #059669;">
                         <i class="bi bi-check2-circle"></i>
@@ -387,11 +387,20 @@
                                 <span class="badge rounded-pill {{ $activeTab === 'reclean' ? 'bg-dark text-white' : 'bg-warning-subtle text-warning-emphasis' }}">{{ $counts['reclean'] }}</span>
                             @endif
                         </a>
+                        <a href="{{ route('inspection.verification', ['date' => $date, 'filter_type' => $filterType, 'tab' => 'awaiting_approval']) }}"
+                           class="v-status-tab {{ $activeTab === 'awaiting_approval' ? 'active-completed' : '' }}"
+                           aria-label="แสดงรายการที่ทวนสอบแล้วและรอผู้จัดการอนุมัติ">
+                            <i class="bi bi-hourglass-split"></i>
+                            <span>รออนุมัติ</span>
+                            @if($counts['awaiting_approval'] > 0)
+                                <span class="badge rounded-pill {{ $activeTab === 'awaiting_approval' ? 'bg-white text-success' : 'bg-success-subtle text-success' }}">{{ $counts['awaiting_approval'] }}</span>
+                            @endif
+                        </a>
                         <a href="{{ route('inspection.verification', ['date' => $date, 'filter_type' => $filterType, 'tab' => 'completed']) }}"
                            class="v-status-tab {{ $activeTab === 'completed' ? 'active-completed' : '' }}"
-                           aria-label="แสดงรายการรออนุมัติหรือผ่านแล้ว">
+                           aria-label="แสดงรายการที่อนุมัติแล้ว">
                             <i class="bi bi-check-circle"></i>
-                            <span>รออนุมัติ</span>
+                            <span>ผ่านแล้ว</span>
                             <span class="badge rounded-pill {{ $activeTab === 'completed' ? 'bg-white text-success' : 'bg-success-subtle text-success' }}">{{ $counts['completed'] }}</span>
                         </a>
                     </div>
@@ -420,14 +429,14 @@
                     <table class="table v-table align-middle text-nowrap">
                         <thead>
                             <tr>
-                                @if($activeTab === 'pending' || $activeTab === 'completed')
+                                @if($activeTab === 'pending' || $activeTab === 'awaiting_approval')
                                 <th class="ps-4" style="width: 48px;">
                                     <div class="form-check m-0">
                                         <input class="form-check-input" type="checkbox" id="selectAllDesktop" onchange="toggleAllCheckboxes(this)" aria-label="เลือกทั้งหมด">
                                     </div>
                                 </th>
                                 @endif
-                                <th class="{{ ($activeTab === 'pending' || $activeTab === 'completed') ? 'ps-2' : 'ps-4' }}">วัน-เวลา</th>
+                                <th class="{{ ($activeTab === 'pending' || $activeTab === 'awaiting_approval') ? 'ps-2' : 'ps-4' }}">วัน-เวลา</th>
                                 <th>รอบ/กะ</th> 
                                 <th>รายการตรวจ (Item)</th>
                                 <th>แผนก/พื้นที่</th>
@@ -440,7 +449,7 @@
                         <tbody>
                             @forelse($groupedInspections as $group)
                             <tr>
-                                @if($activeTab === 'pending' || $activeTab === 'completed')
+                                @if($activeTab === 'pending' || $activeTab === 'awaiting_approval')
                                 <td class="ps-4">
                                     @if($activeTab === 'pending' || !$group->is_approved)
                                     <div class="form-check m-0">
@@ -449,7 +458,7 @@
                                     @endif
                                 </td>
                                 @endif
-                                <td class="{{ ($activeTab === 'pending' || $activeTab === 'completed') ? 'ps-2' : 'ps-4' }}">
+                                <td class="{{ ($activeTab === 'pending' || $activeTab === 'awaiting_approval') ? 'ps-2' : 'ps-4' }}">
                                     <div class="fw-bold text-dark" style="font-size: 0.875rem;">{{ $group->date }}</div>
                                     <div class="small text-secondary d-flex align-items-center gap-1">
                                         <i class="bi bi-clock" style="font-size: 0.75rem;"></i> {{ $group->time }}
@@ -597,13 +606,15 @@
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="{{ ($activeTab === 'pending' || $activeTab === 'completed') ? 9 : 8 }}" class="text-center py-5">
+                                <td colspan="{{ ($activeTab === 'pending' || $activeTab === 'awaiting_approval') ? 9 : 8 }}" class="text-center py-5">
                                     <div class="py-4">
                                         <div class="rounded-circle bg-light d-inline-flex align-items-center justify-content-center mb-3" style="width: 64px; height: 64px;">
                                             <i class="bi bi-clipboard-check text-secondary fs-2"></i>
                                         </div>
                                         @if($activeTab === 'completed')
                                         <div class="fw-bold text-dark fs-6 mb-1">ไม่พบข้อมูลการตรวจในวันที่เลือก</div>
+                                        @elseif($activeTab === 'awaiting_approval')
+                                        <div class="fw-bold text-dark fs-6 mb-1">ไม่มีงานรออนุมัติ</div>
                                         @else
                                         <div class="fw-bold text-dark fs-6 mb-1">ไม่มีงานค้างในระบบ</div>
                                         @endif
@@ -612,8 +623,10 @@
                                                 ยังไม่มีรายการรอทวนสอบ — รายการจะปรากฏเมื่อผู้ตรวจส่งผลการตรวจเข้ามา
                                             @elseif($activeTab === 'reclean')
                                                 ไม่มีรายการสั่งแก้ไขในระบบ
+                                            @elseif($activeTab === 'awaiting_approval')
+                                                ทวนสอบแล้วทุกรายการได้รับการอนุมัติครบ
                                             @else
-                                                ไม่มีรายการรออนุมัติในวันที่ระบุ
+                                                ไม่มีรายการที่อนุมัติแล้วในวันที่ระบุ
                                             @endif
                                         </p>
                                     </div>
@@ -627,7 +640,7 @@
 
             <!-- Mobile Card View Section (Mobile) -->
             <div class="d-block d-md-none">
-                @if(($activeTab === 'pending' || $activeTab === 'completed') && $groupedInspections->count() > 0)
+                @if(($activeTab === 'pending' || $activeTab === 'awaiting_approval') && $groupedInspections->count() > 0)
                 <div class="d-flex justify-content-between align-items-center mb-3 bg-white p-3 rounded-4 shadow-xs border" style="border-color: #e2e8f0;">
                     <label class="fw-bold text-dark mb-0" for="selectAllMobile">เลือกทั้งหมด (Select All)</label>
                     <div class="form-check m-0">
@@ -673,7 +686,7 @@
                             </div>
                             <div class="text-secondary small text-truncate">{{ $group->subtext }}</div>
                         </div>
-                        @if($activeTab === 'pending' || ($activeTab === 'completed' && !$group->is_approved))
+                        @if($activeTab === 'pending' || ($activeTab === 'awaiting_approval' && !$group->is_approved))
                         <div class="ms-2 ps-1 flex-shrink-0">
                             <input class="form-check-input item-checkbox border-secondary m-0" type="checkbox" value="{{ json_encode($group->log_ids) }}" onchange="updateBulkActionUI()" style="width: 20px; height: 20px;" aria-label="เลือกรายการ {{ $group->name }}">
                         </div>
@@ -708,6 +721,8 @@
                     </div>
                     @if($activeTab === 'completed')
                     <p class="fw-bold text-dark mb-1">ไม่พบข้อมูลการตรวจในวันที่เลือก</p>
+                    @elseif($activeTab === 'awaiting_approval')
+                    <p class="fw-bold text-dark mb-1">ไม่มีงานรออนุมัติ</p>
                     @else
                     <p class="fw-bold text-dark mb-1">ไม่มีงานค้างในระบบ</p>
                     @endif
@@ -716,8 +731,10 @@
                             ยังไม่มีรายการรอทวนสอบ — รายการจะปรากฏเมื่อผู้ตรวจส่งผลการตรวจเข้ามา
                         @elseif($activeTab === 'reclean')
                             ไม่มีรายการสั่งแก้ไข
+                        @elseif($activeTab === 'awaiting_approval')
+                            ทวนสอบแล้วทุกรายการได้รับการอนุมัติครบ
                         @else
-                            ไม่มีรายการรออนุมัติ
+                            ไม่มีรายการที่อนุมัติแล้ว
                         @endif
                     </small>
                 </div>
@@ -820,7 +837,12 @@
                                 @endif
                             </form>
                         
-                        @elseif($group->is_verified && !$group->is_approved && (Auth::check() && (Auth::user()->level >= 5 || Auth::user()->isAdmin())))
+                        {{-- Gate, not level: approving needs isQA() and either the manager
+                             role or level >= 5, which is what the route and the bulk button
+                             both check. Testing the level alone hid this button from a QA
+                             manager carrying the role without the level, and showed it to a
+                             level-5 manager outside QA whose click could only end in a 403. --}}
+                        @elseif($group->is_verified && !$group->is_approved && Auth::user()?->can('approve'))
                             {{-- Manager Approval Form --}}
                             <div class="w-100">
                                 <div class="alert alert-info border-0 bg-info bg-opacity-10 mb-3 d-flex align-items-center">
@@ -1088,7 +1110,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <button type="button" class="btn btn-primary rounded-pill px-4 shadow-sm fw-semibold d-inline-flex align-items-center gap-1" onclick="submitBulkVerify()">
             <i class="bi bi-check2-all"></i> ยืนยันทั้งหมด
         </button>
-        @elseif($activeTab === 'completed')
+        @elseif($activeTab === 'awaiting_approval')
         @can('approve')
         <button type="button" class="btn btn-success rounded-pill px-4 shadow-sm fw-semibold d-inline-flex align-items-center gap-1" onclick="submitBulkApprove()">
             <i class="bi bi-patch-check-fill"></i> อนุมัติทั้งหมด

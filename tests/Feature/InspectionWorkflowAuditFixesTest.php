@@ -406,27 +406,27 @@ class InspectionWorkflowAuditFixesTest extends TestCase
             'inspected_at' => now()->setTime(8, 30),
         ]);
 
-        // Scenario A: When viewing person category in completed tab
+        // Scenario A: When viewing person category in the awaiting-approval tab
         $response = $this->actingAs($manager)->get(route('inspection.verification', [
             'filter_type' => 'person',
-            'tab' => 'completed',
+            'tab' => 'awaiting_approval',
         ]));
 
         $response->assertStatus(200);
         $counts = $response->viewData('counts');
         $typeCounts = $response->viewData('typeCounts');
 
-        // Completed count must be 1 for person
-        $this->assertEquals(1, $counts['completed']);
+        // Awaiting-approval count must be 1 for person
+        $this->assertEquals(1, $counts['awaiting_approval']);
         // Category switcher must report true counts for both categories
         $this->assertEquals(1, $typeCounts['person']);
         $this->assertEquals(1, $typeCounts['machine']);
 
-        // Switching category link to machine MUST preserve tab=completed
-        $response->assertSee('filter_type=machine&amp;tab=completed', false);
+        // Switching category link to machine MUST preserve the open tab
+        $response->assertSee('filter_type=machine&amp;tab=awaiting_approval', false);
 
         // Scenario B: When viewing person category in pending tab
-        // BUG FIX VERIFICATION: completed count must NOT drop to 0!
+        // BUG FIX VERIFICATION: the other tabs' counts must NOT drop to 0!
         $responsePending = $this->actingAs($manager)->get(route('inspection.verification', [
             'filter_type' => 'person',
             'tab' => 'pending',
@@ -434,20 +434,20 @@ class InspectionWorkflowAuditFixesTest extends TestCase
 
         $responsePending->assertStatus(200);
         $countsOnPending = $responsePending->viewData('counts');
-        $this->assertEquals(1, $countsOnPending['completed'], 'Completed count must not drop to 0 when viewing pending tab');
+        $this->assertEquals(1, $countsOnPending['awaiting_approval'], 'Awaiting-approval count must not drop to 0 when viewing pending tab');
 
-        // Scenario C: When viewing machine category in completed tab
+        // Scenario C: When viewing machine category in the awaiting-approval tab
         $responseMachine = $this->actingAs($manager)->get(route('inspection.verification', [
             'filter_type' => 'machine',
-            'tab' => 'completed',
+            'tab' => 'awaiting_approval',
         ]));
 
         $responseMachine->assertStatus(200);
         $countsMachine = $responseMachine->viewData('counts');
-        $this->assertEquals(1, $countsMachine['completed']);
+        $this->assertEquals(1, $countsMachine['awaiting_approval']);
 
-        // Switching category link to person MUST preserve tab=completed
-        $responseMachine->assertSee('filter_type=person&amp;tab=completed', false);
+        // Switching category link to person MUST preserve the open tab
+        $responseMachine->assertSee('filter_type=person&amp;tab=awaiting_approval', false);
     }
 }
 
