@@ -258,6 +258,36 @@
             box-shadow: 0 2px 5px rgba(37, 99, 235, 0.1);
         }
 
+        /* The item name opens the same detail as the button on the right.
+           A <button> rather than an <a>: it opens a dialog, and this way it is
+           reachable by keyboard and announced correctly without extra markup. */
+        .v-item-name {
+            display: block;
+            max-width: 320px;
+            padding: 0;
+            border: 0;
+            background: none;
+            font: inherit;
+            font-weight: 700;
+            color: #0f172a;
+            text-align: left;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: color 0.15s ease;
+        }
+        .v-item-name:hover,
+        .v-item-name:focus-visible {
+            color: #1d4ed8;
+            text-decoration: underline;
+        }
+        .v-item-name:focus-visible {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+
         /* Mobile Card Styling */
         .v-mobile-card {
             background: #ffffff;
@@ -493,7 +523,10 @@
                                             @endif
                                         </div>
                                         <div class="min-w-0">
-                                            <span class="fw-bold text-dark d-block text-truncate" style="max-width: 320px;">{{ $group->name }}</span>
+                                            <button type="button" class="v-item-name"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#detailModal{{ $group->modal_id }}"
+                                                    aria-label="ดูรายละเอียด {{ $group->name }}">{{ $group->name }}</button>
                                         </div>
                                     </div>
                                 </td>
@@ -670,7 +703,12 @@
                         </div>
                         <div class="flex-grow-1 min-w-0">
                             <div class="d-flex justify-content-between align-items-start gap-2">
-                                <h6 class="fw-bold text-dark mb-1 text-truncate" style="font-size:0.95rem;">{{ $group->name }}</h6>
+                                <h6 class="mb-1 min-w-0" style="font-size:0.95rem;">
+                                    <button type="button" class="v-item-name" style="max-width: 100%; font-size: 0.95rem;"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#detailModal{{ $group->modal_id }}"
+                                            aria-label="ดูรายละเอียด {{ $group->name }}">{{ $group->name }}</button>
+                                </h6>
                                 @if($group->status === 'pass')
                                     <span class="v-badge v-badge-pass" style="font-size: 0.75rem; padding: 0.15rem 0.5rem;">
                                         <i class="bi bi-check-circle-fill"></i> ผ่าน

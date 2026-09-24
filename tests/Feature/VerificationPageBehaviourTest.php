@@ -538,6 +538,28 @@ it('leaves the detail out of the page and points at where to get it', function (
     expect($html)->not->toContain('accordion_');
 });
 
+/**
+ * The name is the thing people point at. Having to find the small button at
+ * the far right of a wide row to see what a round contained is a step nobody
+ * should have to learn.
+ */
+it('opens the detail from the item name, not only the button', function () {
+    personGroup($this, ['verified', 'verified']);
+
+    $group = pageData($this, 'filter_type=person&tab=awaiting_approval')['groups']->first();
+
+    $html = $this->actingAs($this->verifier)
+        ->get('/verification?filter_type=person&tab=awaiting_approval')
+        ->assertSuccessful()
+        ->getContent();
+
+    // The name itself carries the modal trigger, aimed at the same dialog the
+    // "รายละเอียด" button opens.
+    expect($html)->toContain('class="v-item-name"')
+        ->and(substr_count($html, 'data-bs-target="#detailModal' . $group->modal_id . '"'))
+        ->toBeGreaterThan(1);
+});
+
 it('serves one card its detail', function () {
     personGroup($this, ['verified', 'verified']);
 
