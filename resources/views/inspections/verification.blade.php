@@ -611,7 +611,10 @@
                                         <div class="rounded-circle bg-light d-inline-flex align-items-center justify-content-center mb-3" style="width: 64px; height: 64px;">
                                             <i class="bi bi-clipboard-check text-secondary fs-2"></i>
                                         </div>
-                                        @if($activeTab === 'completed')
+                                        {{-- ไม่ได้เลือกวันที่ อย่าบอกว่า "วันที่เลือก" --}}
+                                        @if($activeTab === 'completed' && empty($date))
+                                        <div class="fw-bold text-dark fs-6 mb-1">ยังไม่มีงานที่ปิดในช่วงนี้</div>
+                                        @elseif($activeTab === 'completed')
                                         <div class="fw-bold text-dark fs-6 mb-1">ไม่พบข้อมูลการตรวจในวันที่เลือก</div>
                                         @elseif($activeTab === 'awaiting_approval')
                                         <div class="fw-bold text-dark fs-6 mb-1">ไม่มีงานรออนุมัติ</div>
@@ -625,6 +628,8 @@
                                                 ไม่มีรายการสั่งแก้ไขในระบบ
                                             @elseif($activeTab === 'awaiting_approval')
                                                 ทวนสอบแล้วทุกรายการได้รับการอนุมัติครบ
+                                            @elseif(empty($date))
+                                                รายการที่อนุมัติแล้วจะแสดงที่นี่ {{ \App\Support\VerificationGroups::RECENTLY_CLOSED_DAYS }} วัน — เก่ากว่านั้นเลือกวันที่เพื่อดูย้อนหลัง
                                             @else
                                                 ไม่มีรายการที่อนุมัติแล้วในวันที่ระบุ
                                             @endif
@@ -719,7 +724,10 @@
                     <div class="rounded-circle bg-light d-inline-flex align-items-center justify-content-center mb-3" style="width: 64px; height: 64px;">
                         <i class="bi bi-clipboard-check text-secondary fs-2"></i>
                     </div>
-                    @if($activeTab === 'completed')
+                    {{-- ไม่ได้เลือกวันที่ อย่าบอกว่า "วันที่เลือก" --}}
+                    @if($activeTab === 'completed' && empty($date))
+                    <p class="fw-bold text-dark mb-1">ยังไม่มีงานที่ปิดในช่วงนี้</p>
+                    @elseif($activeTab === 'completed')
                     <p class="fw-bold text-dark mb-1">ไม่พบข้อมูลการตรวจในวันที่เลือก</p>
                     @elseif($activeTab === 'awaiting_approval')
                     <p class="fw-bold text-dark mb-1">ไม่มีงานรออนุมัติ</p>
@@ -733,6 +741,8 @@
                             ไม่มีรายการสั่งแก้ไข
                         @elseif($activeTab === 'awaiting_approval')
                             ทวนสอบแล้วทุกรายการได้รับการอนุมัติครบ
+                        @elseif(empty($date))
+                            รายการที่อนุมัติแล้วจะแสดงที่นี่ {{ \App\Support\VerificationGroups::RECENTLY_CLOSED_DAYS }} วัน — เก่ากว่านั้นเลือกวันที่เพื่อดูย้อนหลัง
                         @else
                             ไม่มีรายการที่อนุมัติแล้ว
                         @endif

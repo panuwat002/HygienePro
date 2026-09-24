@@ -18,6 +18,16 @@ use Illuminate\Support\Collection;
 class VerificationGroups
 {
     /**
+     * How long finished work stays in the inbox after somebody signs it off.
+     *
+     * Long enough that a manager who approves a batch sees it land, and that
+     * "what did I close this week" is answerable without picking dates. Short
+     * enough that the page stays bounded - an unbounded clause on this table is
+     * exactly what once made it load 17,993 rows to render twenty.
+     */
+    public const RECENTLY_CLOSED_DAYS = 7;
+
+    /**
      * The rows /verification works from, for a given date window and scope.
      *
      * The page summarises these in SQL and then loads only the groups it shows;
@@ -44,7 +54,23 @@ class VerificationGroups
 
                     $q->orWhere(function ($subQ) {
                         $subQ->whereIn('inspection_logs.verification_status', ['approved', 'auto_verified'])
-                             ->whereDate('inspection_logs.inspected_at', date('Y-m-d'));
+                             ->where(function ($when) {
+                                 // Inspected today: the round that was walked,
+                                 // verified and signed inside one shift.
+                                 $when->whereDate('inspection_logs.inspected_at', date('Y-m-d'))
+                                     // Or signed off recently, whenever it was
+                                     // inspected. Without this an approval on old
+                                     // work matched no clause at all: not awaiting
+                                     // approval any more, and not inspected today -
+                                     // so a manager who approved 225 six-week-old
+                                     // rounds watched every tab go to zero with no
+                                     // evidence anything had happened.
+                                     ->orWhere(
+                                         'inspection_logs.verified_at',
+                                         '>=',
+                                         now()->subDays(self::RECENTLY_CLOSED_DAYS)->startOfDay()
+                                     );
+                             });
                     });
                 }
             })
