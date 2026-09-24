@@ -159,14 +159,22 @@ class InspectionController extends Controller
             // Counted the way the verification page counts, so the card and the
             // tab it links to show the same number: one per group, where every
             // log in the group is verified and none of it is approved yet.
-            $awaitingApprovalCount = $this->verificationGroupSummary(
+            $awaitingRows = $this->verificationGroupSummary(
                 $this->verificationLogQuery(null, null, $scopeDeptId)
-            )->where('group_status', 'verified')->count();
+            )->where('group_status', 'verified');
+
+            $awaitingApprovalCount = $awaitingRows->count();
+            // Split the way the verification page splits, so each half of the
+            // card can link at the category its number actually describes.
+            $awaitingApprovalPersonCount = $awaitingRows->filter(fn ($row) => $row->is_person)->count();
+            $awaitingApprovalAreaCount = $awaitingApprovalCount - $awaitingApprovalPersonCount;
 
             return compact(
                 'inspectionsToday',
                 'pendingVerificationCount',
                 'awaitingApprovalCount',
+                'awaitingApprovalPersonCount',
+                'awaitingApprovalAreaCount',
                 'recleanCount',
                 'passRate',
                 'monthlyPassRate'
@@ -176,6 +184,8 @@ class InspectionController extends Controller
         $inspectionsToday = $dailyStats['inspectionsToday'];
         $pendingVerificationCount = $dailyStats['pendingVerificationCount'];
         $awaitingApprovalCount = $dailyStats['awaitingApprovalCount'];
+        $awaitingApprovalPersonCount = $dailyStats['awaitingApprovalPersonCount'];
+        $awaitingApprovalAreaCount = $dailyStats['awaitingApprovalAreaCount'];
         $recleanCount = $dailyStats['recleanCount'];
         $passRate = $dailyStats['passRate'];
         $monthlyPassRate = $dailyStats['monthlyPassRate'];
@@ -325,6 +335,8 @@ class InspectionController extends Controller
             'inspectionsToday',
             'pendingVerificationCount',
             'awaitingApprovalCount',
+            'awaitingApprovalPersonCount',
+            'awaitingApprovalAreaCount',
             'recleanCount',
             'passRate',
             'monthlyPassRate',

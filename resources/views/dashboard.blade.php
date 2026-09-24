@@ -130,22 +130,41 @@
              here the dashboard only showed them somebody else's queue. --}}
         @can('approve')
         <div class="col-xl col-md-6">
-            <a href="{{ route('inspection.verification', ['tab' => 'awaiting_approval']) }}" class="text-decoration-none">
-                <div class="card h-100 position-relative summary-stat-card glass-card">
-                    <div class="position-absolute top-0 start-0 bottom-0" style="width: 4px; background: var(--hygiene-success); border-radius: 4px 0 0 4px;"></div>
-                    <div class="card-body p-3 ps-4">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <p class="text-muted mb-1 small fw-semibold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.08em;">รออนุมัติ</p>
-                                <h2 class="fw-bold mb-0 text-dark" style="font-size: 1.75rem; line-height: 1;">{{ $awaitingApprovalCount }}</h2>
-                            </div>
-                            <div class="d-flex align-items-center justify-content-center rounded-3" style="width: 44px; height: 44px; background: var(--hygiene-success-soft);">
-                                <i class="bi bi-hourglass-split" style="font-size: 1.15rem; color: var(--hygiene-success);"></i>
-                            </div>
+            {{-- Not one link: the total is 225 but the two categories are reviewed
+                 separately, and a single link had to pick one, landing a manager
+                 on 50 of the 225 they had just read. Each number opens its own. --}}
+            <div class="card h-100 position-relative summary-stat-card glass-card">
+                <div class="position-absolute top-0 start-0 bottom-0" style="width: 4px; background: var(--hygiene-success); border-radius: 4px 0 0 4px;"></div>
+                <div class="card-body p-3 ps-4">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="text-muted mb-1 small fw-semibold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.08em;">รออนุมัติ</p>
+                            <h2 class="fw-bold mb-0 text-dark" style="font-size: 1.75rem; line-height: 1;">{{ $awaitingApprovalCount }}</h2>
+                        </div>
+                        <div class="d-flex align-items-center justify-content-center rounded-3" style="width: 44px; height: 44px; background: var(--hygiene-success-soft);">
+                            <i class="bi bi-hourglass-split" style="font-size: 1.15rem; color: var(--hygiene-success);"></i>
                         </div>
                     </div>
+
+                    <div class="d-flex flex-wrap gap-1 mt-2 pt-2 border-top">
+                        <a href="{{ route('inspection.verification', ['filter_type' => 'person', 'tab' => 'awaiting_approval']) }}"
+                           class="text-decoration-none d-inline-flex align-items-center gap-1 text-muted"
+                           style="font-size: 0.7rem;"
+                           aria-label="ดูงานตรวจพนักงานที่รออนุมัติ {{ $awaitingApprovalPersonCount }} รายการ">
+                            <i class="bi bi-people"></i>พนักงาน
+                            <span class="fw-bold text-dark">{{ $awaitingApprovalPersonCount }}</span>
+                        </a>
+                        <span class="text-black-50" style="font-size: 0.7rem;">·</span>
+                        <a href="{{ route('inspection.verification', ['filter_type' => 'machine', 'tab' => 'awaiting_approval']) }}"
+                           class="text-decoration-none d-inline-flex align-items-center gap-1 text-muted"
+                           style="font-size: 0.7rem;"
+                           aria-label="ดูงานตรวจพื้นที่และเครื่องจักรที่รออนุมัติ {{ $awaitingApprovalAreaCount }} รายการ">
+                            <i class="bi bi-gear-wide-connected"></i>พื้นที่/เครื่องจักร
+                            <span class="fw-bold text-dark">{{ $awaitingApprovalAreaCount }}</span>
+                        </a>
+                    </div>
                 </div>
-            </a>
+            </div>
         </div>
         @endcan
 

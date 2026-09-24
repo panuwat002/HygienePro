@@ -105,3 +105,60 @@ it('does not show the card to someone who cannot approve', function () {
         ->assertSuccessful()
         ->assertDontSee('tab=awaiting_approval', false);
 });
+
+function logAwaitingArea($ctx, User $inspector, ?string $status): void
+{
+    $ctx->round++;
+
+    $location = App\Models\Location::create(['location_name' => 'Room ' . $ctx->round]);
+    $location->checkpoints()->attach($ctx->checkpoint->id);
+
+    $session = InspectionSession::create([
+        'inspector_id' => $inspector->id, 'department_id' => $ctx->dept->id,
+        'type' => 'area', 'inspection_date' => now()->toDateString(),
+        'shift' => 'custom_' . $ctx->shift->id, 'round' => $ctx->round, 'status' => 'completed',
+    ]);
+
+    InspectionLog::create([
+        'session_id' => $session->id, 'checkpoint_id' => $ctx->checkpoint->id,
+        'employee_id' => null, 'location_id' => $location->id,
+        'result' => 'pass', 'inspected_at' => now(),
+        'verification_status' => $status,
+        'verified_at' => $status === null ? null : now(),
+    ]);
+}
+
+/**
+ * The card said 225 and linked at a tab filtered to พนักงาน, which held 50 of
+ * them. The number a manager reads and the page that number opens have to be
+ * the same number.
+ */
+it('breaks the waiting work down by what kind of round it was', function () {
+    $manager = qaUser($this, 'manager', 5);
+
+    logAwaiting($this, $manager, 'verified');
+    logAwaiting($this, $manager, 'verified');
+    logAwaiting($this, $manager, 'verified');
+    logAwaitingArea($this, $manager, 'verified');
+    logAwaitingArea($this, $manager, 'verified');
+    logAwaiting($this, $manager, 'approved');     // not waiting on anyone
+
+    $response = $this->actingAs($manager)->get('/dashboard')->assertSuccessful();
+
+    expect($response->viewData('awaitingApprovalCount'))->toBe(5)
+        ->and($response->viewData('awaitingApprovalPersonCount'))->toBe(3)
+        ->and($response->viewData('awaitingApprovalAreaCount'))->toBe(2);
+});
+
+it('links each half of the breakdown at its own category', function () {
+    $manager = qaUser($this, 'manager', 5);
+
+    logAwaiting($this, $manager, 'verified');
+    logAwaitingArea($this, $manager, 'verified');
+
+    $this->actingAs($manager)
+        ->get('/dashboard')
+        ->assertSuccessful()
+        ->assertSee('filter_type=person&amp;tab=awaiting_approval', false)
+        ->assertSee('filter_type=machine&amp;tab=awaiting_approval', false);
+});
