@@ -321,7 +321,9 @@ class InspectionService
                 'action'      => 'auto_close',
                 'model_type'  => InspectionSession::class,
                 'model_id'    => $session->id,
-                'description' => 'ปิดรอบอัตโนมัติโดยระบบ (เลยกะ ' . $session->shift . ' + '
+                // The audit trail is the one place that still has to read
+                // sensibly months later, so it names the shift, not its key.
+                'description' => 'ปิดรอบอัตโนมัติโดยระบบ (เลย' . $session->shift_label . ' + '
                     . config('inspection.auto_close.grace_hours', 2) . ' ชม. และไม่มีการตรวจใน '
                     . config('inspection.auto_close.idle_minutes', 30) . ' นาที)',
             ]);

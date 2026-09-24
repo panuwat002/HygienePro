@@ -58,12 +58,14 @@ class InspectionRejectedNotification extends Notification
     public function toArray(object $notifiable): array
     {
         $deptName = $this->session->department ? $this->session->department->dept_name : 'ไม่ระบุแผนก';
-        $shiftMap = ['morning' => 'เช้า', 'afternoon' => 'บ่าย', 'night' => 'ดึก'];
-        $shift = $shiftMap[$this->session->shift] ?? ucfirst($this->session->shift);
+        // shift_label resolves custom_<id> against the shifts table and already
+        // carries its own "กะ" prefix. The map this replaced knew only the three
+        // hardcoded shifts and ucfirst()ed everything else into "Custom_11".
+        $shift = $this->session->shift_label;
 
         return [
             'title' => 'งานถูกตีกลับ (Rejected)',
-            'message' => "รอบกะ{$shift} ถูกตีกลับ: " . $this->reason,
+            'message' => "รอบ{$shift} ถูกตีกลับ: " . $this->reason,
             'link' => route('inspection.scan', $this->session->id),
             'icon' => 'bi-x-circle-fill text-danger',
             'session_id' => $this->session->id

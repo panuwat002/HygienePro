@@ -40,7 +40,9 @@ class SessionCarsSummaryNotification extends Notification
     public function toArray(object $notifiable): array
     {
         $deptName = $this->session->department->dept_name ?? 'แผนก';
-        $shiftLabel = $this->session->shift === 'morning' ? 'กะเช้า' : ($this->session->shift === 'night' ? 'กะดึก' : $this->session->shift);
+        // The ternary this replaced knew two shifts and printed the raw column
+        // ("custom_11") for every other one.
+        $shiftLabel = $this->session->shift_label;
         $sample = collect($this->carsPreview)->pluck('place')->filter()->take(3)->implode(', ');
 
         return [
