@@ -25,6 +25,7 @@ class SettingsController extends Controller
             'email_car_resolved' => $user->wantsEmailFor('email_car_resolved'),
             'email_car_closed' => $user->wantsEmailFor('email_car_closed'),
             'email_car_overdue' => $user->wantsEmailFor('email_car_overdue'),
+            'email_awaiting_approval' => $user->wantsEmailFor('email_awaiting_approval'),
         ];
 
         return view('settings.index', compact('preferences'));
@@ -48,6 +49,7 @@ class SettingsController extends Controller
             'email_car_resolved' => $request->has('email_car_resolved'),
             'email_car_closed' => $request->has('email_car_closed'),
             'email_car_overdue' => $request->has('email_car_overdue'),
+            'email_awaiting_approval' => $request->has('email_awaiting_approval'),
         ];
 
         $user->update([

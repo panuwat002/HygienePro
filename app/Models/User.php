@@ -28,6 +28,10 @@ class User extends Authenticatable
         'manager_id',
         'line_token',
         'signature_path',
+        // Without this the settings page silently saved nothing: update()
+        // dropped the key, redirected with a success message, and left every
+        // account on the defaults in wantsEmailFor().
+        'notification_preferences',
     ];
 
     /**
@@ -79,6 +83,7 @@ class User extends Authenticatable
             'email_car_resolved' => true,
             'email_car_closed' => true,
             'email_car_overdue' => true,
+            'email_awaiting_approval' => true,
         ];
 
         // If the user has specifically configured it, use their setting

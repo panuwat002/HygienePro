@@ -154,7 +154,7 @@
                                 </div>
                             </div>
                             
-                            <div class="setting-item d-flex justify-content-between align-items-center py-3">
+                            <div class="setting-item d-flex justify-content-between align-items-center py-3 border-bottom">
                                 <div class="pe-3">
                                     <div class="d-flex align-items-center mb-1">
                                         <h6 class="fw-bold text-danger mb-0 me-2">CAR ค้างเกินกำหนดเวลา (Overdue CAR)</h6>
@@ -164,6 +164,20 @@
                                 </div>
                                 <div class="form-check form-switch form-switch-lg mb-0">
                                     <input class="form-check-input shadow-sm cursor-pointer custom-switch-danger" type="checkbox" name="email_car_overdue" id="email_car_overdue" {{ $preferences['email_car_overdue'] ? 'checked' : '' }}>
+                                </div>
+                            </div>
+
+                            {{-- ถึงปิดอีเมลไว้ กระดิ่งในระบบก็ยังแจ้งอยู่ --}}
+                            <div class="setting-item d-flex justify-content-between align-items-center py-3">
+                                <div class="pe-3">
+                                    <div class="d-flex align-items-center mb-1">
+                                        <h6 class="fw-bold text-danger mb-0 me-2">งานรออนุมัติ (Awaiting Approval)</h6>
+                                        <span class="badge bg-danger rounded-pill" style="font-size: 0.65rem;">สำคัญ</span>
+                                    </div>
+                                    <span class="text-muted small">สรุปรอบตรวจที่ QA ทวนสอบเสร็จแล้วและรอคุณอนุมัติ ส่งวันละครั้งตอนเช้า (เฉพาะผู้มีสิทธิ์อนุมัติ)</span>
+                                </div>
+                                <div class="form-check form-switch form-switch-lg mb-0">
+                                    <input class="form-check-input shadow-sm cursor-pointer custom-switch-danger" type="checkbox" name="email_awaiting_approval" id="email_awaiting_approval" {{ $preferences['email_awaiting_approval'] ? 'checked' : '' }}>
                                 </div>
                             </div>
                         </div>
