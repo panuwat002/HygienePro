@@ -106,6 +106,24 @@ class InspectionSession extends Model
     }
 
     /**
+     * What this round inspected, in the words the report dropdown uses.
+     *
+     * 'machine' and the legacy 'area' are one bucket on every screen that
+     * offers a choice, so they read the same here. Nothing printed the type
+     * at all before: a daily-report row showed only the department, the shift
+     * and a count, so somebody picking rounds to export could not tell a
+     * personnel round from an area one until the PDF came out.
+     */
+    public function getTypeLabelAttribute(): string
+    {
+        return match ($this->type) {
+            'personnel' => 'พนักงาน',
+            'machine', 'area' => 'พื้นที่ / เครื่องจักร',
+            default => (string) $this->type,
+        };
+    }
+
+    /**
      * Set when this round was opened on a day the schedule had drawn this
      * department for a random audit. Null for an ordinary round.
      */

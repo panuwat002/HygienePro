@@ -71,7 +71,16 @@
                                         </td>
                                         <td>
                                             <div class="fw-bold">{{ $session->department->dept_name ?? 'N/A' }}</div>
-                                            <div class="small text-muted">
+                                            {{-- The row used to name only the department, the shift and a
+                                                 count, so there was no way to tell which form a round would
+                                                 export as until the PDF came out. --}}
+                                            @php
+                                                $isPersonnel = $session->type === 'personnel';
+                                            @endphp
+                                            <span class="badge rounded-pill mt-1 bg-{{ $isPersonnel ? 'primary' : 'info' }}-subtle text-{{ $isPersonnel ? 'primary' : 'info' }}-emphasis border border-{{ $isPersonnel ? 'primary' : 'info' }}-subtle">
+                                                <i class="bi {{ $isPersonnel ? 'bi-people-fill' : 'bi-gear-wide-connected' }} me-1"></i>{{ $session->type_label }}
+                                            </span>
+                                            <div class="small text-muted mt-1">
                                                 <i class="bi bi-clock"></i> กะ: {{ $session->shift_label }}
                                             </div>
                                             <div class="small text-muted" style="font-size: 0.75rem;">ID: {{ $session->id }}</div>

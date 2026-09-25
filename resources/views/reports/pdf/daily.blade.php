@@ -268,7 +268,10 @@
         @foreach($areaMachineChunks as $chunkIndex => $chunk)
             @include('reports.pdf._header')
             
-            <div class="section-title">2. รายงานการทวนสอบการทำความสะอาดประจำวันของพื้นที่และเครื่องจักร (Area & Equipment Verification)</div>
+            {{-- Numbered by what is actually on the form. When only this
+                 section is printed - the เครื่องจักร/พื้นที่ report - a
+                 hardcoded "2." read as though section 1 had gone missing. --}}
+            <div class="section-title">{{ count($employeeChunks) > 0 ? '2' : '1' }}. รายงานการทวนสอบการทำความสะอาดประจำวันของพื้นที่และเครื่องจักร (Area &amp; Equipment Verification)</div>
             <table>
                 <thead>
                     <tr>
