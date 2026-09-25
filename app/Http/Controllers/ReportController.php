@@ -668,42 +668,65 @@ class ReportController extends Controller
      * "Production (ห้องแคะ)" wrapped onto two lines in its 6.5% while the name
      * column beside it held names half that long.
      *
-     * The pair keeps a fixed total: the checkpoint columns divide whatever is
-     * left, and a form whose columns shift between departments is harder to
-     * read side by side. Neither is starved, however lopsided the content.
+     * Each column asks for what its longest entry needs and no more; whatever
+     * neither uses goes to the checkpoint columns, whose headers wrap onto two
+     * lines when they are squeezed. An earlier version split a fixed budget
+     * between the two, which kept the department on one line but left a third
+     * of the name column empty on a report full of short names.
      *
-     * Measured in characters, which is rough - Thai combining marks each count
-     * once - but it errs toward giving Thai text more room, and Thai glyphs are
-     * wider than the Latin average anyway.
+     * Thai combining marks - the vowels and tones that sit above and below -
+     * are not counted: they take no horizontal space, and counting them made
+     * every Thai name read as a quarter longer than it prints.
      *
-     * @return array{name: float, department: float} percentages
+     * @return array{name: float, department: float} percentages of table width
      */
     private function nameAndDepartmentWidths(array $employeeMatrix): array
     {
-        $budget = 28.5;
-        $minName = 12.0;
-        $minDepartment = 8.0;
+        // Roughly one character of the 8px table font, as a share of the page.
+        $perCharacter = 0.75;
+        $padding = 1.5;
+
+        $minName = 10.0;
+        $minDepartment = 7.0;
+        // A pathological entry must not crush the checkpoints, which are the
+        // part somebody actually has to tick.
+        $maxTogether = 34.0;
 
         $longest = function (callable $pick) use ($employeeMatrix): int {
             $max = 0;
             foreach ($employeeMatrix as $row) {
-                $max = max($max, mb_strlen(trim((string) $pick($row))));
+                $text = trim((string) $pick($row));
+                // U+0E31, U+0E34-U+0E3A, U+0E47-U+0E4E render above or below the
+                // preceding consonant rather than beside it.
+                $spacing = preg_replace('/[\x{0E31}\x{0E34}-\x{0E3A}\x{0E47}-\x{0E4E}]/u', '', $text);
+                $max = max($max, mb_strlen($spacing));
             }
 
             return max($max, 1);
         };
 
-        $nameLength = $longest(fn ($row) => $row['info']->fullname ?? $row['info']->fname ?? '');
-        $departmentLength = $longest(fn ($row) => $row['session']->department->dept_name
-            ?? $row['info']->department->dept_name
-            ?? '');
+        $needed = fn (int $characters) => $characters * $perCharacter + $padding;
 
-        $name = $budget * $nameLength / ($nameLength + $departmentLength);
-        $name = min(max($name, $minName), $budget - $minDepartment);
+        $name = max($minName, $needed($longest(
+            fn ($row) => $row['info']->fullname ?? $row['info']->fname ?? ''
+        )));
+
+        $department = max($minDepartment, $needed($longest(
+            fn ($row) => $row['session']->department->dept_name
+                ?? $row['info']->department->dept_name
+                ?? ''
+        )));
+
+        // Scale both back together if they overrun, so neither is singled out.
+        if ($name + $department > $maxTogether) {
+            $scale = $maxTogether / ($name + $department);
+            $name *= $scale;
+            $department *= $scale;
+        }
 
         return [
             'name' => round($name, 2),
-            'department' => round($budget - $name, 2),
+            'department' => round($department, 2),
         ];
     }
 
