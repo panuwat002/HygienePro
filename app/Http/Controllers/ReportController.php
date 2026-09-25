@@ -230,24 +230,8 @@ class ReportController extends Controller
             $query->where('shift', $shift);
         }
 
-        // Filter by Report Type.
-        // The dropdown was consolidated to 3 options — ทั้งหมด / พนักงาน /
-        // "เครื่องจักร / พื้นที่" — because the app only creates sessions of type
-        // 'personnel' or 'machine' now; legacy 'area' sessions still exist in old
-        // data and should be included under the merged bucket. Old bookmarks that
-        // pass ?report_type=area map to the same bucket (whereIn covers it too).
         $reportType = $request->input('report_type', 'all');
-        if ($reportType && $reportType !== 'all') {
-            $typeMap = [
-                'person'  => ['personnel'],
-                'machine' => ['machine', 'area'],
-                'area'    => ['machine', 'area'], // legacy alias for old saved URLs
-            ];
-
-            if (isset($typeMap[$reportType])) {
-                $query->whereIn('type', $typeMap[$reportType]);
-            }
-        }
+        $this->scopeSessionsToReportType($query, $reportType);
 
         // Filter by Machine ID if the merged machine/area bucket is picked.
         $machineId = $request->input('machine_id');
@@ -309,6 +293,7 @@ class ReportController extends Controller
         }
 
         $this->scopeSessionsToDepartment($query, $departmentId);
+        $this->scopeSessionsToReportType($query, $reportType);
 
         if ($shift) {
             $query->where('shift', $shift);
@@ -745,6 +730,38 @@ class ReportController extends Controller
      * returned before, so a form printed and signed last month regenerates the
      * same way. Moving an employee must not quietly rewrite a signed document.
      */
+    /**
+     * Narrow a session query to the ประเภท the report was asked for.
+     *
+     * The dropdown was consolidated to three options — ทั้งหมด / พนักงาน /
+     * "เครื่องจักร / พื้นที่" — because the app only creates sessions of type
+     * 'personnel' or 'machine' now; legacy 'area' sessions still exist in old
+     * data and belong in the merged bucket, as do old bookmarks that pass
+     * ?report_type=area.
+     *
+     * Shared by the list page and the PDF export because only the list page
+     * ever had it. Asking for เครื่องจักร/พื้นที่ listed one round and then
+     * exported four, and the export takes the form's ผู้บันทึก signature from
+     * $sessions->first() — so the area form came out signed by whoever walked
+     * a personnel round that morning.
+     */
+    private function scopeSessionsToReportType($query, ?string $reportType): void
+    {
+        if (! $reportType || $reportType === 'all') {
+            return;
+        }
+
+        $typeMap = [
+            'person'  => ['personnel'],
+            'machine' => ['machine', 'area'],
+            'area'    => ['machine', 'area'], // legacy alias for old saved URLs
+        ];
+
+        if (isset($typeMap[$reportType])) {
+            $query->whereIn('type', $typeMap[$reportType]);
+        }
+    }
+
     private function scopeSessionsToDepartment($query, $departmentId): void
     {
         if ($departmentId === null || $departmentId === '') {
