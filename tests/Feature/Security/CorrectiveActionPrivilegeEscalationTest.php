@@ -38,6 +38,9 @@ test('it prevents inspectors from auto-approving logs when closing a CAR', funct
         'inspection_log_id' => $log->id,
         'escalated_by' => $inspector->id,
         'status' => 'resolved',
+        // Closing now requires a record of what was done. These tests are about
+        // who may close, so the CAR is given one.
+        'action_taken' => 'Cleaned and re-checked',
     ]);
 
     // Inspector logs in and closes the CAR
@@ -72,7 +75,7 @@ test('it auto-verifies log if closed by supervisor', function () {
 
     $session = InspectionSession::factory()->create(['department_id' => $dept->id]);
     $log = InspectionLog::factory()->create(['session_id' => $session->id, 'verification_status' => 'reclean']);
-    $car = CorrectiveAction::factory()->create(['inspection_log_id' => $log->id, 'escalated_by' => $supervisor->id]);
+    $car = CorrectiveAction::factory()->create(['inspection_log_id' => $log->id, 'escalated_by' => $supervisor->id, 'action_taken' => 'Cleaned and re-checked']);
 
     $this->actingAs($supervisor);
     $this->post(route('corrective.close'), ['action_id' => $car->id]);
@@ -92,7 +95,7 @@ test('it auto-approves log if closed by manager', function () {
 
     $session = InspectionSession::factory()->create(['department_id' => $dept->id]);
     $log = InspectionLog::factory()->create(['session_id' => $session->id, 'verification_status' => 'reclean']);
-    $car = CorrectiveAction::factory()->create(['inspection_log_id' => $log->id, 'escalated_by' => $manager->id]);
+    $car = CorrectiveAction::factory()->create(['inspection_log_id' => $log->id, 'escalated_by' => $manager->id, 'action_taken' => 'Cleaned and re-checked']);
 
     $this->actingAs($manager);
     $this->post(route('corrective.close'), ['action_id' => $car->id]);

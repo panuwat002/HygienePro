@@ -376,6 +376,13 @@ class CorrectiveActionController extends Controller
              return back()->with('error', 'Only the escalator, QA, or authorized Manager can close this ticket.');
         }
 
+        // Closing says the problem is fixed and somebody checked. With nothing
+        // written down the record cannot answer the question it exists for, so
+        // say what is missing rather than letting the model guard throw.
+        if (blank($action->action_taken)) {
+            return back()->with('error', 'ยังไม่ได้บันทึกวิธีแก้ไข จึงปิดใบนี้ไม่ได้ — กรุณาบันทึกสิ่งที่ทำไปก่อน (ถ้าตรวจซ้ำแล้วไม่พบปัญหา ให้ระบุไว้เช่นกัน)');
+        }
+
         $action->update([
             'status' => 'closed',
             'closed_at' => now()

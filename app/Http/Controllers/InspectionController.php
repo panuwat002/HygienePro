@@ -2096,8 +2096,13 @@ class InspectionController extends Controller
             \Log::info('verify: log updated');
             // Loop Engineering: When QA verifies, we trigger Manager Approval
             if ($status === 'verified') {
+                // 'verified' on a CAR means QA checked that the fix was done. That
+                // cannot be true of one still sitting at 'open' or 'assigned' -
+                // nobody has done anything to check. Promoting those was the first
+                // half of how a finding travelled open → verified → closed without
+                // a single person acting on it.
                 $cars = \App\Models\CorrectiveAction::whereIn('inspection_log_id', $logs->pluck('id'))
-                    ->whereIn('status', ['open', 'assigned', 'resolved'])
+                    ->where('status', 'resolved')
                     ->get();
                 
                 \Log::info('verify: cars fetched ' . $cars->count());
@@ -2332,9 +2337,19 @@ class InspectionController extends Controller
             'verifier_id' => Auth::id(),
         ]);
 
-        // Loop Engineering: Close the associated CorrectiveActions and approve their requests
+        // Close the corrective actions somebody actually finished.
+        //
+        // 'open' and 'assigned' used to be in this list, so approving a round
+        // declared its findings fixed whether or not anyone had touched them -
+        // one CAR on UAT reached Closed with no assignee, no resolved_at and no
+        // record of what was done. Approving an inspection says the result is
+        // accepted; closing a CAR says the problem is fixed and was checked.
+        // Different statements, and only the second one needs evidence.
+        //
+        // Unfinished findings now stay open and keep showing on the Issues page,
+        // which is where somebody can still act on them.
         $cars = \App\Models\CorrectiveAction::whereIn('inspection_log_id', $approvedLogs->pluck('id'))
-            ->whereIn('status', ['verified', 'open', 'assigned', 'resolved'])
+            ->whereIn('status', ['verified', 'resolved'])
             ->get();
         
         foreach ($cars as $car) {

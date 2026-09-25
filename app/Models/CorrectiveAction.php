@@ -40,6 +40,39 @@ class CorrectiveAction extends Model
     ];
 
     /**
+     * A finding cannot become "checked" or "finished" with nothing written down.
+     *
+     * Every route that moves a CAR to 'verified' or 'closed' is fixed, but this
+     * is the statement the whole record exists to support - an auditor's first
+     * question is what did you do about it - so it is enforced here too, where
+     * no future route can reopen the hole quietly.
+     *
+     * Only transitions are guarded. Seeding or importing a historical row that
+     * is already closed is a different thing from claiming one is finished now.
+     */
+    protected static function booted(): void
+    {
+        static::updating(function (self $action) {
+            if (! $action->isDirty('status')) {
+                return;
+            }
+
+            if (! in_array($action->status, ['verified', 'closed'], true)) {
+                return;
+            }
+
+            if (filled($action->action_taken)) {
+                return;
+            }
+
+            throw new \LogicException(
+                "CorrectiveAction {$action->id} cannot become '{$action->status}' with no action_taken: "
+                . 'closing a finding without recording what was done destroys the evidence it exists to hold.'
+            );
+        });
+    }
+
+    /**
      * Get SLA Status: 'normal', 'near_due' (within 6 hrs), 'overdue'
      */
     public function getSlaStatusAttribute(): string
