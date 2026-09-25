@@ -53,6 +53,7 @@ class InspectionSession extends Model
         'approved_at',
         'is_locked', // Gap 2: Lock flag after final approval
         'is_audit', // Bulk Pass: Flag for audit sessions
+        'random_audit_id', // The scheduled random audit this round was opened to satisfy
         'is_sampling', // Sampling inspection mode
         'sample_size', // Sample target count
     ];
@@ -102,6 +103,15 @@ class InspectionSession extends Model
     public function department()
     {
         return $this->belongsTo(Department::class);
+    }
+
+    /**
+     * Set when this round was opened on a day the schedule had drawn this
+     * department for a random audit. Null for an ordinary round.
+     */
+    public function randomAudit()
+    {
+        return $this->belongsTo(RandomAudit::class, 'random_audit_id');
     }
 
     public function logs()

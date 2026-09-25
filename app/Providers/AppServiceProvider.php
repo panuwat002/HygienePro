@@ -121,6 +121,16 @@ class AppServiceProvider extends ServiceProvider
         });
 
         /**
+         * Random audit schedule: whoever is expected to carry one out.
+         *
+         * The same test the dashboard card uses to decide whether to show
+         * today's audits, defined once so the card and the page cannot drift.
+         */
+        Gate::define('view-random-audits', function (User $user) {
+            return $user->level >= \App\Support\RandomAuditLoop::MIN_LEVEL || $user->isAdmin();
+        });
+
+        /**
          * Verification workspace: Supervisors (verify) and Managers (approve)
          */
         Gate::define('access-verification', function (User $user) {

@@ -38,7 +38,10 @@
                             {{ $todayAudits->count() }} แผนก
                         </span>
                     </div>
-                    <p class="text-muted mb-3 small">ระบบได้สุ่มเลือกให้คุณลงไปสุ่มตรวจพนักงาน เครื่องจักร และพื้นที่ ของแผนกด้านล่าง เพื่อ Cross-check ผลการตรวจแบบรวบยอด</p>
+                    <p class="text-muted mb-3 small">
+                        ระบบได้สุ่มเลือกให้คุณลงไปสุ่มตรวจพนักงาน เครื่องจักร และพื้นที่ ของแผนกด้านล่าง เพื่อ Cross-check ผลการตรวจแบบรวบยอด
+                        <a href="{{ route('audits.index') }}" class="ms-1 text-decoration-none fw-semibold">ดูตารางทั้งสัปดาห์ <i class="bi bi-arrow-right-short"></i></a>
+                    </p>
                     
                     <div class="row g-3">
                         @foreach($todayAudits as $audit)
@@ -51,7 +54,12 @@
                                         </div>
                                     </div>
                                     <div>
-                                        <h6 class="fw-bold mb-0 text-dark fs-5">{{ $audit->department->dept_name ?? 'Unknown' }}</h6>
+                                        <h6 class="fw-bold mb-0 text-dark fs-5">
+                                            {{ $audit->department->dept_name ?? 'Unknown' }}
+                                            @if($audit->status === \App\Models\RandomAudit::IN_PROGRESS)
+                                                <span class="badge bg-primary-subtle text-primary-emphasis align-middle ms-1">กำลังตรวจ</span>
+                                            @endif
+                                        </h6>
                                         <small class="text-muted">
                                             <i class="bi bi-clock me-1"></i>{{ $audit->shift_label }}
                                             <span class="mx-1">•</span>

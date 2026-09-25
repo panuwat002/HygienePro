@@ -320,9 +320,12 @@ class InspectionController extends Controller
             $auditsCacheKey = "dashboard_random_audits_{$today}_{$auditDeptId}";
             
             $todayAudits = \Illuminate\Support\Facades\Cache::remember($auditsCacheKey, 60, function () use ($today, $isAdmin, $hasGlobal, $deptId) {
+                // open(), not status = 'pending': an audit somebody has already
+                // started still belongs on the card, shown as under way rather
+                // than as an untouched task.
                 $auditQuery = \App\Models\RandomAudit::with('department')
                     ->where('audit_date', $today)
-                    ->where('status', 'pending');
+                    ->open();
                 
                 if (!$isAdmin && !$hasGlobal) {
                     $auditQuery->where('department_id', $deptId);

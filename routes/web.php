@@ -105,6 +105,11 @@ Route::middleware('auth')->group(function () {
         Route::post('/corrective-action/close', [App\Http\Controllers\CorrectiveActionController::class, 'close'])->name('corrective.close');
         Route::post('/corrective-action/assign', [App\Http\Controllers\CorrectiveActionController::class, 'assign'])->name('corrective.assign');
         
+        // ตารางสุ่มตรวจ (Random Audit schedule) — Supervisor ขึ้นไป
+        Route::get('/random-audits', [App\Http\Controllers\RandomAuditController::class, 'index'])
+            ->middleware('can:view-random-audits')
+            ->name('audits.index');
+
         // Reporting Routes - Manager/Admin Level
         Route::middleware(['can:view-reports'])->controller(App\Http\Controllers\ReportController::class)->group(function () {
             Route::get('/reports', 'index')->name('reports.index');

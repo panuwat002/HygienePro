@@ -105,6 +105,12 @@
                                     <i class="bi bi-exclamation-triangle me-2"></i> <span>ติดตามการแก้ไข (Issues)</span>
                                 </a>
 
+                                @can('view-random-audits')
+                                <a href="{{ route('audits.index') }}" class="list-group-item list-group-item-action border-0 mb-1 rounded-3 py-2 {{ request()->routeIs('audits.*') ? 'active' : '' }}">
+                                    <i class="bi bi-bullseye me-2"></i> <span>ตารางสุ่มตรวจ (Audits)</span>
+                                </a>
+                                @endcan
+
 
                                 @if($isManagerPlus || $isAdmin || $isQASupervisor)
                                 <a href="{{ route('reports.index') }}" class="list-group-item list-group-item-action border-0 mb-1 rounded-3 py-2 {{ request()->routeIs('reports.*') ? 'active' : '' }}">

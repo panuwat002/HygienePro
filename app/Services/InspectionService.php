@@ -103,6 +103,11 @@ class InspectionService
             ]);
         });
 
+        // If this week's schedule drew this department for today, this round is
+        // what satisfies it. Claimed on every start, not only on create, so a
+        // supervisor picking up a round already open still counts.
+        app(\App\Support\RandomAuditLoop::class)->claim($session, $user);
+
         if ($session->wasRecentlyCreated) {
             $this->notifySupervisorsStarted($session);
         }
@@ -147,6 +152,11 @@ class InspectionService
             'status' => 'completed',
             'finished_notified_at' => $announcedAt ?? now(),
         ]);
+
+        // The round this audit was waiting on is done. Stamped before the
+        // announcements below so a failure to send mail cannot leave the audit
+        // looking like nobody carried it out.
+        app(\App\Support\RandomAuditLoop::class)->complete($session);
 
         // Auto-Escalation for Random Audits.
         // A control, not an announcement: the fail rate may only cross the threshold on a
