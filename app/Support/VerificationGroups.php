@@ -65,10 +65,15 @@ class VerificationGroups
                                      // so a manager who approved 225 six-week-old
                                      // rounds watched every tab go to zero with no
                                      // evidence anything had happened.
-                                     ->orWhere(
-                                         'inspection_logs.verified_at',
-                                         '>=',
-                                         now()->subDays(self::RECENTLY_CLOSED_DAYS)->startOfDay()
+                                     //
+                                     // Coalesced because approval no longer
+                                     // restamps verified_at - it has its own
+                                     // column now. An auto-verified log never
+                                     // had an approval, so it falls back to
+                                     // when it was verified.
+                                     ->orWhereRaw(
+                                         'coalesce(inspection_logs.approved_at, inspection_logs.verified_at) >= ?',
+                                         [now()->subDays(self::RECENTLY_CLOSED_DAYS)->startOfDay()]
                                      );
                              });
                     });

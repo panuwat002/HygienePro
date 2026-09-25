@@ -1608,7 +1608,11 @@ class InspectionController extends Controller
             'logs.*.checkpoint_id' => 'required|exists:checkpoints,id',
             'logs.*.result' => 'required|in:pass,fail',
             'logs.*.photo' => 'nullable|mimes:jpeg,png,jpg,gif,webp|max:10240', // 10MB max, must be image
-            'logs.*.reclean_assigned_to' => 'nullable|exists:users,id'
+            'logs.*.reclean_assigned_to' => 'nullable|exists:users,id',
+            // Writes straight through to the employee's master record below,
+            // and was never validated — any integer the form carried became
+            // that person's location.
+            'location_id' => 'nullable|exists:locations,id',
         ]);
 
         $employee = Employee::findOrFail($request->employee_id);
@@ -2001,6 +2005,9 @@ class InspectionController extends Controller
             'status_len' => strlen($status)
         ]);
 
+        // Findings left alone because their CAR is already a finished record.
+        $skippedFinished = 0;
+
         // Supervisor can verify logs
         if ($status == 'reclean') {
             // Smart Re-clean: Only items that FAILED are sent for re-clean
@@ -2014,6 +2021,26 @@ class InspectionController extends Controller
                     $q->where('verification_status', '!=', 'reclean')->orWhereNull('verification_status');
                 })
                 ->get();
+
+            // A finding whose CAR has already been resolved or closed is a
+            // finished audit record. escalate() refuses to reopen one; this
+            // path used the same updateOrCreate() with no such guard, so
+            // ordering a re-clean on already-approved work rewrote the
+            // recorded root cause, reassigned it to whoever pressed the
+            // button, and — worst — left the previous cycle's action_taken
+            // attached. The reopened finding could then satisfy the "nothing
+            // closes without a record of what was done" guard using evidence
+            // from an entirely different incident.
+            $finishedLogIds = \App\Models\CorrectiveAction::whereIn('inspection_log_id', $failedLogs->pluck('id'))
+                ->whereIn('status', ['resolved', 'closed'])
+                ->pluck('inspection_log_id')
+                ->all();
+
+            $skippedFinished = count($finishedLogIds);
+            if ($skippedFinished > 0) {
+                $failedLogs = $failedLogs->whereNotIn('id', $finishedLogIds)->values();
+            }
+
             $failedIds = $failedLogs->pluck('id')->toArray();
 
             if (!empty($failedIds)) {
@@ -2169,6 +2196,14 @@ class InspectionController extends Controller
 
         \Log::info('verify: completed, returning back');
         $message = ($status === 'reclean') ? 'ส่งกลับแก้ไข (เฉพาะรายการที่ไม่ผ่าน) เรียบร้อย (Sent for Re-clean)' : 'ตรวจสอบเรียบร้อย (Verified)';
+
+        if ($skippedFinished > 0) {
+            // Said out loud rather than silently skipped: the supervisor asked
+            // for something that did not happen, and the new occurrence still
+            // needs a round of its own.
+            return back()->with('warning', $message
+                . " — ข้าม {$skippedFinished} รายการที่ใบแจ้งปัญหาปิดไปแล้ว กรุณาเปิดรอบตรวจใหม่สำหรับปัญหาที่พบซ้ำ");
+        }
 
         return back()->with('success', $message);
     }
@@ -2334,10 +2369,18 @@ class InspectionController extends Controller
             return back()->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถอนุมัติเพิ่มได้ (Session Locked)');
         }
 
+        // Approval is stamped in its own two columns.
+        //
+        // This used to write Auth::id() into verifier_id — the column that says
+        // which QA supervisor carried out the verification — so approving a
+        // round put the manager's name and signature into the printed form's
+        // ผู้ทวนสอบ box, erased the supervisor who actually did the work, and
+        // turned off the 'self_verified' flag that shows an auditor which
+        // rounds carried only one signature.
         InspectionLog::whereIn('id', $approvedLogs->pluck('id'))->update([
             'verification_status' => 'approved',
-            'verified_at' => now(), // Treat approval as a stamp
-            'verifier_id' => Auth::id(),
+            'approved_by' => Auth::id(),
+            'approved_at' => now(),
         ]);
 
         // Close the corrective actions somebody actually finished.

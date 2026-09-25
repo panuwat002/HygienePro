@@ -503,8 +503,11 @@ class ReportController extends Controller
             ->concat($sessions->pluck('verified_by'))
             ->unique()
             ->filter();
+        // approved_by, not verifier_id: approval has its own column now, and
+        // reading the approver out of the verifier column is what put the
+        // manager's name in the QA Supervisor signature box.
         $approverIds = $sessions->pluck('approved_by')
-            ->concat($sessions->flatMap(fn($s) => $s->logs)->where('verification_status', 'approved')->pluck('verifier_id'))
+            ->concat($sessions->flatMap(fn($s) => $s->logs)->pluck('approved_by'))
             ->unique()
             ->filter();
 

@@ -53,8 +53,8 @@ afterEach(function () {
 
 /**
  * One personnel round, inspected and signed off at whatever moments the test
- * needs. $verifiedAt is when a human last touched it - managerApprove() stamps
- * that column with now() on approval.
+ * needs. $verifiedAt is when the supervisor verified it; approval is stamped
+ * separately in approved_at, and the window reads whichever came last.
  */
 function roundClosedAt($ctx, string $status, Carbon $inspectedAt, ?Carbon $verifiedAt = null): InspectionSession
 {
@@ -98,6 +98,32 @@ it('shows a round the manager just approved, whenever it was inspected', functio
     $response = completedTab($this)->assertSuccessful();
 
     expect($response->viewData('counts')['completed'])->toBe(1);
+});
+
+/**
+ * The same case, driven through the real approve endpoint rather than a
+ * hand-written timestamp. Approval is stamped in approved_at now, so if the
+ * window only read verified_at the six-week-old round would vanish again the
+ * moment it was signed - the exact failure this file exists for.
+ */
+it('shows a round approved through the endpoint, not only one stamped by hand', function () {
+    $session = roundClosedAt($this, 'verified',
+        Carbon::parse('2026-08-13 09:00:00'),
+        Carbon::parse('2026-08-13 10:00:00'));
+
+    // A manager may not approve a round they inspected themselves, and the
+    // helper makes them the inspector - so hand the round to someone else.
+    $session->update(['inspector_id' => User::create([
+        'name' => 'Inspector', 'email' => 'round-inspector@example.com',
+        'password' => bcrypt('password'), 'role' => 'staff', 'level' => 2,
+        'department_id' => $this->dept->id,
+    ])->id]);
+
+    $this->actingAs($this->manager)->post(route('inspection.approve'), [
+        'ids' => $session->logs()->pluck('id')->all(),
+    ]);
+
+    expect(completedTab($this)->assertSuccessful()->viewData('counts')['completed'])->toBe(1);
 });
 
 it('still shows work finished today', function () {

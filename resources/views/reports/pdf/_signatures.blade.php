@@ -19,7 +19,7 @@
 
     $appAt = isset($approvedAt) && $approvedAt 
         ? \Carbon\Carbon::parse($approvedAt) 
-        : ($sessions->pluck('approved_at')->filter()->max() ?? $sessions->flatMap(fn($s) => $s->logs)->where('verification_status', 'approved')->max('verified_at'));
+        : ($sessions->pluck('approved_at')->filter()->max() ?? $sessions->flatMap(fn($s) => $s->logs)->max('approved_at'));
     $appAt = $appAt ? \Carbon\Carbon::parse($appAt) : null;
 
     // Primary inspector

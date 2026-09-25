@@ -27,6 +27,8 @@ class InspectionLog extends Model
         'verifier_id',
         'verification_status',
         'verification_comment',
+        'approved_by',  // The QA manager who approved — never verifier_id, see migration
+        'approved_at',
         'acknowledged_by', // Gap 3: Dept Head acknowledgement
         'acknowledged_at', // Gap 3: Dept Head acknowledgement
     ];
@@ -34,6 +36,7 @@ class InspectionLog extends Model
     protected $casts = [
         'inspected_at' => 'datetime',
         'verified_at' => 'datetime',
+        'approved_at' => 'datetime',
         'acknowledged_at' => 'datetime', // Gap 3
     ];
 
@@ -75,6 +78,11 @@ class InspectionLog extends Model
     public function verifier()
     {
         return $this->belongsTo(User::class, 'verifier_id');
+    }
+
+    public function approvedBy()
+    {
+        return $this->belongsTo(User::class, 'approved_by');
     }
 
     public function correctiveAction()
