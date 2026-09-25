@@ -26,7 +26,19 @@
                     </a>
                 </div>
             </div>
-            
+
+            @if($hasBorrowedSessions ?? false)
+                {{-- รอบที่เห็นเพราะพนักงานถูกย้ายมาแผนกนี้ทีหลัง ไม่ใช่รอบของแผนกนี้เอง --}}
+                <div class="alert alert-info border-0 rounded-0 mb-0 small d-flex align-items-start gap-2">
+                    <i class="bi bi-info-circle-fill mt-1"></i>
+                    <div>
+                        มีรอบตรวจที่<strong>ดำเนินการภายใต้แผนกอื่น</strong>แสดงอยู่ด้วย เพราะพนักงานที่ถูกตรวจในรอบนั้นสังกัดแผนกนี้ในปัจจุบัน
+                        <br>
+                        <span class="text-muted">ไฟล์ PDF จะแสดงเฉพาะแถวของพนักงานที่เป็นของแผนกนี้ ส่วนบันทึกเดิมของแผนกที่ตรวจยังคงครบถ้วนไม่เปลี่ยนแปลง</span>
+                    </div>
+                </div>
+            @endif
+
             <div class="card-body p-0">
                 @if($sessions->isEmpty())
                     <div class="text-center py-5 text-muted">

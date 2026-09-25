@@ -221,11 +221,10 @@ class ReportController extends Controller
         // Scope Enforcement
         if ($user->isRestrictedToOwnDepartment()) {
             // Force user's department
-            $departmentId = $user->scopedDepartmentId(); 
-            $query->where('department_id', $departmentId);
-        } elseif ($departmentId) {
-            $query->where('department_id', $departmentId);
+            $departmentId = $user->scopedDepartmentId();
         }
+
+        $this->scopeSessionsToDepartment($query, $departmentId);
 
         if ($shift) {
             $query->where('shift', $shift);
@@ -260,7 +259,13 @@ class ReportController extends Controller
 
         $sessions = $query->get();
 
-        return view('reports.daily', compact('sessions', 'date', 'departmentId', 'shift', 'reportType'));
+        // A round reached only because its staff have since moved into the
+        // department being asked for. Saying so beats letting someone wonder
+        // why Production is on a page they opened for ห้องแคะ.
+        $hasBorrowedSessions = $departmentId !== null && $departmentId !== ''
+            && $sessions->contains(fn ($session) => (int) $session->department_id !== (int) $departmentId);
+
+        return view('reports.daily', compact('sessions', 'date', 'departmentId', 'shift', 'reportType', 'hasBorrowedSessions'));
     }
 
     public function exportDailyPdf(Request $request)
@@ -301,10 +306,9 @@ class ReportController extends Controller
         // Scope Enforcement
         if ($user->isRestrictedToOwnDepartment()) {
             $departmentId = $user->scopedDepartmentId();
-            $query->where('department_id', $departmentId);
-        } elseif ($departmentId) {
-            $query->where('department_id', $departmentId);
         }
+
+        $this->scopeSessionsToDepartment($query, $departmentId);
 
         if ($shift) {
             $query->where('shift', $shift);
@@ -334,6 +338,17 @@ class ReportController extends Controller
                 
                 // 1. Employee Logs
                 if (($reportType === 'all' || $reportType === 'person') && $log->employee_id) {
+                    // A round reached through its staff brings all its rows with
+                    // it, so the ones who stayed behind have to be dropped here -
+                    // otherwise asking for ห้องแคะ prints Production's 81 people.
+                    if (! $this->personRowBelongsToDepartment(
+                        $departmentId,
+                        $session->department_id,
+                        $log->employee?->department_id
+                    )) {
+                        continue;
+                    }
+
                     $empId = $log->employee_id;
                     if (!isset($employeeMatrix[$empId])) {
                          // Only add if we didn't pre-fill (should be rare if active)
@@ -641,6 +656,47 @@ class ReportController extends Controller
      * @param  \Illuminate\Support\Collection  $assignedByEmployee  employee id => checkpoint ids
      * @return \Illuminate\Support\Collection
      */
+    /**
+     * Narrow a session query to a department, following staff who have moved.
+     *
+     * A round walked before a work area was split out carries the parent's
+     * department, so filtering on that column alone hid the new department's
+     * whole history. Matching the session's department OR the current
+     * department of the staff inspected in it brings it back.
+     *
+     * Additive on purpose: asking for the parent still returns everything it
+     * returned before, so a form printed and signed last month regenerates the
+     * same way. Moving an employee must not quietly rewrite a signed document.
+     */
+    private function scopeSessionsToDepartment($query, $departmentId): void
+    {
+        if ($departmentId === null || $departmentId === '') {
+            return;
+        }
+
+        $query->where(function ($q) use ($departmentId) {
+            $q->where('department_id', $departmentId)
+              ->orWhereHas('logs.employee', fn ($e) => $e->where('department_id', $departmentId));
+        });
+    }
+
+    /**
+     * Whether one personnel row belongs on a given department's form.
+     *
+     * Either that department walked the round, or the person is theirs today.
+     * Without the second half, asking for ห้องแคะ would pull in its parent's
+     * round and then print all 81 of the parent's people with it.
+     */
+    private function personRowBelongsToDepartment($departmentId, $sessionDepartmentId, $employeeDepartmentId): bool
+    {
+        if ($departmentId === null || $departmentId === '') {
+            return true;
+        }
+
+        return (int) $sessionDepartmentId === (int) $departmentId
+            || (int) $employeeDepartmentId === (int) $departmentId;
+    }
+
     private function personColumnsForReport($allPersonCheckpoints, array $employeeMatrix, $assignedByEmployee)
     {
         $required = collect($assignedByEmployee)->flatten();
