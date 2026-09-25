@@ -14,9 +14,22 @@ require __DIR__ . '/../../vendor/autoload.php';
 $app = require_once __DIR__ . '/../../bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
+use App\Http\Controllers\ReportController;
 use App\Models\InspectionSession;
 
 $date = $argv[1] ?? date('Y-m-d');
+
+/**
+ * Both report paths are asked through the controller's own method rather than
+ * a copy of its rules here, so this stays true whatever that method becomes.
+ */
+$applyTypeScope = function ($query, string $reportType) {
+    $method = new ReflectionMethod(ReportController::class, 'scopeSessionsToReportType');
+    $method->setAccessible(true);
+    $method->invoke(app(ReportController::class), $query, $reportType);
+
+    return $query;
+};
 
 echo "\n=== รอบตรวจทั้งหมดของวันที่ {$date} ===\n";
 printf("%-6s %-12s %-26s %-16s %7s %7s %7s %7s\n",
@@ -44,36 +57,30 @@ foreach ($sessions as $s) {
 
 echo "\n=== รอบตรวจที่แต่ละตัวกรองเลือกได้ ===\n";
 
-$buckets = [
-    'person' => ['personnel'],
-    'machine' => ['machine', 'area'],
-];
+foreach (['all', 'person', 'machine', 'area'] as $reportType) {
+    $scoped = $applyTypeScope(
+        InspectionSession::with('inspector')->whereDate('inspection_date', $date)->orderBy('id'),
+        $reportType
+    )->get();
 
-foreach ($buckets as $label => $types) {
-    // What the LIST page selects — it filters sessions by type.
-    $page = InspectionSession::whereDate('inspection_date', $date)
-        ->whereIn('type', $types)
-        ->pluck('id')
-        ->all();
+    $ids = $scoped->pluck('id')->all();
+    $first = $scoped->first();
 
-    // What the PDF EXPORT selects — it applies no type filter at all.
-    $pdf = InspectionSession::whereDate('inspection_date', $date)
-        ->pluck('id')
-        ->all();
+    echo "report_type={$reportType}\n";
+    echo "   รอบตรวจ    : " . (empty($ids) ? '(ไม่มี)' : implode(', ', $ids)) . "\n";
 
-    echo "report_type={$label}\n";
-    echo "   หน้ารายการ : " . (empty($page) ? '(ไม่มี)' : implode(', ', $page)) . "\n";
-    echo "   Export PDF : " . (empty($pdf) ? '(ไม่มี)' : implode(', ', $pdf)) . "\n";
+    // The ผู้บันทึก box on the printed form comes from this one round, so a
+    // round of the wrong type reaching the front of the list is what put the
+    // wrong person's name on an area form.
+    echo "   ผู้บันทึกบนฟอร์ม: รอบ #" . ($first->id ?? '-')
+        . " (type " . ($first->type ?? '-') . ") "
+        . ($first?->inspector->name ?? '-') . "\n";
 
-    $extra = array_diff($pdf, $page);
-    if (! empty($extra)) {
-        echo "   >>> PDF ลากรอบตรวจที่หน้ารายการไม่ได้เลือกเข้ามาด้วย: " . implode(', ', $extra) . "\n";
+    if ($first && $reportType !== 'all') {
+        $expected = $reportType === 'person' ? ['personnel'] : ['machine', 'area'];
+        if (! in_array($first->type, $expected, true)) {
+            echo "   >>> ผิด: ฟอร์มจะเซ็นด้วยรอบประเภท '{$first->type}'\n";
+        }
     }
     echo "\n";
 }
-
-echo "=== ผู้บันทึกที่จะถูกพิมพ์ลงกรอบลายเซ็นของ PDF ===\n";
-$first = $sessions->first();
-echo "   sessions->first() = รอบ #" . ($first->id ?? '-')
-    . " (type " . ($first->type ?? '-') . ")"
-    . " ผู้ตรวจ: " . ($first?->inspector->name ?? '-') . "\n\n";
