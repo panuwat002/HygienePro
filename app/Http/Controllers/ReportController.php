@@ -609,6 +609,10 @@ class ReportController extends Controller
             $assignedCheckpointsByEmployee
         );
 
+        // Measured across the whole report, not per page, so the columns line up
+        // when the pages are laid side by side.
+        $personColumnWidths = $this->nameAndDepartmentWidths($employeeMatrix);
+
         // Chunk data for pagination (prevent overflow into signatures by reducing perPage)
         $perPage = 18;
         $employeeChunks = array_chunk($employeeMatrix, $perPage, true);
@@ -619,6 +623,7 @@ class ReportController extends Controller
             'employeeChunks', 
             'areaMachineChunks',
             'personCheckpoints',
+            'personColumnWidths',
             'assignedCheckpointsByEmployee',
             'areaMachineCheckpoints',
             'date', 
@@ -656,6 +661,52 @@ class ReportController extends Controller
      * @param  \Illuminate\Support\Collection  $assignedByEmployee  employee id => checkpoint ids
      * @return \Illuminate\Support\Collection
      */
+    /**
+     * How to split the name and department columns on the personnel form.
+     *
+     * They were fixed at 22% and 6.5%, set when every department was called PD.
+     * "Production (ห้องแคะ)" wrapped onto two lines in its 6.5% while the name
+     * column beside it held names half that long.
+     *
+     * The pair keeps a fixed total: the checkpoint columns divide whatever is
+     * left, and a form whose columns shift between departments is harder to
+     * read side by side. Neither is starved, however lopsided the content.
+     *
+     * Measured in characters, which is rough - Thai combining marks each count
+     * once - but it errs toward giving Thai text more room, and Thai glyphs are
+     * wider than the Latin average anyway.
+     *
+     * @return array{name: float, department: float} percentages
+     */
+    private function nameAndDepartmentWidths(array $employeeMatrix): array
+    {
+        $budget = 28.5;
+        $minName = 12.0;
+        $minDepartment = 8.0;
+
+        $longest = function (callable $pick) use ($employeeMatrix): int {
+            $max = 0;
+            foreach ($employeeMatrix as $row) {
+                $max = max($max, mb_strlen(trim((string) $pick($row))));
+            }
+
+            return max($max, 1);
+        };
+
+        $nameLength = $longest(fn ($row) => $row['info']->fullname ?? $row['info']->fname ?? '');
+        $departmentLength = $longest(fn ($row) => $row['session']->department->dept_name
+            ?? $row['info']->department->dept_name
+            ?? '');
+
+        $name = $budget * $nameLength / ($nameLength + $departmentLength);
+        $name = min(max($name, $minName), $budget - $minDepartment);
+
+        return [
+            'name' => round($name, 2),
+            'department' => round($budget - $name, 2),
+        ];
+    }
+
     /**
      * Narrow a session query to a department, following staff who have moved.
      *

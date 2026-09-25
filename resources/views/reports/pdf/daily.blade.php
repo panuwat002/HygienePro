@@ -150,8 +150,10 @@
                 <thead>
                     <tr>
                         <th rowspan="2" style="width: 3.5%">ลำดับ</th>
-                        <th rowspan="2" style="width: 22%">ชื่อ - สกุล</th>
-                        <th rowspan="2" style="width: 6.5%">แผนก</th>
+                        {{-- ความกว้างแบ่งตามความยาวจริงของชื่อและชื่อแผนกในรายงานนี้
+                             ผลรวมคงที่ คอลัมน์จุดตรวจจึงไม่ขยับตามแผนก --}}
+                        <th rowspan="2" style="width: {{ $personColumnWidths['name'] ?? 22 }}%">ชื่อ - สกุล</th>
+                        <th rowspan="2" style="width: {{ $personColumnWidths['department'] ?? 6.5 }}%">แผนก</th>
                         <th rowspan="2" style="width: 12%">กะ</th>
                         <th colspan="{{ count($personCheckpoints) }}">รายการตรวจ (Checkpoints)</th>
                         <th rowspan="2" style="width: 8%">หมายเหตุ</th>
