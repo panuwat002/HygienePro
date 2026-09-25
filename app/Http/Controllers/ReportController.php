@@ -572,6 +572,28 @@ class ReportController extends Controller
             }
         }
 
+        // Which checks each person in this report is actually required to pass.
+        //
+        // Production walks through an air shower on the way in and ห้องแคะ does
+        // not, so the two carry different checkpoint sets. The form used to
+        // print the master list either way, which gave the room a column it can
+        // never satisfy and a "-" in #eee - invisible on paper - where an
+        // auditor needs to see either a result or a reason.
+        $assignedCheckpointsByEmployee = collect();
+        if (! empty($employeeMatrix)) {
+            $assignedCheckpointsByEmployee = \Illuminate\Support\Facades\DB::table('employee_checkpoint')
+                ->whereIn('employee_id', array_keys($employeeMatrix))
+                ->get()
+                ->groupBy('employee_id')
+                ->map(fn ($rows) => $rows->pluck('checkpoint_id')->all());
+        }
+
+        $personCheckpoints = $this->personColumnsForReport(
+            $personCheckpoints,
+            $employeeMatrix,
+            $assignedCheckpointsByEmployee
+        );
+
         // Chunk data for pagination (prevent overflow into signatures by reducing perPage)
         $perPage = 18;
         $employeeChunks = array_chunk($employeeMatrix, $perPage, true);
@@ -581,7 +603,8 @@ class ReportController extends Controller
             'sessions', 
             'employeeChunks', 
             'areaMachineChunks',
-            'personCheckpoints', 
+            'personCheckpoints',
+            'assignedCheckpointsByEmployee',
             'areaMachineCheckpoints',
             'date', 
             'shift',
@@ -594,8 +617,46 @@ class ReportController extends Controller
         ));
         
         $pdf->setPaper('a4', $orientation);
-        
+
         return $pdf->stream("daily-report-{$date}.pdf");
+    }
+
+    /**
+     * The checkpoint columns a personnel form should actually carry.
+     *
+     * A column belongs on the form when somebody in the report is required to
+     * pass it, or when a result was recorded against it - dropping the second
+     * case would hide an inspection that really happened.
+     *
+     * Run the form for ห้องแคะ and the air shower column is gone, because
+     * nobody in that room is asked to walk through one; run it for the line and
+     * it is there. A report that still mixes both keeps the column, and the
+     * cell says "ไม่เกี่ยวข้อง" for the people it does not apply to.
+     *
+     * Older rows have no checkpoint assignments at all. Narrowing to an empty
+     * set there would print a form with no columns, so it falls back whole.
+     *
+     * @param  \Illuminate\Support\Collection  $allPersonCheckpoints
+     * @param  array  $employeeMatrix  keyed by employee id, each with a 'results' map
+     * @param  \Illuminate\Support\Collection  $assignedByEmployee  employee id => checkpoint ids
+     * @return \Illuminate\Support\Collection
+     */
+    private function personColumnsForReport($allPersonCheckpoints, array $employeeMatrix, $assignedByEmployee)
+    {
+        $required = collect($assignedByEmployee)->flatten();
+
+        $recorded = collect($employeeMatrix)
+            ->flatMap(fn ($row) => array_keys($row['results'] ?? []));
+
+        $relevant = $required->concat($recorded)->unique();
+
+        if ($relevant->isEmpty()) {
+            return $allPersonCheckpoints;
+        }
+
+        return $allPersonCheckpoints
+            ->filter(fn ($checkpoint) => $relevant->contains($checkpoint->id))
+            ->values();
     }
     public function exportFmQa22(Request $request)
     {

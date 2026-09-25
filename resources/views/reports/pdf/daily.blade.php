@@ -173,8 +173,17 @@
                             @endphp
                             <td style="white-space: nowrap; font-size: 8.5px;">{{ $thaiShift }}</td>
                             
+                            @php
+                                // จุดตรวจที่ "กำหนดให้คนนี้" — ถ้าไม่มีการกำหนดไว้เลย (ข้อมูลเก่า)
+                                // ให้ถือว่าทุกจุดเกี่ยวข้อง จะได้ไม่กลายเป็น N/A ทั้งแถว
+                                $assignedToThisPerson = ($assignedCheckpointsByEmployee ?? collect())->get($empId);
+                            @endphp
                             @foreach($personCheckpoints as $checkpoint)
-                                <td>
+                                @php
+                                    $applies = $assignedToThisPerson === null
+                                        || in_array($checkpoint->id, $assignedToThisPerson);
+                                @endphp
+                                <td @unless($applies) style="background-color: #e9ecef;" @endunless>
                                     @if(isset($data['results'][$checkpoint->id]))
                                         @php $log = $data['results'][$checkpoint->id]; @endphp
                                         @if($log->result === 'pass' || ($log->result === 'fail' && $log->isResolved()))
@@ -184,8 +193,12 @@
                                         @else
                                             -
                                         @endif
+                                    @elseif(! $applies)
+                                        {{-- ไม่ได้กำหนดให้พนักงานคนนี้ เช่น ห้องแคะที่ไม่ต้องผ่านตู้เป่าลม --}}
+                                        <span style="color: #6c757d; font-size: 7.5px;">N/A</span>
                                     @else
-                                        <span style="color: #eee;">-</span>
+                                        {{-- กำหนดไว้แต่ไม่มีผลบันทึก — ช่องว่างจริง ต้องเห็น --}}
+                                        <span style="color: #333; font-weight: bold;">-</span>
                                     @endif
                                 </td>
                             @endforeach
@@ -225,6 +238,16 @@
                     --}}
                 </tbody>
             </table>
+
+            {{-- คำอธิบายสัญลักษณ์ — ฟอร์มต้องอ่านเข้าใจได้เองตอนถูกตรวจ audit
+                 โดยไม่ต้องมีคนคอยอธิบายว่าช่องว่างแปลว่าอะไร --}}
+            <div style="font-size: 8px; color: #333; margin-top: 4px;">
+                <strong>สัญลักษณ์:</strong>
+                <span class="text-success">/</span> = ผ่าน &nbsp;&bull;&nbsp;
+                <span class="text-danger">X</span> = ไม่ผ่าน &nbsp;&bull;&nbsp;
+                <span style="color: #6c757d;">N/A</span> (ช่องเทา) = ไม่เกี่ยวข้องกับลักษณะงานของพนักงานคนนั้น เช่น ไลน์ที่ไม่ต้องผ่านตู้เป่าลม &nbsp;&bull;&nbsp;
+                <strong>-</strong> = กำหนดให้ตรวจแต่ไม่มีผลบันทึก
+            </div>
 
             @include('reports.pdf._signatures')
 
