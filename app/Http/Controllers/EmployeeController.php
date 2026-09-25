@@ -50,6 +50,14 @@ class EmployeeController extends Controller
             $query->where('shift_id', $request->shift_id);
         }
 
+        // filled() would drop "0", and nobody-has-any-checkpoints is exactly the
+        // case worth surfacing.
+        if ($request->has('checkpoint_count') && $request->checkpoint_count !== '') {
+            $query->withCheckpointCount((int) $request->checkpoint_count);
+        }
+
+        $checkpointCountOptions = $this->checkpointCountBreakdown($scopeDeptId, $request->department_id);
+
         $employees = $query->orderBy('department_id')->paginate(20);
         
         // Fetch today's schedule (Roster) for these paginated employees
@@ -68,7 +76,27 @@ class EmployeeController extends Controller
         $shifts = \App\Models\Shift::all();
         $locations = \App\Models\Location::all();
 
-        return view('employees.index', compact('employees', 'departments', 'shifts', 'locations', 'todaySchedules', 'scopeDeptId'));
+        return view('employees.index', compact('employees', 'departments', 'shifts', 'locations', 'todaySchedules', 'scopeDeptId', 'checkpointCountOptions'));
+    }
+
+    /**
+     * How many people sit on each checkpoint count, so the filter can offer
+     * only the numbers that exist and say how big each group is.
+     *
+     * This is what makes "111 people, 23 of them on nine checkpoints" legible
+     * without paging through six screens of badges.
+     *
+     * @return \Illuminate\Support\Collection<int, int> count => headcount
+     */
+    private function checkpointCountBreakdown(?int $scopeDeptId, $requestedDeptId): \Illuminate\Support\Collection
+    {
+        return Employee::query()
+            ->when($scopeDeptId, fn ($q) => $q->where('department_id', $scopeDeptId))
+            ->when(! $scopeDeptId && $requestedDeptId, fn ($q) => $q->where('department_id', $requestedDeptId))
+            ->withCount('checkpoints')
+            ->get()
+            ->countBy('checkpoints_count')
+            ->sortKeys();
     }
 
     public function create()
@@ -405,6 +433,10 @@ class EmployeeController extends Controller
             $query->where('department_id', $request->department_id);
         }
 
+        if ($request->has('checkpoint_count') && $request->checkpoint_count !== '') {
+            $query->withCheckpointCount((int) $request->checkpoint_count);
+        }
+
         $employees = $query->paginate(20);
 
         if ($request->ajax()) {
@@ -420,7 +452,12 @@ class EmployeeController extends Controller
 
         $categories = \App\Models\CheckpointCategory::all();
 
-        return view('employees.bulk-person', compact('employees', 'departments', 'personCheckpoints', 'categories'));
+        $checkpointCountOptions = $this->checkpointCountBreakdown(
+            $user->isRestrictedToOwnDepartment() ? $user->scopedDepartmentId() : null,
+            $request->department_id
+        );
+
+        return view('employees.bulk-person', compact('employees', 'departments', 'personCheckpoints', 'categories', 'checkpointCountOptions'));
     }
 
     public function saveBulkPerson(Request $request)

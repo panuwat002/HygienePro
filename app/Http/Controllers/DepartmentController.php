@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Department;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\DepartmentsExport;
 use App\Imports\DepartmentsImport;
@@ -39,6 +40,7 @@ class DepartmentController extends Controller
             'dept_name' => 'required|string|max:255|unique:departments,dept_name',
             'dept_code' => 'required|string|max:10|unique:departments,dept_code',
             'visibility_type' => 'required|in:global,isolated',
+            'parent_department_id' => 'nullable|exists:departments,id',
         ]);
 
         Department::create($request->all());
@@ -76,6 +78,14 @@ class DepartmentController extends Controller
             'dept_code' => 'required|string|max:10|unique:departments,dept_code,' . $department->id,
             'visibility_type' => 'required|in:global,isolated',
             'manager_id' => 'nullable|exists:users,id',
+            // A department filed under itself, or under its own child, would
+            // make canAcknowledge and any roll-up walk in circles.
+            'parent_department_id' => [
+                'nullable',
+                'exists:departments,id',
+                Rule::notIn([$department->id]),
+                Rule::notIn($department->children()->pluck('id')->all()),
+            ],
         ]);
 
         $department->update($request->except('manager_id'));

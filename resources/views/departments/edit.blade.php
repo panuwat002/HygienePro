@@ -37,6 +37,22 @@
                         </div>
 
                         <div class="mb-5">
+                            <label class="form-label fw-bold">สังกัดภายใต้แผนก (ไม่บังคับ)</label>
+                            <select name="parent_department_id" class="form-select form-select-lg @error('parent_department_id') is-invalid @enderror">
+                                <option value="">— เป็นแผนกหลัก ไม่ขึ้นกับใคร —</option>
+                                @foreach(\App\Models\Department::whereNull('parent_department_id')->where('id', '!=', $department->id)->orderBy('dept_name')->get() as $parent)
+                                    <option value="{{ $parent->id }}" {{ old('parent_department_id', $department->parent_department_id) == $parent->id ? 'selected' : '' }}>
+                                        {{ $parent->dept_name }} ({{ $parent->dept_code }})
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('parent_department_id')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                            <div class="form-text text-muted">แผนกย่อยจะมีรอบตรวจและรายงานของตัวเอง แต่หัวหน้าแผนกแม่ยังรับทราบข้อบกพร่องแทนได้</div>
+                        </div>
+
+                        <div class="mb-5">
                             <label class="form-label fw-bold">หัวหน้าแผนก (Department Manager)</label>
                             <select name="manager_id" class="form-select form-select-lg @error('manager_id') is-invalid @enderror">
                                 <option value="">-- ไม่ระบุ (None) --</option>

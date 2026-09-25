@@ -14,6 +14,7 @@ class Department extends Model
         'dept_name',
         'dept_code',
         'visibility_type',
+        'parent_department_id',
     ];
 
     public function users()
@@ -36,6 +37,33 @@ class Department extends Model
     public function inspectionSessions()
     {
         return $this->hasMany(InspectionSession::class);
+    }
+
+    /**
+     * The department this one sits under, if it is a work area rather than a
+     * department in its own right - ห้องแคะ under Production, say.
+     */
+    public function parent()
+    {
+        return $this->belongsTo(self::class, 'parent_department_id');
+    }
+
+    public function children()
+    {
+        return $this->hasMany(self::class, 'parent_department_id');
+    }
+
+    /**
+     * Who answers for this department.
+     *
+     * A sub-department usually has no user of its own - the room is staffed by
+     * operators, not by a head - so the list would print a blank where the
+     * parent's head belongs, which reads as "nobody owns this". Falls back up
+     * one level rather than inventing a user.
+     */
+    public function responsibleManager(): ?User
+    {
+        return $this->manager ?? $this->parent?->manager;
     }
 
     public function isGlobal()

@@ -32,14 +32,23 @@
 
                         {{-- Filters --}}
                         <div class="row g-2 mb-3">
-                            <div class="col-md-6">
+                            <div class="col-md-5">
                                 <input type="text" class="form-control rounded-pill" id="employeeSearch" placeholder="🔍 ค้นหาพนักงาน...">
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <select class="form-select rounded-pill" id="departmentFilter">
                                     <option value="">ทุกแผนก</option>
                                     @foreach($departments as $dept)
                                         <option value="{{ $dept->id }}">{{ $dept->dept_name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            {{-- หากลุ่มที่จุดตรวจไม่เท่าคนอื่น เช่น ห้องแคะที่ไม่ผ่านตู้เป่าลม --}}
+                            <div class="col-md-3">
+                                <select class="form-select rounded-pill" id="checkpointCountFilter" title="จำนวนจุดตรวจที่กำหนดไว้">
+                                    <option value="">ทุกจำนวนจุด</option>
+                                    @foreach($checkpointCountOptions as $count => $headcount)
+                                        <option value="{{ $count }}">{{ $count == 0 ? 'ไม่มีจุดตรวจ' : $count . ' จุด' }} ({{ $headcount }})</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -236,6 +245,7 @@
         const listContainer = document.getElementById('employeeListContainer');
         const searchInput = document.getElementById('employeeSearch');
         const deptFilter = document.getElementById('departmentFilter');
+        const checkpointCountFilter = document.getElementById('checkpointCountFilter');
         let debounceTimer;
 
         // Initial update
@@ -249,6 +259,7 @@
             if (!url) { // If filtering, add params. If paging, params are in url
                 params.set('search', searchInput.value);
                 params.set('department_id', deptFilter.value);
+                params.set('checkpoint_count', checkpointCountFilter.value);
             }
 
             // If url implies paging/filtering, fetch it
@@ -285,6 +296,10 @@
 
         // Filter Change
         deptFilter.addEventListener('change', function() {
+            fetchEmployees();
+        });
+
+        checkpointCountFilter.addEventListener('change', function() {
             fetchEmployees();
         });
 

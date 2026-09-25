@@ -21,6 +21,12 @@ use App\Notifications\VerificationEscalatedNotification;
 use App\Notifications\VerificationReminderNotification;
 
 beforeEach(function () {
+    // Pinned because the fixtures name a fixed inspection_date. Without this the
+    // auto-close case below wrote updated_at at the real clock and then rewound
+    // now() to 2026-09-24, so the session read as "active a moment ago" and was
+    // never closed - green on the day it was written, red the next morning.
+    Illuminate\Support\Carbon::setTestNow('2026-09-24 09:00:00');
+
     $this->dept = Department::create([
         'dept_name' => 'Quality Assurance', 'dept_code' => 'QA', 'visibility_type' => 'isolated',
     ]);
@@ -41,6 +47,10 @@ beforeEach(function () {
         'type' => 'personnel', 'inspection_date' => '2026-09-24',
         'shift' => 'custom_' . $this->shift->id, 'round' => 1, 'status' => 'completed',
     ]);
+});
+
+afterEach(function () {
+    Illuminate\Support\Carbon::setTestNow();
 });
 
 dataset('shift-naming notifications', [

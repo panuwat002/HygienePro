@@ -57,7 +57,7 @@
             <div class="card border-0 shadow-sm rounded-4 mb-4 bg-light">
                 <div class="card-body p-3">
                     <form action="{{ route('employees.index') }}" method="GET" class="row g-2 align-items-center">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <div class="input-group">
                                 <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
                                 <input type="text" name="search" class="form-control border-start-0 ps-0" placeholder="ค้นหาชื่อ, รหัสพนักงาน..." value="{{ request('search') }}">
@@ -71,7 +71,7 @@
                                 @endforeach
                             </select>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <select name="shift_id" class="form-select">
                                 <option value="">-- ทุกกะ --</option>
                                 @foreach($shifts as $shift)
@@ -79,9 +79,20 @@
                                 @endforeach
                             </select>
                         </div>
+                        {{-- หาคนที่จุดตรวจไม่เท่าคนอื่น เช่น ห้องแคะที่ไม่ผ่านตู้เป่าลม --}}
+                        <div class="col-md-2">
+                            <select name="checkpoint_count" class="form-select" title="จำนวนจุดตรวจที่กำหนดให้พนักงาน">
+                                <option value="">-- ทุกจำนวนจุดตรวจ --</option>
+                                @foreach($checkpointCountOptions as $count => $headcount)
+                                    <option value="{{ $count }}" {{ request('checkpoint_count') !== null && request('checkpoint_count') !== '' && (int) request('checkpoint_count') === (int) $count ? 'selected' : '' }}>
+                                        {{ $count == 0 ? 'ไม่มีจุดตรวจ' : $count . ' จุดตรวจ' }} ({{ $headcount }} คน)
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
                         <div class="col-md-2 d-flex gap-2">
                             <button type="submit" class="btn btn-primary-custom flex-grow-1"><i class="bi bi-search me-1"></i>ค้นหา</button>
-                            @if(request()->hasAny(['search', 'department_id', 'shift_id']) && request()->anyFilled(['search', 'department_id', 'shift_id']))
+                            @if(request()->hasAny(['search', 'department_id', 'shift_id', 'checkpoint_count']) && (request()->anyFilled(['search', 'department_id', 'shift_id']) || request('checkpoint_count') !== null))
                                 <a href="{{ route('employees.index') }}" class="btn btn-outline-secondary" title="ล้างการค้นหา"><i class="bi bi-x-lg"></i></a>
                             @endif
                         </div>

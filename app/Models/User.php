@@ -299,6 +299,15 @@ class User extends Authenticatable
         }
 
         // Must be from the same department
-        return $this->department_id === $departmentId;
+        if ($this->department_id === $departmentId) {
+            return true;
+        }
+
+        // A work area split out of a department - ห้องแคะ under Production -
+        // has no head of its own, so its parent's head answers for it.
+        // One level only: covering a child is not covering the plant.
+        return Department::where('id', $departmentId)
+            ->where('parent_department_id', $this->department_id)
+            ->exists();
     }
 }

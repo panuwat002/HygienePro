@@ -60,6 +60,21 @@ class Employee extends Model
         return $this->belongsToMany(Checkpoint::class, 'employee_checkpoint')->withTimestamps();
     }
 
+    /**
+     * Everyone carrying exactly this many checkpoints.
+     *
+     * How you find a work area that differs from the rest of its department -
+     * ห้องแคะ skips the air shower, so nine where the others have ten. Zero is
+     * a real answer, not "no filter": someone with no checkpoints is inspected
+     * against nothing, which is worth being able to see.
+     */
+    public function scopeWithCheckpointCount($query, int $count)
+    {
+        return $count === 0
+            ? $query->doesntHave('checkpoints')
+            : $query->has('checkpoints', '=', $count);
+    }
+
     public function getMonthlyFailures($month = null, $year = null)
     {
         $month = $month ?? now()->month;

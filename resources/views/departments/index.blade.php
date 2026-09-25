@@ -55,15 +55,27 @@
                         @forelse($departments as $dept)
                             <tr>
                                 <td class="ps-4 fw-bold text-primary" data-label="รหัสแผนก">{{ $dept->dept_code }}</td>
-                                <td data-label="ชื่อแผนก" class="fw-bold text-dark">{{ $dept->dept_name }}</td>
+                                <td data-label="ชื่อแผนก" class="fw-bold text-dark">
+                                    {{ $dept->dept_name }}
+                                    @if($dept->parent)
+                                        <span class="badge rounded-pill bg-info bg-opacity-10 text-info-emphasis border border-info-subtle fw-normal ms-1" style="font-size: 0.7rem;"
+                                              title="แผนกย่อย — ตรวจและออกรายงานแยก แต่อยู่ใต้ {{ $dept->parent->dept_name }}">
+                                            <i class="bi bi-diagram-2 me-1"></i>ใต้ {{ $dept->parent->dept_code }}
+                                        </span>
+                                    @endif
+                                </td>
                                 <td data-label="หัวหน้าแผนก">
-                                    @if($dept->manager)
+                                    @php($head = $dept->responsibleManager())
+                                    @if($head)
                                         <div class="d-flex align-items-center">
                                             <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-2 fw-bold shadow-sm" style="width: 32px; height: 32px; font-size: 0.85rem;">
-                                                {{ mb_substr($dept->manager->name, 0, 1) }}
+                                                {{ mb_substr($head->name, 0, 1) }}
                                             </div>
                                             <div>
-                                                <span class="d-block fw-semibold text-dark" style="font-size: 0.9rem;">{{ $dept->manager->name }}</span>
+                                                <span class="d-block fw-semibold text-dark" style="font-size: 0.9rem;">{{ $head->name }}</span>
+                                                @unless($dept->manager)
+                                                    <span class="d-block text-muted" style="font-size: 0.72rem;">ดูแลแทนจาก {{ $dept->parent?->dept_code }}</span>
+                                                @endunless
                                             </div>
                                         </div>
                                     @else

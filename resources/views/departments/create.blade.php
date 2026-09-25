@@ -37,6 +37,25 @@
                             <div class="form-text text-muted">Global สำหรับแผนก Support เช่น QA, HR, IT / Isolated สำหรับแผนกปฏิบัติการ เช่น รายผลิต</div>
                         </div>
 
+                        <div class="mb-5">
+                            <label class="form-label fw-bold">สังกัดภายใต้แผนก (ไม่บังคับ)</label>
+                            <select name="parent_department_id" class="form-select form-select-lg @error('parent_department_id') is-invalid @enderror">
+                                <option value="">— เป็นแผนกหลัก ไม่ขึ้นกับใคร —</option>
+                                @foreach(\App\Models\Department::whereNull('parent_department_id')->orderBy('dept_name')->get() as $parent)
+                                    <option value="{{ $parent->id }}" {{ old('parent_department_id') == $parent->id ? 'selected' : '' }}>
+                                        {{ $parent->dept_name }} ({{ $parent->dept_code }})
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('parent_department_id')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                            <div class="form-text text-muted">
+                                ใช้เมื่อต้องการแยก<strong>พื้นที่ทำงาน</strong>ออกมาตรวจและออกรายงานแยก แต่ยังอยู่ใต้แผนกแม่ เช่น Production (ห้องแคะ) ที่ไม่ผ่านตู้เป่าลม จึงมีจุดตรวจต่างจากคนอื่น —
+                                <strong>หัวหน้าแผนกแม่จะยังรับทราบข้อบกพร่องของแผนกย่อยได้</strong>
+                            </div>
+                        </div>
+
                         <div class="d-flex justify-content-between align-items-center">
                             <a href="{{ route('departments.index') }}" class="btn btn-light text-muted btn-lg px-4 rounded-pill">
                                 <i class="bi bi-arrow-left me-2"></i>ยกเลิก
