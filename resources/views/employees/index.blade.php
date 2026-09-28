@@ -215,8 +215,11 @@
                                                           onsubmit="return confirm('{{ $employee->is_active ? 'บันทึกว่าพนักงานคนนี้ลาออกแล้ว? จะหายจากตารางกะและรอบตรวจ แต่ประวัติการตรวจยังอยู่ครบ' : 'นำพนักงานคนนี้กลับเข้าตารางกะและรอบตรวจ?' }}');">
                                                         @csrf
                                                         <input type="hidden" name="is_active" value="{{ $employee->is_active ? 0 : 1 }}">
-                                                        <button type="submit" class="dropdown-item {{ $employee->is_active ? 'text-secondary' : 'text-success' }}">
-                                                            <i class="bi {{ $employee->is_active ? 'bi-box-arrow-right' : 'bi-arrow-counterclockwise' }} me-2"></i>
+                                                        {{-- text-secondary read as "disabled" next to a live
+                                                             ลบ in red. It is the action people should reach
+                                                             for, so it looks like one. --}}
+                                                        <button type="submit" class="dropdown-item {{ $employee->is_active ? 'text-warning-emphasis' : 'text-success' }}">
+                                                            <i class="bi {{ $employee->is_active ? 'bi-box-arrow-right' : 'bi-arrow-counterclockwise' }} me-2 {{ $employee->is_active ? 'text-warning' : '' }}"></i>
                                                             {{ $employee->is_active ? 'ทำเครื่องหมายว่าลาออก' : 'กลับเข้าทำงาน' }}
                                                         </button>
                                                     </form>

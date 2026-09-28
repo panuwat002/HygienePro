@@ -374,9 +374,17 @@ class EmployeeController extends Controller
         $active = $request->boolean('is_active');
         $employee->update(['is_active' => $active]);
 
-        return back()->with('success', $active
-            ? "นำ {$employee->fullname} กลับเข้าตารางกะและรอบตรวจแล้ว"
-            : "บันทึก {$employee->fullname} เป็นลาออกแล้ว — หายจากตารางกะและรอบตรวจ แต่ประวัติการตรวจยังอยู่ครบ");
+        if ($active) {
+            return back()->with('success', "นำ {$employee->fullname} กลับเข้าตารางกะและรอบตรวจแล้ว");
+        }
+
+        // The list defaults to people who still work here, so the row vanishes
+        // the moment this succeeds and it reads as though it was deleted. The
+        // message has to say where they went. Plain text: it is rendered into
+        // a toast title through addslashes(), not as HTML.
+        return back()->with('success',
+            "บันทึก {$employee->fullname} เป็นลาออกแล้ว - หายจากตารางกะและรอบตรวจ ประวัติการตรวจยังอยู่ครบ "
+            . 'ดูรายชื่อได้ที่ตัวกรองสถานะ เลือก ลาออกแล้ว');
     }
 
     public function destroyBulk(Request $request)
