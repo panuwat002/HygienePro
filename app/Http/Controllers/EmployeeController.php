@@ -28,26 +28,7 @@ class EmployeeController extends Controller
             $query->where('department_id', $scopeDeptId);
         }
 
-        if ($request->filled('search')) {
-            // Trimmed: a code pasted out of Excel or a barcode scanner arrives
-            // with whitespace around it, and " 65990" matched nothing.
-            $search = trim((string) $request->search);
-
-            $query->where(function($q) use ($search) {
-                // fullname first. It is the column the list prints as the
-                // person's name and it was the one column the search did not
-                // look at - so anyone imported from Excel with only a fullname
-                // (fname/lname are nullable and were added later) could not be
-                // found by typing the name shown on their own row.
-                $q->where('fullname', 'like', "%{$search}%")
-                  ->orWhere('fname', 'like', "%{$search}%")
-                  ->orWhere('lname', 'like', "%{$search}%")
-                  ->orWhere('employee_id', 'like', "%{$search}%")
-                  // Typed with the prefix in front, as it is printed.
-                  ->orWhereRaw($this->joinedName(['prefix', 'fname', 'lname']) . ' LIKE ?', ["%{$search}%"])
-                  ->orWhereRaw($this->joinedName(['prefix', 'fullname']) . ' LIKE ?', ["%{$search}%"]);
-            });
-        }
+        $this->applyNameSearch($query, $request);
 
         // ทำงานอยู่ / ลาออก. Defaults to the people who still work here, so a
         // department that has turned over for years is not read as its roster.
@@ -71,11 +52,7 @@ class EmployeeController extends Controller
             $query->where('shift_id', $request->shift_id);
         }
 
-        // filled() would drop "0", and nobody-has-any-checkpoints is exactly the
-        // case worth surfacing.
-        if ($request->has('checkpoint_count') && $request->checkpoint_count !== '') {
-            $query->withCheckpointCount((int) $request->checkpoint_count);
-        }
+        $this->applyCheckpointCountFilter($query, $request);
 
         $checkpointCountOptions = $this->checkpointCountBreakdown($scopeDeptId, $request->department_id);
 
@@ -106,6 +83,64 @@ class EmployeeController extends Controller
         $locations = \App\Models\Location::all();
 
         return view('employees.index', compact('employees', 'departments', 'shifts', 'locations', 'todaySchedules', 'scopeDeptId', 'checkpointCountOptions'));
+    }
+
+    /**
+     * Find people by anything printed on their row.
+     *
+     * Shared by the employee list and the bulk-checkpoint page, which had two
+     * copies of this and had already drifted: neither looked at `fullname` -
+     * the column the list prints as the person's name - and both looked at
+     * `fname`/`lname`, which are nullable, were added in a later migration and
+     * are empty for everyone imported from Excel. Typing the name on your own
+     * row found nothing.
+     */
+    private function applyNameSearch($query, Request $request): void
+    {
+        if (! $request->filled('search')) {
+            return;
+        }
+
+        // Trimmed: a code pasted out of Excel or read by a scanner arrives with
+        // whitespace around it, and " 65990" matched nothing.
+        $search = trim((string) $request->search);
+
+        $query->where(function ($q) use ($search) {
+            $q->where('fullname', 'like', "%{$search}%")
+              ->orWhere('fname', 'like', "%{$search}%")
+              ->orWhere('lname', 'like', "%{$search}%")
+              ->orWhere('employee_id', 'like', "%{$search}%")
+              // Typed with the prefix in front, as it is printed.
+              ->orWhereRaw($this->joinedName(['prefix', 'fname', 'lname']) . ' LIKE ?', ["%{$search}%"])
+              ->orWhereRaw($this->joinedName(['prefix', 'fullname']) . ' LIKE ?', ["%{$search}%"]);
+        });
+    }
+
+    /**
+     * Narrow to people with exactly N checkpoints, when N was actually chosen.
+     *
+     * filled() would drop a deliberate "0", and nobody-has-any-checkpoints is
+     * exactly the case worth surfacing - hence the explicit test. But the test
+     * has to be for null, not ''.
+     *
+     * The filter bar submits every field on every search, so an untouched
+     * checkpoint filter arrives as `checkpoint_count=`, and
+     * ConvertEmptyStringsToNull has turned that into null before any of this
+     * runs. `$request->checkpoint_count !== ''` was therefore true for a blank
+     * filter, and the query narrowed to (int) null === 0 - "people with no
+     * checkpoints at all".
+     *
+     * That is the whole of "ค้นหาแล้วไม่เจอ": searching anyone who HAS
+     * checkpoints returned nothing, while browsing the same list found them,
+     * because browsing sends no checkpoint_count key for has() to see.
+     */
+    private function applyCheckpointCountFilter($query, Request $request): void
+    {
+        $count = $request->input('checkpoint_count');
+
+        if ($count !== null && $count !== '') {
+            $query->withCheckpointCount((int) $count);
+        }
     }
 
     /**
@@ -517,22 +552,13 @@ class EmployeeController extends Controller
             $query->where('department_id', $user->scopedDepartmentId());
         }
 
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('fname', 'like', "%{$search}%")
-                  ->orWhere('lname', 'like', "%{$search}%")
-                  ->orWhere('employee_id', 'like', "%{$search}%");
-            });
-        }
+        $this->applyNameSearch($query, $request);
 
         if ($request->filled('department_id')) {
             $query->where('department_id', $request->department_id);
         }
 
-        if ($request->has('checkpoint_count') && $request->checkpoint_count !== '') {
-            $query->withCheckpointCount((int) $request->checkpoint_count);
-        }
+        $this->applyCheckpointCountFilter($query, $request);
 
         $employees = $query->paginate(20);
 

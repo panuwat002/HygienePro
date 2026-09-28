@@ -180,3 +180,74 @@ it('deletes the rest of a bulk selection and says who it kept', function () {
     expect(Employee::find($fresh->id))->toBeNull()
         ->and(Employee::find($this->imported->id))->not->toBeNull();
 });
+
+/**
+ * The root cause of "ค้นหาแล้วไม่เจอ", and the one my earlier fixes missed.
+ *
+ * The filter bar always submits every field, so a search carries
+ * `checkpoint_count=` even when no checkpoint filter was chosen. Laravel's
+ * ConvertEmptyStringsToNull turns that empty string into null before the
+ * controller sees it, so the `!== ''` guard - written to let a deliberate "0"
+ * through, which filled() would have dropped - never fires. The request then
+ * filters on (int) null === 0, meaning "people with no checkpoints at all".
+ *
+ * Browsing never triggered it: /employees?page=6 carries no checkpoint_count
+ * key, so has() is false. Only submitting the form did.
+ */
+it('does not filter on zero checkpoints just because the filter was left blank', function () {
+    $checkpoint = Checkpoint::create(['title' => 'ล้างมือ', 'is_active' => true, 'type' => 'person']);
+    $this->imported->checkpoints()->attach($checkpoint->id);
+
+    // Exactly what the filter bar submits when only the search box is filled.
+    $found = searchEmployees($this, [
+        'search' => '65990',
+        'department_id' => '',
+        'shift_id' => '',
+        'checkpoint_count' => '',
+        'status' => 'active',
+    ]);
+
+    expect($found->pluck('id')->all())->toBe([$this->imported->id]);
+});
+
+it('still filters on zero when zero is deliberately chosen', function () {
+    $checkpoint = Checkpoint::create(['title' => 'ล้างมือ', 'is_active' => true, 'type' => 'person']);
+    $this->imported->checkpoints()->attach($checkpoint->id);
+
+    $bare = Employee::create([
+        'employee_id' => '65993', 'fullname' => 'ไม่มีจุดตรวจ เลย', 'department_id' => $this->dept->id,
+        'shift_id' => $this->shift->id, 'qr_code_hash' => 'none1', 'is_active' => true,
+    ]);
+
+    expect(searchEmployees($this, ['checkpoint_count' => '0'])->pluck('id')->all())
+        ->toBe([$bare->id]);
+});
+
+it('still filters on a real checkpoint count', function () {
+    $checkpoint = Checkpoint::create(['title' => 'ล้างมือ', 'is_active' => true, 'type' => 'person']);
+    $this->imported->checkpoints()->attach($checkpoint->id);
+
+    expect(searchEmployees($this, ['checkpoint_count' => '1'])->pluck('id')->all())
+        ->toBe([$this->imported->id]);
+});
+
+/**
+ * The bulk-checkpoint page carried its own copy of both filters and had the
+ * same two faults. It is the page you go to precisely to find people by their
+ * checkpoint count, so a blank filter silently meaning "zero" hurt most here.
+ */
+it('applies the same filters on the bulk checkpoint page', function () {
+    $checkpoint = Checkpoint::create(['title' => 'ล้างมือ', 'is_active' => true, 'type' => 'person']);
+    $this->imported->checkpoints()->attach($checkpoint->id);
+
+    $found = $this->actingAs($this->admin)
+        ->get(route('employees.bulk-person', [
+            'search' => 'มา ติน ซาน',
+            'department_id' => '',
+            'checkpoint_count' => '',
+        ]))
+        ->assertSuccessful()
+        ->viewData('employees');
+
+    expect($found->pluck('id')->all())->toBe([$this->imported->id]);
+});
