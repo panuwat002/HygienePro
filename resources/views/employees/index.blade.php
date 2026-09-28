@@ -90,9 +90,17 @@
                                 @endforeach
                             </select>
                         </div>
+                        {{-- ทำงานอยู่ / ลาออก --}}
+                        <div class="col-md-2">
+                            <select name="status" class="form-select" title="สถานะการทำงาน">
+                                @foreach(['active' => 'ทำงานอยู่', 'inactive' => 'ลาออกแล้ว', 'all' => 'ทั้งหมด'] as $value => $label)
+                                    <option value="{{ $value }}" {{ request('status', 'active') === $value ? 'selected' : '' }}>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                         <div class="col-md-2 d-flex gap-2">
                             <button type="submit" class="btn btn-primary-custom flex-grow-1"><i class="bi bi-search me-1"></i>ค้นหา</button>
-                            @if(request()->hasAny(['search', 'department_id', 'shift_id', 'checkpoint_count']) && (request()->anyFilled(['search', 'department_id', 'shift_id']) || request('checkpoint_count') !== null))
+                            @if(request()->hasAny(['search', 'department_id', 'shift_id', 'checkpoint_count', 'status']) && (request()->anyFilled(['search', 'department_id', 'shift_id', 'status']) || request('checkpoint_count') !== null))
                                 <a href="{{ route('employees.index') }}" class="btn btn-outline-secondary" title="ล้างการค้นหา"><i class="bi bi-x-lg"></i></a>
                             @endif
                         </div>
@@ -134,11 +142,20 @@
                                                 @if($employee->profile_image)
                                                     <img src="{{ $employee->profile_image }}" class="w-100 h-100" style="object-fit: cover;">
                                                 @else
-                                                    <span class="fw-bold text-secondary">{{ substr($employee->fname, 0, 1) }}</span>
+                                                    {{-- substr() cut the first BYTE of a Thai name, which is
+                                                         half a character - that is the ◆ in every avatar. And
+                                                         fname is nullable, so imported staff had nothing here
+                                                         at all; fullname is the column that always holds a name. --}}
+                                                    <span class="fw-bold text-secondary">{{ mb_substr($employee->fullname ?: $employee->fname ?: '?', 0, 1) }}</span>
                                                 @endif
                                             </div>
                                             <div>
-                                                <span class="fw-bold text-dark d-block">{{ $employee->fullname }}</span>
+                                                <span class="fw-bold text-dark d-block">
+                                                    {{ $employee->fullname }}
+                                                    @unless($employee->is_active)
+                                                        <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle ms-1">ลาออกแล้ว</span>
+                                                    @endunless
+                                                </span>
                                                 <small class="text-muted">{{ $employee->prefix }}</small>
                                             </div>
                                         </div>
@@ -190,6 +207,20 @@
                                                 <li><a class="dropdown-item" href="{{ route('employees.edit', $employee->id) }}"><i class="bi bi-pencil me-2 text-warning"></i> แก้ไข</a></li>
                                                 <li><a class="dropdown-item" href="{{ route('employees.print_card', $employee->id) }}" target="_blank"><i class="bi bi-person-badge me-2 text-info"></i> พิมพ์บัตรประจำตัว</a></li>
                                                 <li><hr class="dropdown-divider"></li>
+                                                {{-- The normal way to take a leaver off the roster. Deleting
+                                                     is not: inspection_logs holds them under a RESTRICT key,
+                                                     and their record is evidence. --}}
+                                                <li>
+                                                    <form action="{{ route('employees.set-active', $employee->id) }}" method="POST"
+                                                          onsubmit="return confirm('{{ $employee->is_active ? 'บันทึกว่าพนักงานคนนี้ลาออกแล้ว? จะหายจากตารางกะและรอบตรวจ แต่ประวัติการตรวจยังอยู่ครบ' : 'นำพนักงานคนนี้กลับเข้าตารางกะและรอบตรวจ?' }}');">
+                                                        @csrf
+                                                        <input type="hidden" name="is_active" value="{{ $employee->is_active ? 0 : 1 }}">
+                                                        <button type="submit" class="dropdown-item {{ $employee->is_active ? 'text-secondary' : 'text-success' }}">
+                                                            <i class="bi {{ $employee->is_active ? 'bi-box-arrow-right' : 'bi-arrow-counterclockwise' }} me-2"></i>
+                                                            {{ $employee->is_active ? 'ทำเครื่องหมายว่าลาออก' : 'กลับเข้าทำงาน' }}
+                                                        </button>
+                                                    </form>
+                                                </li>
                                                 <li>
                                                     <form action="{{ route('employees.destroy', $employee->id) }}" method="POST" onsubmit="return confirm('ยืนยันการลบพนักงาน?');">
                                                         @csrf

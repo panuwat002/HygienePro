@@ -186,6 +186,9 @@ Route::middleware('auth')->group(function () {
             Route::get('employees/download-schedules-template', [EmployeeController::class, 'downloadSchedulesTemplate'])->name('employees.download_schedules_template');
             Route::get('employees/print-selected', [EmployeeController::class, 'printSelected'])->name('employees.print_selected');
             Route::get('employees/{employee}/print-card', [EmployeeController::class, 'printCard'])->name('employees.print_card');
+            // ลาออก / กลับเข้าทำงาน — the switch the roster and the inspection
+            // round already read, which no screen could set.
+            Route::post('employees/{employee}/active', [EmployeeController::class, 'setActive'])->name('employees.set-active');
             Route::get('employees-bulk-location', [EmployeeController::class, 'showBulkLocation'])->name('employees.bulk-location');
             Route::post('employees-bulk-location', [EmployeeController::class, 'saveBulkLocation'])->name('employees.bulk-location.save');
             Route::get('employees-bulk-person', [EmployeeController::class, 'showBulkPerson'])->name('employees.bulk-person');

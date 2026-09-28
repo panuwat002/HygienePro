@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Department;
 use App\Models\Employee;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Intervention\Image\Laravel\Facades\Image;
@@ -28,13 +29,33 @@ class EmployeeController extends Controller
         }
 
         if ($request->filled('search')) {
-            $search = $request->search;
+            // Trimmed: a code pasted out of Excel or a barcode scanner arrives
+            // with whitespace around it, and " 65990" matched nothing.
+            $search = trim((string) $request->search);
+
             $query->where(function($q) use ($search) {
-                $q->where('fname', 'like', "%{$search}%")
+                // fullname first. It is the column the list prints as the
+                // person's name and it was the one column the search did not
+                // look at - so anyone imported from Excel with only a fullname
+                // (fname/lname are nullable and were added later) could not be
+                // found by typing the name shown on their own row.
+                $q->where('fullname', 'like', "%{$search}%")
+                  ->orWhere('fname', 'like', "%{$search}%")
                   ->orWhere('lname', 'like', "%{$search}%")
                   ->orWhere('employee_id', 'like', "%{$search}%")
-                  ->orWhereRaw("CONCAT(prefix, ' ', fname, ' ', lname) LIKE ?", ["%{$search}%"]);
+                  // Typed with the prefix in front, as it is printed.
+                  ->orWhereRaw($this->joinedName(['prefix', 'fname', 'lname']) . ' LIKE ?', ["%{$search}%"])
+                  ->orWhereRaw($this->joinedName(['prefix', 'fullname']) . ' LIKE ?', ["%{$search}%"]);
             });
+        }
+
+        // ทำงานอยู่ / ลาออก. Defaults to the people who still work here, so a
+        // department that has turned over for years is not read as its roster.
+        $status = $request->input('status', 'active');
+        if ($status === 'active') {
+            $query->where('is_active', true);
+        } elseif ($status === 'inactive') {
+            $query->where('is_active', false);
         }
 
         if ($request->filled('department_id')) {
@@ -58,8 +79,16 @@ class EmployeeController extends Controller
 
         $checkpointCountOptions = $this->checkpointCountBreakdown($scopeDeptId, $request->department_id);
 
-        $employees = $query->orderBy('department_id')->paginate(20);
-        
+        $employees = $query->orderBy('department_id')->paginate(20)->withQueryString();
+
+        // Narrowing the list from page 6 leaves ?page=6 pointing past the end of
+        // a one-row result, and the page renders "ยังไม่มีข้อมูลพนักงาน" over a
+        // row that is really there. Send them to the first page of what they
+        // actually asked for.
+        if ($employees->isEmpty() && $employees->currentPage() > 1) {
+            return redirect()->route('employees.index', $request->except('page'));
+        }
+
         // Fetch today's schedule (Roster) for these paginated employees
         $todaySchedules = \App\Models\EmployeeSchedule::with('shift')
             ->where('date', now()->startOfDay())
@@ -77,6 +106,25 @@ class EmployeeController extends Controller
         $locations = \App\Models\Location::all();
 
         return view('employees.index', compact('employees', 'departments', 'shifts', 'locations', 'todaySchedules', 'scopeDeptId', 'checkpointCountOptions'));
+    }
+
+    /**
+     * Columns joined with spaces, in this connection's dialect.
+     *
+     * CONCAT() is MySQL's; SQLite has no such function and answers with
+     * "no such function: CONCAT", so the search this builds threw a 500 for
+     * every query under SQLite. COALESCE matters on both: prefix, fname and
+     * lname are all nullable, and MySQL's CONCAT returns NULL - never a match -
+     * if any argument is NULL, so a person with no prefix could not be found
+     * by their full name even where the function does exist.
+     */
+    private function joinedName(array $columns): string
+    {
+        $parts = array_map(fn ($c) => "COALESCE({$c}, '')", $columns);
+
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? '(' . implode(" || ' ' || ", $parts) . ')'
+            : 'CONCAT(' . implode(", ' ', ", $parts) . ')';
     }
 
     /**
@@ -257,8 +305,43 @@ class EmployeeController extends Controller
              }
         }
 
+        // Somebody who has ever been inspected is part of the record. The
+        // foreign key on inspection_logs.employee_id is RESTRICT, so this used
+        // to come back as a raw 500 with no idea what to do instead.
+        if ($employee->inspectionLogs()->exists()) {
+            return back()->with('error',
+                "{$employee->fullname} เคยถูกตรวจแล้ว จึงลบไม่ได้เพราะจะทำให้ประวัติการตรวจหายไปจากหลักฐาน "
+                . 'ถ้าลาออกแล้วให้ใช้ "ทำเครื่องหมายว่าลาออก" แทน จะหายจากตารางกะและรอบตรวจทันที');
+        }
+
         $employee->delete();
         return redirect()->route('employees.index')->with('success', 'ลบข้อมูลพนักงานเรียบร้อยแล้ว');
+    }
+
+    /**
+     * Retire somebody who has left, or bring them back.
+     *
+     * is_active was already the switch the rest of the app reads - the weekly
+     * roster, the inspection round's target list and the area dashboard all
+     * filter on it - but nothing in any screen could set it, so the only way
+     * to take a leaver off the roster was to delete them, and deleting anyone
+     * who had ever been inspected failed on a foreign key.
+     */
+    public function setActive(Employee $employee, Request $request)
+    {
+        $user = auth()->user();
+        if ($user->isRestrictedToOwnDepartment() && $employee->department_id != $user->scopedDepartmentId()) {
+            abort(403, 'Unauthorized to change this employee.');
+        }
+
+        $request->validate(['is_active' => 'required|boolean']);
+
+        $active = $request->boolean('is_active');
+        $employee->update(['is_active' => $active]);
+
+        return back()->with('success', $active
+            ? "นำ {$employee->fullname} กลับเข้าตารางกะและรอบตรวจแล้ว"
+            : "บันทึก {$employee->fullname} เป็นลาออกแล้ว — หายจากตารางกะและรอบตรวจ แต่ประวัติการตรวจยังอยู่ครบ");
     }
 
     public function destroyBulk(Request $request)
@@ -275,7 +358,21 @@ class EmployeeController extends Controller
              $query->where('department_id', $user->scopedDepartmentId());
         }
 
-        $query->delete();
+        // Same rule as destroy(), applied per person rather than to the batch:
+        // one inspected employee in the selection must not block the rest, and
+        // must not be deleted either.
+        $inspected = (clone $query)->has('inspectionLogs')->get();
+        $deletable = (clone $query)->doesntHave('inspectionLogs');
+
+        $deleted = $deletable->count();
+        $deletable->delete();
+
+        if ($inspected->isNotEmpty()) {
+            return redirect()->route('employees.index')->with('warning',
+                "ลบแล้ว {$deleted} คน — ข้าม {$inspected->count()} คนที่เคยถูกตรวจ ({$inspected->pluck('fullname')->take(3)->join(', ')}"
+                . ($inspected->count() > 3 ? ' …' : '') . ') '
+                . 'เพราะจะทำให้ประวัติการตรวจหายไป ถ้าลาออกแล้วให้ใช้ "ทำเครื่องหมายว่าลาออก" แทน');
+        }
 
         return redirect()->route('employees.index')->with('success', 'ลบข้อมูลพนักงานที่เลือกเรียบร้อยแล้ว');
     }
