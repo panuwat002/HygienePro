@@ -97,23 +97,29 @@
             margin: 8px auto 2px auto;
             height: 10px; /* Reduced visual height */
         }
-        .footer {
-            position: fixed;
-            bottom: 0px;
-            left: 0;
-            width: 100%;
-            font-size: 8px;
-            color: gray;
-            line-height: normal;
+        /*
+         * One page of the form. Given a height, so the revision code can sit
+         * at the bottom-right of the PAPER rather than wherever the table
+         * happened to end - a short page used to leave it floating mid-sheet.
+         *
+         * It cannot be position:fixed: dompdf repeats a fixed element on every
+         * page of the document, and the two sections of this form are two
+         * different controlled documents, so both of their codes printed
+         * on top of each other on every page.
+         *
+         * Heights are in mm against A4 less the @page margins, deliberately a
+         * little under: short leaves the code slightly high, over spills an
+         * empty page after every sheet.
+         */
+        .page {
+            position: relative;
         }
-        .footer-text {
-            text-align: right;
-            padding-right: 10px;
-        }
+        .page-landscape { height: 198mm; }
+        .page-portrait  { height: 285mm; }
         .form-code {
-            text-align: right;
-            padding-right: 10px;
-            margin-top: 6px;
+            position: absolute;
+            bottom: 0;
+            right: 10px;
             font-size: 8px;
             color: gray;
             line-height: normal;
@@ -143,8 +149,10 @@
             ไม่พบข้อมูลการตรวจสอบสำหรับเงื่อนไขที่เลือก
         </div>
     @else
+        @php $pageClass = 'page page-' . (($orientation ?? 'landscape') === 'portrait' ? 'portrait' : 'landscape'); @endphp
         {{-- EMPLOYEES --}}
         @foreach($employeeChunks as $chunkIndex => $chunk)
+            <div class="{{ $pageClass }}">
             @include('reports.pdf._header')
             
             {{-- Each page holds one department, so it can say which. An auditor
@@ -260,12 +268,13 @@
 
             @include('reports.pdf._signatures')
 
-            {{-- The form code belongs to the section, not to the paper. Both
-                 used to be emitted as position:fixed footers, which dompdf
-                 repeats on EVERY page - so a report containing both sections
-                 printed FM-QA-03/01 and FM-QA-22 on top of each other, on
-                 every page, each of them wrong on half of them. --}}
+            {{-- The code belongs to the section, not to the document. Both
+                 sections' codes used to be emitted as position:fixed footers,
+                 which dompdf repeats on EVERY page - so a report containing
+                 both printed them on top of each other, on every page, each
+                 of them wrong on half the pages it appeared on. --}}
             <div class="form-code">FM-QA-03/01 Rev.03 Effective 26 Nov. 2021</div>
+            </div>
 
             @if(!($loop->last && empty($areaMachineChunks)))
                 <div style="page-break-after: always;"></div>
@@ -274,6 +283,7 @@
 
         {{-- AREA AND MACHINES (UNIFIED) --}}
         @foreach($areaMachineChunks as $chunkIndex => $chunk)
+            <div class="{{ $pageClass }}">
             @include('reports.pdf._header')
             
             {{-- Numbered by what is actually on the form. When only this
@@ -391,6 +401,7 @@
             @include('reports.pdf._signatures')
 
             <div class="form-code">FM-QA-22 Rev.01 Effective 1 Sep.2025</div>
+            </div>
 
             @if(!$loop->last)
                 <div style="page-break-after: always;"></div>

@@ -196,3 +196,29 @@ it('prints one form code per page, the one that page belongs to', function () {
     expect(substr_count($html, 'FM-QA-03/01'))->toBe(count($captured['employeeChunks']))
         ->and(substr_count($html, 'FM-QA-22'))->toBe(count($captured['areaMachineChunks']));
 });
+
+/**
+ * The code has to sit at the bottom-right of the paper, which means the page
+ * needs a height - a short page left it floating halfway up the sheet.
+ */
+it('gives each page a height so the form code can sit on its bottom corner', function () {
+    personIn($this, $this->production, 'กาญจนา งามญาติ');
+
+    foreach (['landscape' => 'page-landscape', 'portrait' => 'page-portrait'] as $orientation => $expected) {
+        $captured = [];
+        View::composer('reports.pdf.daily', function ($view) use (&$captured) {
+            $captured = $view->getData();
+        });
+
+        $this->actingAs($this->admin)->get(route('reports.export.pdf', [
+            'date' => '2026-10-02', 'report_type' => 'all', 'orientation' => $orientation,
+        ]))->assertSuccessful();
+
+        $html = view('reports.pdf.daily', $captured)->render();
+
+        // toContain() takes needles, not a message - a second argument here
+        // would quietly become another string to look for.
+        expect($html)->toContain($expected)
+            ->and($html)->not->toContain('position: fixed');
+    }
+});

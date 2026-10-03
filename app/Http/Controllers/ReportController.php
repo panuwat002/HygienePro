@@ -647,7 +647,11 @@ class ReportController extends Controller
             'approvers',
             'recordedAt',
             'verifiedAt',
-            'approvedAt'
+            'approvedAt',
+            // The form code is pinned to the bottom of each page, which means
+            // the page has to have a height - and that depends on which way up
+            // the paper is.
+            'orientation'
         ));
         
         $pdf->setPaper('a4', $orientation);
