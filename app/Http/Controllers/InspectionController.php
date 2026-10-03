@@ -1729,18 +1729,17 @@ class InspectionController extends Controller
 
         $employee = Employee::find($request->employee_id);
 
-        if (!empty($failedItems)) {
-            try {
-                \Illuminate\Support\Facades\Notification::route(\App\Channels\LineMessagingChannel::class, '')
-                    ->notify(new \App\Notifications\InspectionFailedLineNotification(
-                        $employee->fullname,
-                        $session->department->dept_name ?? 'ไม่ระบุ',
-                        $failedItems
-                    ));
-            } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::error('LINE Failed Notification Error: ' . $e->getMessage());
-            }
-        }
+        // No LINE push per failing employee any more.
+        //
+        // This fired once for every person recorded with a failure, so a round
+        // where twenty failed spent twenty of the channel's 300 messages a
+        // month - and a refusal is logged and swallowed, so the alerts would
+        // stop arriving with nothing on screen to say so, exactly when hygiene
+        // was worst. The round's summary now names everyone who failed and
+        // what they failed on, in one message whose cost does not move.
+        //
+        // Nothing else changes: the CAR is still opened here, and the people
+        // responsible are still told in-app and by email either way.
 
         // Auto-update employee's master shift to match the latest inspected session's shift
         $shiftModel = \App\Models\Shift::whereRaw('LOWER(shift_name) = ?', [strtolower($session->shift)])->first();
