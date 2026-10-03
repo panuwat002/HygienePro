@@ -110,6 +110,14 @@
             text-align: right;
             padding-right: 10px;
         }
+        .form-code {
+            text-align: right;
+            padding-right: 10px;
+            margin-top: 6px;
+            font-size: 8px;
+            color: gray;
+            line-height: normal;
+        }
         .remarks {
             margin-top: 2px;
             font-size: 8px;
@@ -136,12 +144,6 @@
         </div>
     @else
         {{-- EMPLOYEES --}}
-        @if(count($employeeChunks) > 0)
-            <div class="footer">
-                <div class="footer-text">FM-QA-03/01 Rev.03 Effective 26 Nov. 2021</div>
-            </div>
-        @endif
-        
         @foreach($employeeChunks as $chunkIndex => $chunk)
             @include('reports.pdf._header')
             
@@ -258,18 +260,19 @@
 
             @include('reports.pdf._signatures')
 
+            {{-- The form code belongs to the section, not to the paper. Both
+                 used to be emitted as position:fixed footers, which dompdf
+                 repeats on EVERY page - so a report containing both sections
+                 printed FM-QA-03/01 and FM-QA-22 on top of each other, on
+                 every page, each of them wrong on half of them. --}}
+            <div class="form-code">FM-QA-03/01 Rev.03 Effective 26 Nov. 2021</div>
+
             @if(!($loop->last && empty($areaMachineChunks)))
                 <div style="page-break-after: always;"></div>
             @endif
         @endforeach
 
         {{-- AREA AND MACHINES (UNIFIED) --}}
-        @if(count($areaMachineChunks) > 0)
-            <div class="footer">
-                <div class="footer-text">FM-QA-22 Rev.01 Effective 1 Sep.2025</div>
-            </div>
-        @endif
-        
         @foreach($areaMachineChunks as $chunkIndex => $chunk)
             @include('reports.pdf._header')
             
@@ -386,7 +389,9 @@
             </table>
 
             @include('reports.pdf._signatures')
-            
+
+            <div class="form-code">FM-QA-22 Rev.01 Effective 1 Sep.2025</div>
+
             @if(!$loop->last)
                 <div style="page-break-after: always;"></div>
             @endif

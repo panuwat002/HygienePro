@@ -168,3 +168,31 @@ it('names the department on each page of the form', function () {
     expect($html)->toContain('แผนก Production (ห้องแคะ)')
         ->and($html)->toContain('แผนก Production');
 });
+
+/**
+ * Each section of the form carries its own controlled-document code. Both were
+ * emitted as position:fixed footers, and dompdf repeats a fixed element on
+ * every page - so a report containing both sections printed the two codes on
+ * top of each other, on every page, each wrong on half of them.
+ */
+it('prints one form code per page, the one that page belongs to', function () {
+    personIn($this, $this->production, 'กาญจนา งามญาติ');
+
+    $captured = [];
+    View::composer('reports.pdf.daily', function ($view) use (&$captured) {
+        $captured = $view->getData();
+    });
+
+    $this->actingAs($this->admin)->get(route('reports.export.pdf', [
+        'date' => '2026-10-02', 'report_type' => 'all',
+    ]))->assertSuccessful();
+
+    $html = view('reports.pdf.daily', $captured)->render();
+
+    // No page-wide fixed footer survives to be repeated over the other section.
+    expect($html)->not->toContain('class="footer"');
+
+    // The personal hygiene page carries its own code, once per page.
+    expect(substr_count($html, 'FM-QA-03/01'))->toBe(count($captured['employeeChunks']))
+        ->and(substr_count($html, 'FM-QA-22'))->toBe(count($captured['areaMachineChunks']));
+});
