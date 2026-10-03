@@ -42,11 +42,11 @@
                     @endphp
                     <img src="{{ $sigPath }}" style="max-height: 18px;"><br>
                     @if($recAt)
-                        <span style="font-size: 8px; color: #555;">{{ $recAt->format('d/m/Y H:i') }}</span>
+                        <span style="font-size: 8px; color: #555;">{{ $recAt->format('d/m/Y') }}</span>
                     @endif
                 @else
                     <span style="font-size: 11px; font-weight: bold; color: #333;">{{ $firstInspector->name }}</span><br>
-                    <span style="font-size: 8px; color: #666;">(Digital Record)@if($recAt) {{ $recAt->format('d/m/Y H:i') }}@endif</span>
+                    <span style="font-size: 8px; color: #666;">(Digital Record)@if($recAt) {{ $recAt->format('d/m/Y') }}@endif</span>
                 @endif
             @endif
         </div>
@@ -73,11 +73,11 @@
                     @endphp
                     <img src="{{ $sigPath2 }}" style="max-height: 18px;"><br>
                     @if($verAt)
-                        <span style="font-size: 8px; color: #555;">{{ $verAt->format('d/m/Y H:i') }}</span>
+                        <span style="font-size: 8px; color: #555;">{{ $verAt->format('d/m/Y') }}</span>
                     @endif
                 @else
                     <span style="font-size: 11px; font-weight: bold; color: #198754;">{{ $firstVerifier->name ?? 'Verified' }}</span><br>
-                    <span style="font-size: 8px; color: #198754;">(Digital Verified)@if($verAt) {{ $verAt->format('d/m/Y H:i') }}@endif</span>
+                    <span style="font-size: 8px; color: #198754;">(Digital Verified)@if($verAt) {{ $verAt->format('d/m/Y') }}@endif</span>
                 @endif
             @endif
         </div>
@@ -104,11 +104,11 @@
                     @endphp
                     <img src="{{ $sigPath3 }}" style="max-height: 18px;"><br>
                     @if($appAt)
-                        <span style="font-size: 8px; color: #555;">{{ $appAt->format('d/m/Y H:i') }}</span>
+                        <span style="font-size: 8px; color: #555;">{{ $appAt->format('d/m/Y') }}</span>
                     @endif
                 @else
                     <span style="font-size: 11px; font-weight: bold; color: #0d6efd;">{{ $firstApprover->name ?? 'Approved' }}</span><br>
-                    <span style="font-size: 8px; color: #0d6efd;">(Digital Approved)@if($appAt) {{ $appAt->format('d/m/Y H:i') }}@endif</span>
+                    <span style="font-size: 8px; color: #0d6efd;">(Digital Approved)@if($appAt) {{ $appAt->format('d/m/Y') }}@endif</span>
                 @endif
             @endif
         </div>

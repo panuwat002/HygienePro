@@ -285,19 +285,21 @@ class InspectionWorkflowAuditFixesTest extends TestCase
         // 3. Recorder: Shows Thai name and timestamp
         $this->assertStringContainsString('น.ส. การะเกด จันทอน', $rendered);
         $this->assertStringContainsString('(Digital Record)', $rendered);
-        $this->assertStringContainsString('16/09/2026 08:54', $rendered);
+        $this->assertStringContainsString('16/09/2026', $rendered);
+        // The stamp carries the date the form was signed, not the minute.
+        $this->assertStringNotContainsString('08:54', $rendered);
 
         // 4. Verifier: Shows Verified stamp, verifier name, and verified timestamp
         $this->assertStringContainsString('Verified', $rendered);
         $this->assertStringContainsString('(Digital Verified)', $rendered);
         $this->assertStringContainsString('Ms. Ketmanee Tansayan', $rendered);
-        $this->assertStringContainsString('16/09/2026 09:30', $rendered);
+        $this->assertStringNotContainsString('09:30', $rendered);
 
         // 5. Approver: Shows Approved stamp, approver name, and approved timestamp
         $this->assertStringContainsString('Approved', $rendered);
         $this->assertStringContainsString('(Digital Approved)', $rendered);
         $this->assertStringContainsString('Dr. QA Manager', $rendered);
-        $this->assertStringContainsString('16/09/2026 10:15', $rendered);
+        $this->assertStringNotContainsString('10:15', $rendered);
 
         // 6. Must NOT use position: absolute or position: relative which caused text overlapping in DomPDF
         $this->assertStringNotContainsString('position: absolute', $rendered);

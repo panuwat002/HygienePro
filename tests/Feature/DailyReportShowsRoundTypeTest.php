@@ -133,3 +133,27 @@ it('still numbers it 2 when personal hygiene is printed above it', function () {
     expect(count($captured['employeeChunks']))->toBeGreaterThan(0)
         ->and(count($captured['areaMachineChunks']))->toBeGreaterThan(0);
 });
+
+/**
+ * The signature block is a stamp on a controlled form. The people signing it
+ * date it; the minute they happened to press the button is not part of the
+ * record and only invited questions about why two signatures were five
+ * minutes apart.
+ */
+it('dates the signature block without stamping a time on it', function () {
+    $captured = [];
+
+    Illuminate\Support\Facades\View::composer('reports.pdf.daily', function ($view) use (&$captured) {
+        $captured = $view->getData();
+    });
+
+    $this->actingAs($this->admin)->get(route('reports.export.pdf', [
+        'date' => '2026-09-25',
+        'report_type' => 'all',
+    ]))->assertSuccessful();
+
+    $html = view('reports.pdf.daily', $captured)->render();
+
+    expect($html)->toContain('25/09/2026')
+        ->and($html)->not->toMatch('/\(Digital (Record|Verified|Approved)\)\s*\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/');
+});
