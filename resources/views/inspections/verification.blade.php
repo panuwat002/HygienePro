@@ -1169,9 +1169,7 @@ document.addEventListener('DOMContentLoaded', () => {
 </div>
 
 @push('scripts')
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-<script src="https://npmcdn.com/flatpickr/dist/l10n/th.js"></script>
+{{-- flatpickr and its Thai locale are loaded by the layout for every page. --}}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         flatpickr(".flatpickr-range", {

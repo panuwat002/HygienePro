@@ -507,6 +507,42 @@
     
     <!-- Third-party Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    {{-- <input type="date"> is drawn by the browser in the machine's own
+         locale, so on these PCs every date field read MM/DD/YYYY: 10/03/2026
+         for the third of October. On a system whose records are evidence,
+         a date nobody can read one way is not a small thing.
+
+         Flatpickr shows d/m/Y and submits Y-m-d, so nothing server-side
+         changes. Loaded here rather than per page so a date field added
+         later is covered without anyone remembering to. --}}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/th.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('input[type="date"]').forEach(function (input) {
+                flatpickr(input, {
+                    // What the form posts. Unchanged.
+                    dateFormat: 'Y-m-d',
+                    // What the person reads.
+                    altInput: true,
+                    altFormat: 'd/m/Y',
+                    locale: 'th',
+                    allowInput: true,
+                    // Carried across from the markup: flatpickr does not read
+                    // these attributes itself, and corrective/index.blade.php
+                    // uses min to stop a due date landing in the past.
+                    minDate: input.getAttribute('min') || null,
+                    maxDate: input.getAttribute('max') || null,
+                    // No onChange handler here on purpose. Flatpickr already
+                    // dispatches change on the original input, so a field with
+                    // onchange="this.form.submit()" - the compliance page -
+                    // still submits; dispatching it again submits twice.
+                });
+            });
+        });
+    </script>
     
     <!-- Global Session Notification (SweetAlert2 Toast) -->
     <script>
