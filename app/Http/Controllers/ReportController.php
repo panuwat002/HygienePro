@@ -458,9 +458,24 @@ class ReportController extends Controller
         $machineMatrix = $filterNoAction($machineMatrix);
         $areaMatrix = $filterNoAction($areaMatrix);
         
-        // Sort matrices by info name for cleaner report presentation
-        uasort($employeeMatrix, function($a, $b) {
-            return strcmp($a['info']->fullname ?? $a['info']->fname ?? '', $b['info']->fullname ?? $b['info']->fname ?? ''); // Sort alphabetically by fullname
+        // Stamp each row with the department it will be printed under, decided
+        // once here rather than in the view, so the grouping below and the
+        // แผนก column can never disagree about which department a row is in.
+        foreach ($employeeMatrix as $empId => $row) {
+            $employeeMatrix[$empId]['department_label'] =
+                $row['session']->department->dept_name
+                ?? $row['info']->department->dept_name
+                ?? 'ไม่ระบุแผนก';
+        }
+
+        // Department first, then name. Sorting by name alone interleaved every
+        // department: Thai names run ก→ฮ across the whole report, so one page
+        // held Production, QA and ห้องแคะ in turn - and because ห้องแคะ does
+        // not pass through an air shower, its N/A scattered down the
+        // ผ่านตู้เป่าลม column between other departments' ticks.
+        uasort($employeeMatrix, function ($a, $b) {
+            return [$a['department_label'], $a['info']->fullname ?? $a['info']->fname ?? '']
+               <=> [$b['department_label'], $b['info']->fullname ?? $b['info']->fname ?? ''];
         });
 
         // Resolve individual Employee Schedule (Roster) shift for each employee for $date
@@ -603,7 +618,18 @@ class ReportController extends Controller
 
         // Chunk data for pagination (prevent overflow into signatures by reducing perPage)
         $perPage = 18;
-        $employeeChunks = array_chunk($employeeMatrix, $perPage, true);
+
+        // Paginated within each department rather than across the report, so a
+        // page is always one department's form. A department that needs two
+        // pages gets two; one with three people gets a page of its own. That
+        // is the price of a sheet an auditor can read as a single work area's
+        // record, which is what it is signed as.
+        $employeeChunks = [];
+        foreach (collect($employeeMatrix)->groupBy('department_label') as $rows) {
+            foreach (array_chunk($rows->all(), $perPage, true) as $chunk) {
+                $employeeChunks[] = $chunk;
+            }
+        }
         $areaMachineChunks = array_chunk($flattenedAreaMachine, $perPage, true);
 
         $pdf = Pdf::loadView('reports.pdf.daily', compact(

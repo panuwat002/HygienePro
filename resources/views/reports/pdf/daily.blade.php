@@ -145,7 +145,10 @@
         @foreach($employeeChunks as $chunkIndex => $chunk)
             @include('reports.pdf._header')
             
-            <div class="section-title">1. สุขลักษณะส่วนบุคคล (Personal Hygiene)</div>
+            {{-- Each page holds one department, so it can say which. An auditor
+                 reads this sheet as that work area's record. --}}
+            @php $chunkDepartment = collect($chunk)->first()['department_label'] ?? null; @endphp
+            <div class="section-title">1. สุขลักษณะส่วนบุคคล (Personal Hygiene)@if($chunkDepartment) &nbsp;—&nbsp; แผนก {{ $chunkDepartment }}@endif</div>
             <table>
                 <thead>
                     <tr>
@@ -169,7 +172,9 @@
                         <tr>
                             <td>{{ $i++ }}</td>
                             <td class="text-left">{{ $data['info']->fullname ?? $data['info']->fname }}</td>
-                            <td>{{ $data['session']->department->dept_name ?? $data['info']->department->dept_name ?? '-' }}</td>
+                            {{-- The label the controller grouped this page by, so the
+                                 column and the grouping cannot disagree. --}}
+                            <td>{{ $data['department_label'] ?? $data['session']->department->dept_name ?? $data['info']->department->dept_name ?? '-' }}</td>
                             @php
                                 $thaiShift = $data['roster_shift'] ?? ($data['session'] ? $data['session']->shift_label : '-');
                             @endphp
