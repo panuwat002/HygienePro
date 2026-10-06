@@ -135,16 +135,25 @@ it('still closes an action QA had already verified', function () {
 });
 
 /**
- * Approving the round still works - it just stops making a claim about work it
- * has no evidence for. The finding stays on the Issues page where somebody can
- * still act on it.
+ * Reversed on 2026-10-06 after UAT. This used to assert that approving the
+ * round went ahead and left the finding standing - approval accepts the
+ * result, closing a CAR says the problem is fixed, two different statements.
+ *
+ * In use that was wrong, for a reason the separation missed: a card holds a
+ * whole round, so approving it swept the unfixed finding along with twenty
+ * clean results, and once every log in a session is approved the session
+ * locks - and a locked session refuses new logs, so the re-clean could never
+ * be recorded against the round it belonged to.
+ *
+ * The clean results are still approved. The finding is held back until
+ * somebody has actually acted on it.
  */
-it('approves the round regardless, and leaves the finding standing', function () {
+it('holds the finding back rather than signing it off unfixed', function () {
     $car = carAt($this, 'open');
 
     approveTheRound($this);
 
-    expect($this->log->refresh()->verification_status)->toBe('approved')
+    expect($this->log->refresh()->verification_status)->not->toBe('approved')
         ->and($car->refresh()->status)->toBe('open');
 });
 

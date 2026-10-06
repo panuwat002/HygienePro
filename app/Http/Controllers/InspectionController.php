@@ -2385,6 +2385,29 @@ class InspectionController extends Controller
             return back()->with('error', 'เซสชันนี้ถูกล็อคแล้ว ไม่สามารถอนุมัติเพิ่มได้ (Session Locked)');
         }
 
+        // A card holds a whole round - ten people who passed and the one who did
+        // not, or a room's twenty-six clean machines and its dirty floor - and
+        // approval ran over every log in it. So one press signed off a finding
+        // that nobody had touched, and because the session locks once every log
+        // is approved, the re-clean could then never be recorded against it.
+        //
+        // Everything that can be approved still is. What is held back is only a
+        // failure whose corrective action is still open, and the response says
+        // how many and why, so the round is not quietly half-done.
+        $unsettled = \App\Models\CorrectiveAction::whereIn('inspection_log_id', $approvedLogs->pluck('id'))
+            ->whereNotIn('status', ['resolved', 'verified', 'closed'])
+            ->pluck('inspection_log_id')
+            ->all();
+
+        $heldBack = $approvedLogs->whereIn('id', $unsettled);
+        $approvedLogs = $approvedLogs->whereNotIn('id', $unsettled);
+
+        if ($approvedLogs->isEmpty()) {
+            return back()->with('error',
+                'ยังอนุมัติไม่ได้ — ทุกรายการที่เลือกมีข้อบกพร่องที่ยังไม่ได้แก้ไข '
+                . 'กรุณาบันทึกการแก้ไขในหน้าติดตามการแก้ไข (Issues) ก่อน');
+        }
+
         // Approval is stamped in its own two columns.
         //
         // This used to write Auth::id() into verifier_id — the column that says
@@ -2460,6 +2483,14 @@ class InspectionController extends Controller
         $message = $fullyLockedSessions > 0
             ? 'อนุมัติเรียบร้อย และล็อคเซสชันที่ครบทุกรายการแล้ว (Approved & Locked)'
             : 'อนุมัติรายการที่เลือกเรียบร้อย (ยังมีรายการอื่นในเซสชันที่รออนุมัติ)';
+
+        // Said out loud. A card can hold one unfixed finding among twenty clean
+        // results, and a silent partial approval reads as a finished round.
+        if ($heldBack->isNotEmpty()) {
+            return back()->with('warning', 'อนุมัติแล้ว ' . $approvedLogs->count() . ' รายการ — '
+                . 'ค้างไว้ ' . $heldBack->count() . ' รายการที่ยังแก้ไขไม่เสร็จ '
+                . 'บันทึกการแก้ไขในหน้าติดตามการแก้ไข (Issues) แล้วค่อยกลับมาอนุมัติ');
+        }
 
         return back()->with('success', $message);
     }
