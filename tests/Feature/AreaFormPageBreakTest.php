@@ -124,3 +124,62 @@ it('copes with a room that has no machines', function () {
     expect($pages)->toHaveCount(1)
         ->and($pages[0])->toHaveCount(1);
 });
+
+/**
+ * The first rule, applied alone, wasted paper: a room that would not fit in
+ * what was left was moved over whole, leaving half a page blank behind it.
+ */
+it('splits a room to fill the page rather than leaving it blank', function () {
+    // 6 rows used, 12 left, then a room of 15.
+    $rows = array_merge(roomRows('ห้อง บรรจุน้ำขวด', 5), roomRows('ห้อง ลอกผิวมะพร้าว', 14));
+
+    $pages = pagesOf($rows);
+
+    expect(count($pages[0]))->toBe(18)
+        ->and(firstOf($pages[1])['continued'])->toBeTrue();
+});
+
+/**
+ * But not at any price: filling the page must not leave a heading with almost
+ * nothing under it, which is the fault this was all for.
+ */
+it('does not start a room at the foot of a page for one machine', function () {
+    // 16 rows used, 2 left: a header plus one machine is not worth starting.
+    $rows = array_merge(roomRows('ห้อง ก', 15), roomRows('ห้อง ข', 12));
+
+    $pages = pagesOf($rows);
+
+    expect(count($pages[0]))->toBe(16)
+        ->and(firstOf($pages[1])['info']->location_name)->toBe('ห้อง ข')
+        ->and(firstOf($pages[1]))->not->toHaveKey('continued');
+});
+
+/**
+ * Carrying a single machine over is allowed, and is the case that started
+ * this: the user's page 4 had twelve rows free and the next room was thirteen
+ * rows, so refusing to carry one machine left those twelve blank. A
+ * continuation at the top of a page is followed by the next room on the same
+ * page, so it costs nothing.
+ */
+it('carries a single machine over rather than wasting the page it came from', function () {
+    // 6 rows used, 12 left, then a room of 13.
+    $rows = array_merge(roomRows('ห้อง บรรจุน้ำขวด', 5), roomRows('ห้อง ลอกผิวมะพร้าว', 12));
+
+    $pages = pagesOf($rows);
+
+    expect(count($pages[0]))->toBe(18)
+        ->and(firstOf($pages[1])['continued'])->toBeTrue();
+});
+
+it('still never strands a heading, however the rooms fall', function () {
+    foreach ([[15, 12], [5, 12], [3, 14], [17, 4], [1, 40]] as [$first, $second]) {
+        $pages = pagesOf(array_merge(roomRows('ห้อง ก', $first), roomRows('ห้อง ข', $second)));
+
+        foreach ($pages as $page) {
+            // Every page that opens with a heading has machines under it.
+            if ($page[0]['type'] !== 'machine') {
+                expect(count($page))->toBeGreaterThanOrEqual(2);
+            }
+        }
+    }
+});

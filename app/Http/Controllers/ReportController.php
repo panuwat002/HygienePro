@@ -744,6 +744,20 @@ class ReportController extends Controller
     }
 
     /**
+     * A room is only started at the foot of a page if its header and at least
+     * two machines fit there. Less than that and the heading dominates the
+     * fragment, which is the fault this exists to remove.
+     *
+     * Carrying over is judged differently, and more leniently, because the two
+     * situations are not alike: a continuation at the TOP of a page is followed
+     * by the next room on that same page, so a header with one machine under
+     * it costs nothing and fills the page it came from. Requiring two there
+     * only left the previous page half blank.
+     */
+    private const AREA_ROWS_TO_START = 3;
+    private const AREA_ROWS_TO_CARRY = 1;
+
+    /**
      * Break the area form into pages that keep a room with its machines.
      *
      * It used to be array_chunk() every 18 rows, which counts rows and knows
@@ -751,10 +765,14 @@ class ReportController extends Controller
      * printed alone at the foot of the page with its machines overleaf - a
      * heading for a list that is not there, on a sheet somebody signs.
      *
-     * A room that will not fit in what is left of a page is moved to the next
-     * one whole. A room with more machines than fit on any page has to be
-     * split, so the continuation repeats its header, marked so that nobody
-     * reads it as a second room.
+     * A room that will not fit in what is left of a page is split to fill it
+     * where both halves are worth printing, and moved over whole where they
+     * are not - leaving a page half empty to keep a room together wastes a
+     * sheet, and splitting a room to leave a heading with one machine under it
+     * is the fault being fixed, reappearing a line lower.
+     *
+     * Where a room is split the continuation repeats its header, marked so
+     * nobody reads it as a second room.
      *
      * @param  array  $rows  the flattened area/machine rows, in print order
      * @param  int  $perPage
@@ -782,27 +800,30 @@ class ReportController extends Controller
             while ($room !== []) {
                 $spaceLeft = $perPage - count($page);
 
-                // Fits in what is left: keep the room together.
+                // Fits in what is left: place it and move on.
                 if (count($room) <= $spaceLeft) {
                     $page = array_merge($page, $room);
                     break;
                 }
 
-                // Does not fit here, but would fit on a page of its own: move
-                // the whole room over rather than splitting it.
-                if ($page !== [] && count($room) <= $perPage) {
-                    $pages[] = $page;
-                    $page = [];
-                    continue;
-                }
+                // Does not fit. Split it to fill the page, but only where both
+                // halves are worth printing: a header needs at least two
+                // machines under it to be worth starting here, and at least two
+                // to carry over - otherwise the page is filled at the cost of a
+                // heading with almost nothing beneath it, which is the fault
+                // this method exists to remove.
+                $worthStarting = $spaceLeft >= self::AREA_ROWS_TO_START;
+                $worthCarrying = (count($room) - $spaceLeft) >= self::AREA_ROWS_TO_CARRY;
 
-                // Longer than a page however it is placed. Never strand a
-                // header with nothing under it - if fewer than two rows are
-                // left, start the next page first.
-                if ($spaceLeft < 2) {
-                    $pages[] = $page;
-                    $page = [];
-                    continue;
+                if (! $worthStarting || ! $worthCarrying) {
+                    // Not worth splitting here. Start a fresh page - unless we
+                    // are already on one, in which case the room is simply
+                    // longer than a page and has to be cut somewhere.
+                    if ($page !== []) {
+                        $pages[] = $page;
+                        $page = [];
+                        continue;
+                    }
                 }
 
                 $pages[] = array_merge($page, array_slice($room, 0, $spaceLeft));
