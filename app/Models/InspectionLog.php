@@ -40,6 +40,42 @@ class InspectionLog extends Model
         'acknowledged_at' => 'datetime', // Gap 3
     ];
 
+    /**
+     * A log belongs to the day its round covers, not to the day it was typed.
+     *
+     * Nine separate places write a log with `'inspected_at' => now()` - the
+     * personnel flow, the bulk pass, and seven branches of the area flow - and
+     * a backdated round needs every one of them to land on the round's own
+     * date instead. Two places decide "has this target already been covered?"
+     * by matching inspected_at against the session's inspection_date, so a log
+     * left on the wrong day would make a round re-list people it had just
+     * inspected.
+     *
+     * Done here rather than at each call site because there are nine of them
+     * and the tenth would be written without remembering. The clock time is
+     * kept, and when the row was really typed is still in its own created_at.
+     *
+     * Not covered: InspectionLog::insert(), which bypasses model events -
+     * InspectionService::bulkPassRemaining() therefore asks the session for
+     * the moment itself.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (self $log) {
+            if (! $log->session_id) {
+                return;
+            }
+
+            $session = $log->relationLoaded('session')
+                ? $log->getRelation('session')
+                : InspectionSession::find($log->session_id);
+
+            if ($session?->isBackdated()) {
+                $log->inspected_at = $session->inspectionMoment();
+            }
+        });
+    }
+
     public function employee()
     {
         return $this->belongsTo(Employee::class);

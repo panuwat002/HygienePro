@@ -951,7 +951,13 @@ class InspectionController extends Controller
                 $request->boolean('force_new_round'),
                 $shiftToSave,
                 $request->boolean('is_sampling'),
-                $request->filled('sample_size') ? (int) $request->input('sample_size') : null
+                $request->filled('sample_size') ? (int) $request->input('sample_size') : null,
+                // Dating this round to an earlier day. The service decides
+                // whether it is allowed - who may, how far back, and whether a
+                // reason was given - so this path cannot hand itself an
+                // exemption.
+                $request->input('backdate_to'),
+                $request->input('backdate_reason')
             );
         } catch (\Illuminate\Validation\ValidationException $e) {
             return redirect()->route('inspection.dashboard', $type)

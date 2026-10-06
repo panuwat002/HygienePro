@@ -34,6 +34,8 @@ class InspectionSession extends Model
         'type', // Added type
         'department_id',
         'inspection_date',
+        'backdated_reason', // why this round covers a day other than the one it was typed on
+        'backdated_by',
         'shift',
         'round',
         'status',
@@ -103,6 +105,55 @@ class InspectionSession extends Model
     public function department()
     {
         return $this->belongsTo(Department::class);
+    }
+
+    /**
+     * How far back a round may be dated. Long enough to cover a roster that
+     * arrives late or a weekend in between; short enough that nobody can
+     * quietly fill in a month.
+     */
+    public const BACKDATE_LIMIT_DAYS = 7;
+
+    public function backdatedBy()
+    {
+        return $this->belongsTo(User::class, 'backdated_by');
+    }
+
+    /**
+     * Was this round entered on a day other than the one it covers?
+     *
+     * Derived rather than flagged: inspection_date is the day of the work and
+     * created_at is the day of the typing, so the two disagreeing IS the fact.
+     * A flag could be set without the dates moving, or moved without the flag.
+     */
+    public function isBackdated(): bool
+    {
+        if (! $this->inspection_date || ! $this->created_at) {
+            return false;
+        }
+
+        return $this->inspection_date->toDateString() !== $this->created_at->toDateString();
+    }
+
+    /**
+     * The moment a log written now should carry.
+     *
+     * For an ordinary round that is simply now(). For a backdated one it is
+     * the day the work covers, at the time of day it is being typed - because
+     * several places decide "has this person been inspected on this round's
+     * date?" by matching inspection_logs.inspected_at against
+     * inspection_sessions.inspection_date, and a round whose logs sat on a
+     * different day would re-list everybody it had already covered.
+     *
+     * When it was typed is not lost: that is the log's own created_at.
+     */
+    public function inspectionMoment(): \Illuminate\Support\Carbon
+    {
+        if (! $this->isBackdated()) {
+            return now();
+        }
+
+        return $this->inspection_date->copy()->setTimeFrom(now());
     }
 
     /**

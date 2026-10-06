@@ -20,8 +20,12 @@ class InspectionService
     /**
      * Start or Retrieve an active Inspection Session.
      */
-    public function startSession(User $user, int $departmentId, string $type, bool $forceNew = false, string $manualShift = null, bool $isSampling = false, ?int $sampleSize = null): InspectionSession
+    public function startSession(User $user, int $departmentId, string $type, bool $forceNew = false, string $manualShift = null, bool $isSampling = false, ?int $sampleSize = null, ?string $backdateTo = null, ?string $backdateReason = null): InspectionSession
     {
+        // A round for a day other than today. The rules live here rather than
+        // in the controller so no future caller can route around them.
+        $backdate = $this->resolveBackdate($user, $backdateTo, $backdateReason);
+
         // Personnel rounds must name the shift the inspector picked. Falling back to a
         // time-guessed generic key ('morning') makes the session target every shift of that
         // type at once, which bulk pass then sweeps in one click.
@@ -32,9 +36,15 @@ class InspectionService
         }
 
         $shift = $manualShift ?? \App\Models\Shift::detectCurrent();
-        $today = now()->hour < 6 ? now()->subDay()->toDateString() : now()->toDateString();
 
-        $session = DB::transaction(function () use ($user, $departmentId, $type, $today, $shift, $forceNew, $isSampling, $sampleSize) {
+        // The day this round covers. Normally the clock decides - a round
+        // started before 06:00 belongs to the previous day's work - but a
+        // round being entered late says which day it is for.
+        $today = $backdate
+            ? $backdate['date']
+            : (now()->hour < 6 ? now()->subDay()->toDateString() : now()->toDateString());
+
+        $session = DB::transaction(function () use ($user, $departmentId, $type, $today, $shift, $forceNew, $isSampling, $sampleSize, $backdate) {
             $session = InspectionSession::where('department_id', $departmentId)
                 ->whereDate('inspection_date', $today)
                 ->where('shift', $shift)
@@ -100,6 +110,8 @@ class InspectionService
                 'round' => $nextRound,
                 'is_sampling' => $isSampling,
                 'sample_size' => $sampleSize,
+                'backdated_reason' => $backdate['reason'] ?? null,
+                'backdated_by' => $backdate ? $user->id : null,
             ]);
         });
 
@@ -113,6 +125,75 @@ class InspectionService
         }
 
         return $session;
+    }
+
+    /**
+     * Check a request to date a round to an earlier day, and say what it means.
+     *
+     * Returns null for an ordinary round, or ['date' => ..., 'reason' => ...].
+     *
+     * Backdating is how a record survives the day it could not be entered -
+     * QA had no shift roster from Production on 5 Oct 2026, so there was no
+     * shift to pick and the day went unrecorded. It is also, pointed the wrong
+     * way, how an inspection record stops being worth anything. The guards are
+     * the difference:
+     *
+     *  - only somebody who may verify, which is the same bar as signing a
+     *    round off;
+     *  - a reason, in words, every time;
+     *  - no further back than BACKDATE_LIMIT_DAYS, and never into the future;
+     *  - and the form prints all of it, so the paper says what it is.
+     *
+     * @return array{date: string, reason: string}|null
+     */
+    private function resolveBackdate(User $user, ?string $date, ?string $reason): ?array
+    {
+        if (blank($date)) {
+            return null;
+        }
+
+        $businessToday = now()->hour < 6 ? now()->subDay()->startOfDay() : now()->startOfDay();
+
+        try {
+            $target = Carbon::parse($date)->startOfDay();
+        } catch (\Throwable $e) {
+            throw ValidationException::withMessages([
+                'backdate_to' => 'รูปแบบวันที่ไม่ถูกต้อง',
+            ]);
+        }
+
+        // Dating it to today is not backdating; let it through as an ordinary
+        // round so it carries no reason and no banner.
+        if ($target->equalTo($businessToday)) {
+            return null;
+        }
+
+        if (! $user->can('verify')) {
+            throw ValidationException::withMessages([
+                'backdate_to' => 'เฉพาะ QA หัวหน้าขึ้นไปเท่านั้นที่บันทึกย้อนหลังได้',
+            ]);
+        }
+
+        if ($target->greaterThan($businessToday)) {
+            throw ValidationException::withMessages([
+                'backdate_to' => 'บันทึกล่วงหน้าไม่ได้ เลือกได้เฉพาะวันที่ผ่านมาแล้ว',
+            ]);
+        }
+
+        $limit = InspectionSession::BACKDATE_LIMIT_DAYS;
+        if ($target->lessThan($businessToday->copy()->subDays($limit))) {
+            throw ValidationException::withMessages([
+                'backdate_to' => "บันทึกย้อนหลังได้ไม่เกิน {$limit} วัน",
+            ]);
+        }
+
+        if (mb_strlen(trim((string) $reason)) < 10) {
+            throw ValidationException::withMessages([
+                'backdate_reason' => 'กรุณาระบุเหตุผลที่บันทึกย้อนหลัง อย่างน้อย 10 ตัวอักษร',
+            ]);
+        }
+
+        return ['date' => $target->toDateString(), 'reason' => trim($reason)];
     }
 
     /**
@@ -711,7 +792,11 @@ class InspectionService
             }
 
             // 5. Build bulk insert data - respecting per-employee checkpoint assignments
-            $now = now();
+            //
+            // The round's own moment, not the clock: this path writes through
+            // InspectionLog::insert(), which bypasses the model event that
+            // backdates every other write.
+            $now = $session->inspectionMoment();
             $deptSnapshot = $session->department->dept_name ?? 'N/A';
             $bulkData = [];
 

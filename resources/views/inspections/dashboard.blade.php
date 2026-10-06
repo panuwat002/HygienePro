@@ -552,6 +552,52 @@
                         </div>
                         @endif
 
+                        {{-- บันทึกย้อนหลัง.
+                             Open to whoever may verify, which is the same bar as
+                             signing a round off, and never silent: the reason is
+                             required and the printed form carries it. --}}
+                        @can('verify')
+                        @php
+                            $backdateFloor = now()->subDays(\App\Models\InspectionSession::BACKDATE_LIMIT_DAYS)->toDateString();
+                            $backdateCeiling = now()->toDateString();
+                        @endphp
+                        <div class="card border-0 rounded-4 shadow-sm mb-4 bg-warning bg-opacity-10 border border-warning border-opacity-25">
+                            <div class="card-body p-3">
+                                <div class="form-check form-switch d-flex align-items-center justify-content-between ps-0 mb-0">
+                                    <label class="form-check-label fw-bold text-dark me-3" for="backdate_switch">
+                                        <i class="bi bi-calendar-event text-warning me-2 fs-5"></i>
+                                        บันทึกย้อนหลัง (Backdated Entry)
+                                        <small class="d-block text-muted fw-normal">
+                                            สำหรับการตรวจที่ทำไปแล้วแต่คีย์เข้าระบบไม่ได้ในวันนั้น — ย้อนได้ไม่เกิน
+                                            {{ \App\Models\InspectionSession::BACKDATE_LIMIT_DAYS }} วัน
+                                        </small>
+                                    </label>
+                                    <input class="form-check-input ms-0" type="checkbox" role="switch" id="backdate_switch"
+                                           onchange="document.getElementById('backdate_box').style.display = this.checked ? 'block' : 'none'; if(!this.checked){document.getElementById('backdate_to').value=''; document.getElementById('backdate_reason').value='';}">
+                                </div>
+
+                                <div id="backdate_box" class="mt-3" style="display: none;">
+                                    <div class="row g-2">
+                                        <div class="col-md-4">
+                                            <label for="backdate_to" class="form-label small fw-bold text-warning-emphasis">วันที่ของการตรวจ</label>
+                                            <input type="date" name="backdate_to" id="backdate_to" class="form-control form-control-sm"
+                                                   min="{{ $backdateFloor }}" max="{{ $backdateCeiling }}">
+                                        </div>
+                                        <div class="col-md-8">
+                                            <label for="backdate_reason" class="form-label small fw-bold text-warning-emphasis">เหตุผล (จะถูกพิมพ์ลงในแบบฟอร์ม)</label>
+                                            <input type="text" name="backdate_reason" id="backdate_reason" class="form-control form-control-sm"
+                                                   maxlength="255" placeholder="เช่น ได้รับตารางกะจากฝ่ายผลิตล่าช้า">
+                                        </div>
+                                    </div>
+                                    <div class="small text-muted mt-2">
+                                        <i class="bi bi-info-circle me-1"></i>
+                                        ฟอร์มที่พิมพ์ออกมาจะระบุว่าเป็นการบันทึกย้อนหลัง พร้อมวันที่คีย์จริงและเหตุผลนี้
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        @endcan
+
                         @if($type === 'personnel')
                         <div id="shift-required-hint" class="alert alert-warning border-0 rounded-4 mt-4 mb-0 d-none">
                             <i class="bi bi-hand-index-thumb me-2"></i>เลือกกะที่ต้องการตรวจจากการ์ดด้านบนก่อน จึงจะเริ่มการตรวจได้
