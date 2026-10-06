@@ -653,6 +653,10 @@ class ReportController extends Controller
                 $employeeChunks[] = $chunk;
             }
         }
+        // Measured across the whole report, not per page, so the columns line
+        // up when the pages are laid side by side.
+        $areaColumnWidths = $this->areaColumnWidths($flattenedAreaMachine);
+
         $areaMachineChunks = array_chunk($flattenedAreaMachine, $perPage, true);
 
         $pdf = Pdf::loadView('reports.pdf.daily', compact(
@@ -661,6 +665,7 @@ class ReportController extends Controller
             'areaMachineChunks',
             'personCheckpoints',
             'personColumnWidths',
+            'areaColumnWidths',
             'assignedCheckpointsByEmployee',
             'areaMachineCheckpoints',
             'date', 
@@ -723,23 +728,89 @@ class ReportController extends Controller
      */
     private function nameAndDepartmentWidths(array $employeeMatrix): array
     {
+        return $this->columnWidthsFor(
+            array_map(
+                fn ($row) => $row['info']->fullname ?? $row['info']->fname ?? '',
+                $employeeMatrix
+            ),
+            array_map(
+                fn ($row) => $row['department_label']
+                    ?? $row['session']->department->dept_name
+                    ?? $row['info']->department->dept_name
+                    ?? '',
+                $employeeMatrix
+            )
+        );
+    }
+
+    /**
+     * The same split for the area and machine table.
+     *
+     * It was fixed at 40% and 8%, and 8% is not enough for
+     * "Production (ห้องแคะ)" - so the department wrapped onto two lines and
+     * every row on the sheet grew to match, while the 40% beside it sat half
+     * empty on a report of short machine names.
+     *
+     * Machine rows are printed indented and prefixed with "- ", so they are
+     * measured two characters wider than they read.
+     *
+     * @param  array  $rows  the flattened area/machine rows
+     * @return array{name: float, department: float}
+     */
+    private function areaColumnWidths(array $rows): array
+    {
+        return $this->columnWidthsFor(
+            array_map(
+                fn ($row) => $row['type'] === 'machine'
+                    ? '- ' . ($row['info']->name ?? '')
+                    : ($row['info']->location_name ?? ''),
+                $rows
+            ),
+            array_map(fn ($row) => $row['department_label'] ?? '', $rows),
+            // This table carries three checkpoint columns rather than ten, and
+            // two wide text columns after them, so it can afford more here.
+            maxTogether: 46.0
+        );
+    }
+
+    /**
+     * Width for a name column and a department column beside it, as
+     * percentages, each asking for what its longest entry needs and no more.
+     *
+     * Whatever neither uses goes to the checkpoint columns, whose headers wrap
+     * onto two lines when they are squeezed. An earlier version split a fixed
+     * budget between the two, which kept the department on one line but left a
+     * third of the name column empty on a report full of short names.
+     *
+     * Thai combining marks - the vowels and tones that sit above and below -
+     * are not counted: they take no horizontal space, and counting them made
+     * every Thai name read as a quarter longer than it prints.
+     *
+     * @param  array<int, string>  $names
+     * @param  array<int, string>  $departments
+     * @return array{name: float, department: float}
+     */
+    private function columnWidthsFor(
+        array $names,
+        array $departments,
+        float $minName = 10.0,
+        float $minDepartment = 7.0,
+        float $maxTogether = 34.0
+    ): array {
         // Roughly one character of the 8px table font, as a share of the page.
         $perCharacter = 0.75;
         $padding = 1.5;
 
-        $minName = 10.0;
-        $minDepartment = 7.0;
-        // A pathological entry must not crush the checkpoints, which are the
-        // part somebody actually has to tick.
-        $maxTogether = 34.0;
-
-        $longest = function (callable $pick) use ($employeeMatrix): int {
+        $longest = function (array $values): int {
             $max = 0;
-            foreach ($employeeMatrix as $row) {
-                $text = trim((string) $pick($row));
+            foreach ($values as $value) {
                 // U+0E31, U+0E34-U+0E3A, U+0E47-U+0E4E render above or below the
                 // preceding consonant rather than beside it.
-                $spacing = preg_replace('/[\x{0E31}\x{0E34}-\x{0E3A}\x{0E47}-\x{0E4E}]/u', '', $text);
+                $spacing = preg_replace(
+                    '/[\x{0E31}\x{0E34}-\x{0E3A}\x{0E47}-\x{0E4E}]/u',
+                    '',
+                    trim((string) $value)
+                );
                 $max = max($max, mb_strlen($spacing));
             }
 
@@ -748,17 +819,12 @@ class ReportController extends Controller
 
         $needed = fn (int $characters) => $characters * $perCharacter + $padding;
 
-        $name = max($minName, $needed($longest(
-            fn ($row) => $row['info']->fullname ?? $row['info']->fname ?? ''
-        )));
+        $name = max($minName, $needed($longest($names)));
+        $department = max($minDepartment, $needed($longest($departments)));
 
-        $department = max($minDepartment, $needed($longest(
-            fn ($row) => $row['session']->department->dept_name
-                ?? $row['info']->department->dept_name
-                ?? ''
-        )));
-
-        // Scale both back together if they overrun, so neither is singled out.
+        // A pathological entry must not crush the checkpoints, which are the
+        // part somebody actually has to tick. Scale both back together if they
+        // overrun, so neither is singled out.
         if ($name + $department > $maxTogether) {
             $scale = $maxTogether / ($name + $department);
             $name *= $scale;

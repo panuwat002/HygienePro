@@ -294,8 +294,13 @@
                 <thead>
                     <tr>
                         <th rowspan="2" style="width: 5%">ลำดับ</th>
-                        <th rowspan="2" style="width: 40%">พื้นที่ / เครื่องจักร (Location/Machine)</th>
-                        <th rowspan="2" style="width: 8%">แผนก</th>
+                        {{-- Sized to the longest machine name and the longest
+                             department on the report. 40% and 8% were fixed, and 8%
+                             cannot hold "Production (ห้องแคะ)" - so it wrapped onto
+                             two lines and every row grew to match, while the 40%
+                             beside it sat half empty. --}}
+                        <th rowspan="2" style="width: {{ $areaColumnWidths['name'] ?? 40 }}%">พื้นที่ / เครื่องจักร (Location/Machine)</th>
+                        <th rowspan="2" style="width: {{ $areaColumnWidths['department'] ?? 8 }}%">แผนก</th>
                         <th colspan="{{ count($areaMachineCheckpoints) }}">รายการตรวจ (Checkpoints)</th>
                         <th rowspan="2" style="width: 18%">ผลการแก้ไข</th>
                         <th rowspan="2" style="width: 12%">หมายเหตุ</th>
