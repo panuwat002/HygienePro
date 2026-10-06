@@ -93,6 +93,15 @@
                                     @php
                                         $round = 'รอบที่ ' . $audit->session->round . ' (' . $audit->session->type . ')';
                                     @endphp
+                                    {{-- An audit answered by a backdated round was carried out,
+                                         but the record of it arrived later. Saying so keeps
+                                         "ตรวจแล้ว" from meaning two different things. --}}
+                                    @if($audit->session->isBackdated())
+                                        <span class="badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle d-block mb-1"
+                                              title="{{ $audit->session->backdated_reason }}">
+                                            <i class="bi bi-calendar-event me-1"></i>บันทึกย้อนหลัง {{ $audit->session->created_at->format('d/m/Y') }}
+                                        </span>
+                                    @endif
                                     {{-- A department supervisor may be told to do an audit
                                          without being allowed to pull reports, so the round
                                          is named either way and only linked when it opens. --}}

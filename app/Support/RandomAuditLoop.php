@@ -45,7 +45,22 @@ class RandomAuditLoop
         }
 
         return DB::transaction(function () use ($session, $user) {
-            $candidates = RandomAudit::open()
+            // A round entered for an earlier day can also revive an audit this
+            // system has already written off. closeMissed() retires an audit at
+            // 07:00 the morning after its date, which is exactly when a round
+            // delayed by a late shift roster is still waiting to be typed - so
+            // without this, recording that day's work left the audit standing
+            // as 'ไม่ได้ตรวจ' against a department that had in fact done it.
+            //
+            // Only a backdated round: a round for today cannot answer for an
+            // audit drawn for last week, and backdating already requires
+            // somebody who may verify, a reason in words, and a day within the
+            // last seven.
+            $statuses = $session->isBackdated()
+                ? [RandomAudit::PENDING, RandomAudit::IN_PROGRESS, RandomAudit::MISSED]
+                : [RandomAudit::PENDING, RandomAudit::IN_PROGRESS];
+
+            $candidates = RandomAudit::whereIn('status', $statuses)
                 ->where('department_id', $session->department_id)
                 ->whereDate('audit_date', $session->inspection_date)
                 ->lockForUpdate()
@@ -131,7 +146,9 @@ class RandomAuditLoop
             return false;
         }
 
-        if ($audit->status === RandomAudit::PENDING) {
+        // Nothing is part-way through either of these, so neither is being
+        // taken off anybody.
+        if (in_array($audit->status, [RandomAudit::PENDING, RandomAudit::MISSED], true)) {
             return true;
         }
 
