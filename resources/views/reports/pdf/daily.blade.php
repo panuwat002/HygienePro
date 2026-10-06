@@ -325,12 +325,15 @@
                 <tbody>
                     @foreach($chunk as $data)
                         <tr style="{{ $data['type'] === 'area_header' || $data['type'] === 'area' ? 'background-color: #f9fafb; font-weight: bold;' : '' }}">
-                            <td>{{ $data['type'] === 'machine' ? '' : $j++ }}</td>
+                            {{-- A repeated header keeps the room's own number rather
+                                 than taking the next one, which would read as a new
+                                 room. --}}
+                            <td>{{ $data['type'] === 'machine' ? '' : (empty($data['continued']) ? $j++ : '') }}</td>
                             <td class="text-left" style="padding-left: {{ $data['type'] === 'machine' ? '15px' : '2px' }}">
                                 @if($data['type'] === 'machine')
                                     - {{ $data['info']->name }}
                                 @else
-                                    {{ $data['info']->location_name }}
+                                    {{ $data['info']->location_name }}@if(!empty($data['continued'])) <span style="font-weight: normal;">(ต่อ)</span>@endif
                                 @endif
                             </td>
                             {{-- The department that runs the room, not the one that

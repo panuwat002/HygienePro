@@ -657,7 +657,7 @@ class ReportController extends Controller
         // up when the pages are laid side by side.
         $areaColumnWidths = $this->areaColumnWidths($flattenedAreaMachine);
 
-        $areaMachineChunks = array_chunk($flattenedAreaMachine, $perPage, true);
+        $areaMachineChunks = $this->chunkAreaRowsByRoom($flattenedAreaMachine, $perPage);
 
         $pdf = Pdf::loadView('reports.pdf.daily', compact(
             'sessions', 
@@ -741,6 +741,85 @@ class ReportController extends Controller
                 $employeeMatrix
             )
         );
+    }
+
+    /**
+     * Break the area form into pages that keep a room with its machines.
+     *
+     * It used to be array_chunk() every 18 rows, which counts rows and knows
+     * nothing about what they are. A room whose header landed on row 18 was
+     * printed alone at the foot of the page with its machines overleaf - a
+     * heading for a list that is not there, on a sheet somebody signs.
+     *
+     * A room that will not fit in what is left of a page is moved to the next
+     * one whole. A room with more machines than fit on any page has to be
+     * split, so the continuation repeats its header, marked so that nobody
+     * reads it as a second room.
+     *
+     * @param  array  $rows  the flattened area/machine rows, in print order
+     * @param  int  $perPage
+     * @return array<int, array>
+     */
+    private function chunkAreaRowsByRoom(array $rows, int $perPage): array
+    {
+        // Rebuild the rooms the flattening took apart: any non-machine row
+        // starts one, and machine rows belong to the room above them.
+        $rooms = [];
+        foreach ($rows as $row) {
+            if ($row['type'] !== 'machine' || $rooms === []) {
+                $rooms[] = [$row];
+            } else {
+                $rooms[array_key_last($rooms)][] = $row;
+            }
+        }
+
+        $pages = [];
+        $page = [];
+
+        foreach ($rooms as $room) {
+            $header = $room[0];
+
+            while ($room !== []) {
+                $spaceLeft = $perPage - count($page);
+
+                // Fits in what is left: keep the room together.
+                if (count($room) <= $spaceLeft) {
+                    $page = array_merge($page, $room);
+                    break;
+                }
+
+                // Does not fit here, but would fit on a page of its own: move
+                // the whole room over rather than splitting it.
+                if ($page !== [] && count($room) <= $perPage) {
+                    $pages[] = $page;
+                    $page = [];
+                    continue;
+                }
+
+                // Longer than a page however it is placed. Never strand a
+                // header with nothing under it - if fewer than two rows are
+                // left, start the next page first.
+                if ($spaceLeft < 2) {
+                    $pages[] = $page;
+                    $page = [];
+                    continue;
+                }
+
+                $pages[] = array_merge($page, array_slice($room, 0, $spaceLeft));
+                $page = [];
+
+                $room = array_slice($room, $spaceLeft);
+                if ($room !== []) {
+                    array_unshift($room, array_merge($header, ['continued' => true]));
+                }
+            }
+        }
+
+        if ($page !== []) {
+            $pages[] = $page;
+        }
+
+        return $pages;
     }
 
     /**
