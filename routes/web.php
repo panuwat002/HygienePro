@@ -163,6 +163,8 @@ Route::middleware('auth')->group(function () {
             Route::get('locations-bulk-map', [LocationController::class, 'showBulkMapping'])->name('locations.bulk-map');
             Route::post('locations-bulk-map', [LocationController::class, 'saveBulkMapping'])->name('locations.bulk-map.save');
             Route::post('machines-bulk-delete', [App\Http\Controllers\MachineController::class, 'destroyBulk'])->name('machines.bulk-delete');
+            // ย้ายหลายเครื่องจักรเข้าพื้นที่เดียวกัน — พื้นที่เป็นตัวกำหนดแผนกที่ดูแล จึงเป็นวิธีแก้แผนกของเครื่องจักร
+            Route::post('machines-bulk-location', [App\Http\Controllers\MachineController::class, 'assignLocationBulk'])->name('machines.bulk-location');
             Route::resource('machines', App\Http\Controllers\MachineController::class);
             Route::get('machines-export', [App\Http\Controllers\MachineController::class, 'export'])->name('machines.export');
             Route::post('machines-import', [App\Http\Controllers\MachineController::class, 'import'])->name('machines.import');

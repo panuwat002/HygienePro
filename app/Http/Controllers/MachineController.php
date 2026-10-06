@@ -35,7 +35,13 @@ class MachineController extends Controller implements HasMiddleware
         // stands in, and the list shows that rather than making it be taken on
         // trust. Eager-loaded, or it is a query per row.
         $machines = Machine::with('location.department')->orderBy('location_id')->paginate(15);
-        return view('machines.index', compact('machines'));
+
+        // Each area with the department that runs it, so the bulk move can say
+        // where a machine's findings will go after it rather than only which
+        // room it will be in.
+        $locations = Location::with('department')->orderBy('location_name')->get();
+
+        return view('machines.index', compact('machines', 'locations'));
     }
 
     public function create()
@@ -111,6 +117,39 @@ class MachineController extends Controller implements HasMiddleware
         Machine::whereIn('id', $request->machine_ids)->delete();
 
         return redirect()->route('machines.index')->with('success', 'ลบข้อมูลเครื่องจักรที่เลือกเรียบร้อยแล้ว');
+    }
+
+    /**
+     * Move many machines into one area in a single step.
+     *
+     * A machine carries no department of its own - it is owned by whoever runs
+     * the room it stands in - so putting it in the right room IS how its
+     * department gets fixed. Doing that one machine at a time, on a plant with
+     * twenty-six machines in a single room, is work that does not get
+     * finished, and a machine in the wrong room sends its findings to the
+     * wrong department.
+     */
+    public function assignLocationBulk(Request $request)
+    {
+        $request->validate([
+            'machine_ids' => 'required|array',
+            'machine_ids.*' => 'integer|exists:machines,id',
+            'location_id' => 'required|exists:locations,id',
+        ]);
+
+        $updated = Machine::whereIn('id', $request->machine_ids)
+            ->update(['location_id' => $request->location_id]);
+
+        $location = Location::with('department')->find($request->location_id);
+
+        // Name the department as well as the room, because that is the part
+        // that changes where the findings go and it is not otherwise visible
+        // from the action just taken.
+        $department = $location?->department?->dept_name;
+
+        return redirect()->route('machines.index')->with('success', $department
+            ? "ย้าย {$updated} เครื่องจักรไปที่ {$location->location_name} (ดูแลโดยแผนก {$department}) เรียบร้อยแล้ว"
+            : "ย้าย {$updated} เครื่องจักรไปที่ {$location->location_name} เรียบร้อยแล้ว — พื้นที่นี้ยังไม่ได้ระบุแผนกที่ดูแล");
     }
 
     public function showMapping(Machine $machine)

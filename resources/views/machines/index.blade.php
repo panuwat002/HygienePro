@@ -15,12 +15,25 @@
                             <i class="bi bi-ui-checks-grid"></i> <span class="d-none d-sm-inline ms-1">จัดการที่เลือก (<span id="bulkCount">0</span>)</span>
                         </button>
                         <ul class="dropdown-menu border-0 shadow">
+                            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#bulkLocationModal"><i class="bi bi-geo-alt me-2 text-primary"></i> ย้ายไปพื้นที่</a></li>
+                            <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item text-danger" href="javascript:void(0)" onclick="submitBulkDelete()"><i class="bi bi-trash me-2"></i> ลบข้อมูลที่เลือก</a></li>
                         </ul>
                     </div>
                     <form id="bulkDeleteForm" action="{{ route('machines.bulk-delete') }}" method="POST" class="d-none">
                         @csrf
                         <div id="bulkDeleteHiddenInputs"></div>
+                    </form>
+
+                    {{-- A machine carries no department of its own: it is owned by
+                         whoever runs the room it stands in. So moving it to the right
+                         room is how its department gets fixed, and doing that one
+                         machine at a time across a room of twenty-six does not get
+                         finished. --}}
+                    <form id="bulkLocationForm" action="{{ route('machines.bulk-location') }}" method="POST" class="d-none">
+                        @csrf
+                        <div id="bulkLocationHiddenInputs"></div>
+                        <input type="hidden" name="location_id" id="bulkLocationValue">
                     </form>
 
                     {{-- Export Button --}}
@@ -162,6 +175,43 @@
     </div>
 
     @push('modals')
+    {{-- Bulk move --}}
+    <div class="modal fade" id="bulkLocationModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 rounded-4 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-geo-alt me-2 text-primary"></i>ย้ายไปพื้นที่</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">
+                        ย้ายเครื่องจักรที่เลือกไว้ทั้งหมดไปอยู่ในพื้นที่เดียวกัน
+                        เครื่องจักรจะได้แผนกที่ดูแลตามพื้นที่ปลายทางโดยอัตโนมัติ
+                    </p>
+
+                    <label for="bulkLocationSelect" class="form-label fw-bold">พื้นที่ปลายทาง</label>
+                    <select id="bulkLocationSelect" class="form-select">
+                        <option value="">-- กรุณาเลือก --</option>
+                        @foreach($locations as $location)
+                            <option value="{{ $location->id }}"
+                                    data-name="{{ $location->location_name }}"
+                                    data-department="{{ $location->department->dept_name ?? '' }}">
+                                {{ $location->location_name }}
+                                @if($location->department) — {{ $location->department->dept_name }} @else — ยังไม่ระบุแผนก @endif
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">ยกเลิก</button>
+                    <button type="button" class="btn btn-primary rounded-pill px-4" data-bs-dismiss="modal" onclick="submitBulkLocation()">
+                        <i class="bi bi-save me-1"></i>ย้าย
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="importModal" tabindex="-1" aria-labelledby="importModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 rounded-4 shadow">
@@ -235,6 +285,40 @@
                     }
                 });
             });
+
+            window.submitBulkLocation = function() {
+                const selected = getSelectedIds();
+                if (selected.length === 0) return;
+
+                const select = document.getElementById('bulkLocationSelect');
+                if (! select.value) return;
+
+                const option = select.options[select.selectedIndex];
+                const department = option.dataset.department;
+
+                // Name the department in the confirmation: that is the part that
+                // decides where the findings go, and it is not visible from the
+                // room name alone.
+                const message = 'ย้าย ' + selected.length + ' เครื่องจักรไปที่ ' + option.dataset.name + '?'
+                    + (department
+                        ? '\n\nข้อบกพร่องของเครื่องจักรเหล่านี้จะถูกส่งให้แผนก ' + department
+                        : '\n\nพื้นที่นี้ยังไม่ได้ระบุแผนกที่ดูแล');
+
+                if (! confirm(message)) return;
+
+                const container = document.getElementById('bulkLocationHiddenInputs');
+                container.innerHTML = '';
+                selected.forEach(id => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'machine_ids[]';
+                    input.value = id;
+                    container.appendChild(input);
+                });
+
+                document.getElementById('bulkLocationValue').value = select.value;
+                document.getElementById('bulkLocationForm').submit();
+            };
 
             window.submitBulkDelete = function() {
                 const selected = getSelectedIds();
