@@ -328,7 +328,11 @@
                                     {{ $data['info']->location_name }}
                                 @endif
                             </td>
-                            <td>{{ $data['session']->department->dept_name ?? '-' }}</td>
+                            {{-- The department that runs the room, not the one that
+                                 walked the round. An area round is stamped with the
+                                 inspector's own department - always QA - so this said
+                                 Quality Assurance against every room in the plant. --}}
+                            <td>{{ $data['department_label'] ?? $data['session']->department->dept_name ?? '-' }}</td>
                             
                             @foreach($areaMachineCheckpoints as $checkpoint)
                                 <td>
@@ -356,22 +360,33 @@
                                     if(str_contains($cpTitle, 'สมบูรณ์')) $cpTitle = 'ความสมบูรณ์';
                                     if(str_contains($cpTitle, 'สะอาด')) $cpTitle = 'ความสะอาด';
                                     
-                                    if($log->result === 'fail' || $log->note) {
-                                        $issues[] = $cpTitle . ': ' . ($log->note ?: 'ไม่ผ่าน');
+                                    // หมายเหตุ carries the note. A bare failure with
+                                    // nothing written against it printed
+                                    // "ความสะอาด: ไม่ผ่าน", which only repeats the X
+                                    // already in that checkpoint's own column.
+                                    if($log->note) {
+                                        $issues[] = $cpTitle . ': ' . $log->note;
                                     }
-                                    
+
                                     // ✅ ใช้ correctiveAction relationship (ตาราง corrective_actions)
                                     if($log->correctiveAction) {
                                         $ca = $log->correctiveAction;
+
+                                        // Every status gets Thai. The default arm used
+                                        // to be ucfirst(), so an open finding printed
+                                        // "ความสะอาด: (Open)" - an English status, in a
+                                        // column headed ผลการแก้ไข, with nothing before
+                                        // it, on a form kept as audit evidence. It read
+                                        // as though something had been done.
                                         $statusLabel = match($ca->status) {
                                             'resolved', 'closed', 'verified' => 'แก้ไขแล้ว',
-                                            'in_progress' => 'กำลังแก้ไข',
-                                            default => ucfirst($ca->status)
+                                            'assigned' => 'มอบหมายแล้ว รอดำเนินการ',
+                                            default => 'ยังไม่ได้แก้ไข',
                                         };
-                                        $corrText = $cpTitle . ': ';
-                                        if($ca->action_taken) $corrText .= $ca->action_taken;
-                                        $corrText .= ' (' . $statusLabel . ')';
-                                        $corrections[] = $corrText;
+
+                                        $corrections[] = $ca->action_taken
+                                            ? $cpTitle . ': ' . $ca->action_taken . ' (' . $statusLabel . ')'
+                                            : $cpTitle . ': ' . $statusLabel;
                                     } elseif($log->correction_action) {
                                         // fallback: field เก่าในตาราง inspection_logs
                                         $corrections[] = $cpTitle . ': ' . $log->correction_action . ' (แก้ไขเรียบร้อย)';

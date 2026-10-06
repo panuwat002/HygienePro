@@ -562,6 +562,24 @@ class ReportController extends Controller
         }
 
         // Flatten for the PDF rows
+        /**
+         * The department printed against an area row.
+         *
+         * Not the session's. An area round is stamped with whoever walked it -
+         * startSession() takes it from the inspector when none is chosen, so it
+         * is always QA - and the form then said Quality Assurance against every
+         * room in the plant, including the ones Production had just been made
+         * responsible for. The room itself now says who runs it; the session
+         * remains the fallback for rooms nobody has assigned yet.
+         */
+        $areaDepartment = function ($info, $session): string {
+            $location = $info instanceof \App\Models\Machine ? $info->location : $info;
+
+            return $location?->department?->dept_name
+                ?? $session?->department?->dept_name
+                ?? '-';
+        };
+
         $flattenedAreaMachine = [];
         foreach ($areaMachineCombined as $lId => $group) {
             if ($group['location_data']) {
@@ -570,6 +588,9 @@ class ReportController extends Controller
                     'info' => $group['location_data']['info'],
                     'session' => $group['location_data']['session'],
                     'results' => $group['location_data']['results'],
+                    'department_label' => $areaDepartment(
+                        $group['location_data']['info'], $group['location_data']['session']
+                    ),
                 ];
             } elseif ($group['location']) {
                 $flattenedAreaMachine[] = [
@@ -577,6 +598,7 @@ class ReportController extends Controller
                     'info' => $group['location'],
                     'session' => null,
                     'results' => [],
+                    'department_label' => $areaDepartment($group['location'], null),
                 ];
             }
             
@@ -586,6 +608,7 @@ class ReportController extends Controller
                     'info' => $mData['info'],
                     'session' => $mData['session'],
                     'results' => $mData['results'],
+                    'department_label' => $areaDepartment($mData['info'], $mData['session']),
                 ];
             }
         }
