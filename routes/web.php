@@ -153,6 +153,8 @@ Route::middleware('auth')->group(function () {
             Route::get('departments-export', [App\Http\Controllers\DepartmentController::class, 'export'])->name('departments.export');
             Route::post('departments-import', [App\Http\Controllers\DepartmentController::class, 'import'])->name('departments.import');
             Route::post('locations-bulk-delete', [LocationController::class, 'destroyBulk'])->name('locations.bulk-delete');
+            // ตั้งแผนกที่ดูแลให้หลายพื้นที่พร้อมกัน — ทำทีละห้องไม่จบ และห้องที่ยังไม่ตั้งจะส่งข้อบกพร่องผิดแผนก
+            Route::post('locations-bulk-department', [LocationController::class, 'assignDepartmentBulk'])->name('locations.bulk-department');
             Route::resource('locations', LocationController::class);
             Route::get('locations-export', [LocationController::class, 'export'])->name('locations.export');
             Route::post('locations-import', [LocationController::class, 'import'])->name('locations.import');

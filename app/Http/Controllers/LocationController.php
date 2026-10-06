@@ -31,10 +31,24 @@ class LocationController extends Controller implements HasMiddleware
     }
     public function index()
     {
-        $locations = Location::withCount(['checkpoints', 'machines'])
-            ->havingRaw('checkpoints_count > 0 OR machines_count > 0 OR description != ? OR description IS NULL', ['Auto Created from Schedule Import'])
+        // A HAVING with no GROUP BY. MySQL allows it, so this worked; it is not
+        // valid SQL, so the page could not be exercised by a test at all -
+        // SQLite answers "HAVING clause on a non-aggregate query". Same
+        // predicate, written as the WHERE it always was.
+        $locations = Location::with('department')
+            ->withCount(['checkpoints', 'machines'])
+            ->where(function ($q) {
+                $q->whereHas('checkpoints')
+                  ->orWhereHas('machines')
+                  ->orWhere('description', '!=', 'Auto Created from Schedule Import')
+                  ->orWhereNull('description');
+            })
             ->get();
-        return view('locations.index', compact('locations'));
+
+        return view('locations.index', [
+            'locations' => $locations,
+            'departments' => $this->departments(),
+        ]);
     }
 
     public function create()
@@ -80,6 +94,39 @@ class LocationController extends Controller implements HasMiddleware
         $location->update($request->all());
 
         return redirect()->route('locations.index')->with('success', 'Location updated successfully.');
+    }
+
+    /**
+     * Put many areas under one department in a single step.
+     *
+     * Every area has to be told who runs it before findings raised in it reach
+     * the right people, and a plant has dozens of rooms that mostly belong to
+     * the same department. Opening each one in turn to set the same value is
+     * the kind of work that does not get finished, and an area left unassigned
+     * silently falls back to billing its findings to whoever walked the round.
+     */
+    public function assignDepartmentBulk(Request $request)
+    {
+        $request->validate([
+            'location_ids' => 'required|array',
+            'location_ids.*' => 'integer|exists:locations,id',
+            // '' clears it, which is how a room gets handed back to the old
+            // fallback if it was assigned by mistake.
+            'department_id' => 'nullable|exists:departments,id',
+        ]);
+
+        $departmentId = $request->input('department_id') ?: null;
+
+        $updated = Location::whereIn('id', $request->location_ids)
+            ->update(['department_id' => $departmentId]);
+
+        $name = $departmentId
+            ? (\App\Models\Department::find($departmentId)?->dept_name ?? '-')
+            : null;
+
+        return redirect()->route('locations.index')->with('success', $name
+            ? "กำหนดให้แผนก {$name} ดูแล {$updated} พื้นที่เรียบร้อยแล้ว"
+            : "ล้างแผนกที่ดูแลออกจาก {$updated} พื้นที่แล้ว");
     }
 
     public function destroy(Location $location)

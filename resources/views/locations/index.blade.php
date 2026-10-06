@@ -14,12 +14,23 @@
                             <i class="bi bi-ui-checks-grid"></i> <span class="d-none d-sm-inline ms-1">จัดการที่เลือก (<span id="bulkCount">0</span>)</span>
                         </button>
                         <ul class="dropdown-menu border-0 shadow">
+                            <li><a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#bulkDepartmentModal"><i class="bi bi-building me-2 text-primary"></i> กำหนดแผนกที่ดูแล</a></li>
+                            <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item text-danger" href="javascript:void(0)" onclick="submitBulkDelete()"><i class="bi bi-trash me-2"></i> ลบข้อมูลที่เลือก</a></li>
                         </ul>
                     </div>
                     <form id="bulkDeleteForm" action="{{ route('locations.bulk-delete') }}" method="POST" class="d-none">
                         @csrf
                         <div id="bulkDeleteHiddenInputs"></div>
+                    </form>
+
+                    {{-- Setting the same department on forty rooms one at a time is
+                         work that does not get finished, and a room left unassigned
+                         quietly bills its findings to whoever walked the round. --}}
+                    <form id="bulkDepartmentForm" action="{{ route('locations.bulk-department') }}" method="POST" class="d-none">
+                        @csrf
+                        <div id="bulkDepartmentHiddenInputs"></div>
+                        <input type="hidden" name="department_id" id="bulkDepartmentValue">
                     </form>
 
                     {{-- Export Button --}}
@@ -57,6 +68,7 @@
                                     </div>
                                 </th>
                                 <th class="py-3 text-muted fw-bold">ชื่อจุดประจำการ</th>
+                                <th class="py-3 text-muted fw-bold">แผนกที่ดูแล</th>
                                 <th class="py-3 text-muted fw-bold">คำอธิบาย</th>
                                 <th class="py-3 text-muted fw-bold">ข้อมูลจุดประจำการ</th>
                                 <th class="pe-4 py-3 text-muted fw-bold text-end">จัดการ</th>
@@ -72,6 +84,20 @@
                                 </td>
                                 <td data-label="ชื่อจุดประจำการ">
                                     <span class="fw-bold text-dark">{{ $location->location_name }}</span>
+                                </td>
+                                {{-- Visible in the list so it is obvious at a glance which
+                                     rooms still have no owner - an unassigned room sends its
+                                     findings to whoever walked the round. --}}
+                                <td data-label="แผนกที่ดูแล">
+                                    @if($location->department)
+                                        <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle">
+                                            <i class="bi bi-building me-1"></i>{{ $location->department->dept_name }}
+                                        </span>
+                                    @else
+                                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">
+                                            <i class="bi bi-exclamation-triangle me-1"></i>ยังไม่ระบุ
+                                        </span>
+                                    @endif
                                 </td>
                                 <td data-label="คำอธิบาย">
                                     <span class="text-secondary small">{{ $location->description ?? '-' }}</span>
@@ -126,6 +152,40 @@
     </div>
 
     @push('modals')
+    {{-- Bulk department --}}
+    <div class="modal fade" id="bulkDepartmentModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 rounded-4 shadow">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">
+                        <i class="bi bi-building me-2 text-primary"></i>กำหนดแผนกที่ดูแล
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">
+                        ตั้งแผนกที่ดูแลให้พื้นที่ที่เลือกไว้ทั้งหมดพร้อมกัน
+                        ข้อบกพร่องที่พบในพื้นที่เหล่านี้จะถูกส่งให้แผนกที่เลือกเป็นผู้แก้ไข
+                    </p>
+
+                    <label for="bulkDepartmentSelect" class="form-label fw-bold">แผนก</label>
+                    <select id="bulkDepartmentSelect" class="form-select">
+                        <option value="">-- ล้างค่า (ใช้แผนกของผู้ตรวจเหมือนเดิม) --</option>
+                        @foreach($departments as $department)
+                            <option value="{{ $department->id }}">{{ $department->dept_name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">ยกเลิก</button>
+                    <button type="button" class="btn btn-primary rounded-pill px-4" data-bs-dismiss="modal" onclick="submitBulkDepartment()">
+                        <i class="bi bi-save me-1"></i>บันทึก
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {{-- Import Modal --}}
     <div class="modal fade" id="importModal" tabindex="-1" aria-labelledby="importModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -207,6 +267,33 @@
                     }
                 });
             });
+
+            window.submitBulkDepartment = function() {
+                const selected = getSelectedIds();
+                if (selected.length === 0) return;
+
+                const select = document.getElementById('bulkDepartmentSelect');
+                const label = select.options[select.selectedIndex].text;
+
+                const message = select.value
+                    ? 'กำหนดให้แผนก ' + label + ' ดูแล ' + selected.length + ' พื้นที่ที่เลือก?'
+                    : 'ล้างแผนกที่ดูแลออกจาก ' + selected.length + ' พื้นที่ที่เลือก?';
+
+                if (! confirm(message)) return;
+
+                const container = document.getElementById('bulkDepartmentHiddenInputs');
+                container.innerHTML = '';
+                selected.forEach(id => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'location_ids[]';
+                    input.value = id;
+                    container.appendChild(input);
+                });
+
+                document.getElementById('bulkDepartmentValue').value = select.value;
+                document.getElementById('bulkDepartmentForm').submit();
+            };
 
             window.submitBulkDelete = function() {
                 const selected = getSelectedIds();
