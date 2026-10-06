@@ -279,20 +279,45 @@
                             <td class="text-center" data-label="เวลาเริ่ม">
                                 <span class="text-muted small"><i class="bi bi-clock me-1"></i>{{ $activeSess->created_at->format('H:i') }} น.</span>
                                 @php
-                                    // diffInHours() returns a float in Carbon 3, so this
-                                    // printed "นานเกินไป (5.8002289908333 ชม.)".
-                                    $minutesOpen = (int) $activeSess->created_at->diffInMinutes(now());
+                                    // Measured against the end of the shift, not against how
+                                    // long the round has been open. A morning round covers
+                                    // 07.00-16.00; being open seven hours into it is the job
+                                    // being done, and colouring that red taught people to
+                                    // read red as "normal". Red is kept for the one case
+                                    // nobody can explain: the system should already have
+                                    // closed this round and did not.
+                                    $shiftEnd = $activeSess->shiftEndsAt();
+                                    $autoCloseAt = $activeSess->autoCloseDueAt();
                                 @endphp
-                                @if($minutesOpen >= 120)
-                                    {{-- "นานเกินไป" told somebody the round had been open a
-                                         long time without saying what that meant or what to
-                                         do. It means the inspector never pressed finish, and
-                                         finishing is what sends the summary, tells the
-                                         supervisor there is something to verify and closes
-                                         off a random audit. --}}
+                                @if($shiftEnd === null)
+                                    <br><span class="badge bg-secondary mt-1" style="font-size: 0.65rem;"
+                                              title="กะของรอบนี้ไม่มีเวลาเลิกกะในระบบ ระบบจึงไม่รู้ว่าควรปิดเมื่อไร และจะไม่ปิดให้อัตโนมัติ — ต้องกดบังคับปิดรอบเอง">
+                                        ไม่ทราบเวลาเลิกกะ — ต้องปิดเอง
+                                    </span>
+                                @elseif(now()->lt($shiftEnd))
+                                    <span class="text-muted small d-block mt-1" style="font-size: 0.7rem;">
+                                        กำลังตรวจ · เลิกกะ {{ $shiftEnd->format('H:i') }} น.
+                                    </span>
+                                @elseif($autoCloseAt === null)
+                                    <br><span class="badge bg-secondary mt-1" style="font-size: 0.65rem;"
+                                              title="ปิดรอบอัตโนมัติถูกปิดการใช้งานไว้ (AUTO_CLOSE_ENABLED=false) รอบนี้จะเปิดค้างจนกว่าจะมีคนกดปิด">
+                                        เลยเวลาเลิกกะ — ระบบไม่ได้ตั้งให้ปิดเอง
+                                    </span>
+                                @elseif(now()->lt($autoCloseAt))
+                                    {{-- Promising a time, not a guarantee: the job also defers
+                                         while the round is still being tapped. --}}
+                                    <br><span class="badge bg-warning text-dark mt-1" style="font-size: 0.65rem;"
+                                              title="ผู้ตรวจยังไม่ได้กดจบรอบ แต่ยังอยู่ในช่วงผ่อนผันหลังเลิกกะ — ถ้ายังไม่มีการตรวจเพิ่ม ระบบจะปิดให้เอง">
+                                        เลยเวลาเลิกกะ — ระบบจะปิดให้ {{ $autoCloseAt->format('H:i') }} น.
+                                    </span>
+                                @else
+                                    {{-- The round outlived the moment the system was meant to
+                                         close it. Either somebody is still tapping checkpoints
+                                         long after the shift, or the scheduler is not running -
+                                         and the second one is why this is red. --}}
                                     <br><span class="badge bg-danger mt-1" style="font-size: 0.65rem;"
-                                              title="ผู้ตรวจยังไม่ได้กดจบรอบ — การจบรอบคือสิ่งที่ส่งสรุปผล แจ้งหัวหน้าให้มาทวนสอบ และปิดภารกิจสุ่มตรวจ">
-                                        ยังไม่ได้ปิดรอบ ({{ intdiv($minutesOpen, 60) }} ชม. {{ $minutesOpen % 60 }} นาที)
+                                              title="เลยเวลาที่ระบบควรปิดรอบนี้ให้แล้ว ({{ $autoCloseAt->format('d/m H:i') }} น.) ถ้าไม่มีใครกำลังตรวจอยู่จริง แปลว่างานปิดรอบอัตโนมัติไม่ทำงาน ต้องให้ผู้ดูแลตรวจสอบ">
+                                        เลยเวลาที่ระบบควรปิดให้แล้ว ({{ $autoCloseAt->format('H:i') }} น.)
                                     </span>
                                 @endif
                             </td>

@@ -533,39 +533,19 @@ class InspectionService
         return true;
     }
 
+    /**
+     * Lives on the session now, because the dashboard has to answer the same
+     * question - when is this round due to end - and two copies of it would
+     * drift into telling the user one time and closing the round at another.
+     *
+     * Resolved through the session rather than by matching shift_name, so a
+     * picked shift card ('custom_11') works. Matching the name literally missed
+     * every real row, which left this null and personnel sessions never
+     * auto-closing.
+     */
     public function shiftEndAt(InspectionSession $session): ?\Illuminate\Support\Carbon
     {
-        // Resolve through the session itself so a picked shift card ('custom_11') works, not
-        // just the generic keys. Matching shift_name literally missed every real row, which
-        // left shiftEndAt() null and personnel sessions never auto-closing.
-        $shifts = $session->getResolvedShifts()['shifts'];
-        if ($shifts->isEmpty()) {
-            return null;
-        }
-
-        $date = \Illuminate\Support\Carbon::parse($session->inspection_date)->toDateString();
-        $latest = null;
-
-        // A session may span several shifts ("custom_4,custom_9"); it is only over once the
-        // last of them has ended.
-        foreach ($shifts as $shift) {
-            if (empty($shift->end_time)) {
-                continue;
-            }
-
-            $end = \Illuminate\Support\Carbon::parse($date . ' ' . $shift->end_time);
-
-            // Shift wraps past midnight (e.g. 17:00-02:00): end lands on the next day
-            if (! empty($shift->start_time) && $shift->end_time <= $shift->start_time) {
-                $end->addDay();
-            }
-
-            if ($latest === null || $end->gt($latest)) {
-                $latest = $end;
-            }
-        }
-
-        return $latest;
+        return $session->shiftEndsAt();
     }
 
     public function lastActivityAt(InspectionSession $session): \Illuminate\Support\Carbon

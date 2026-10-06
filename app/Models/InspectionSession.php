@@ -308,6 +308,64 @@ class InspectionSession extends Model
     }
 
     /**
+     * When the last shift this round covers finishes.
+     *
+     * Null when no shift resolves an end time, and every caller has to treat
+     * that as "do not know" rather than "now" - the auto-close job refuses to
+     * close such a round, and the dashboard says nothing about it.
+     */
+    public function shiftEndsAt(): ?\Illuminate\Support\Carbon
+    {
+        $shifts = $this->getResolvedShifts()['shifts'];
+
+        if ($shifts->isEmpty()) {
+            return null;
+        }
+
+        $date = \Illuminate\Support\Carbon::parse($this->inspection_date)->toDateString();
+        $latest = null;
+
+        // A session may span several shifts ("custom_4,custom_9"); it is only
+        // over once the last of them has ended.
+        foreach ($shifts as $shift) {
+            if (empty($shift->end_time)) {
+                continue;
+            }
+
+            $end = \Illuminate\Support\Carbon::parse($date . ' ' . $shift->end_time);
+
+            // Shift wraps past midnight (e.g. 17:00-02:00): end lands on the next day
+            if (! empty($shift->start_time) && $shift->end_time <= $shift->start_time) {
+                $end->addDay();
+            }
+
+            if ($latest === null || $end->gt($latest)) {
+                $latest = $end;
+            }
+        }
+
+        return $latest;
+    }
+
+    /**
+     * The earliest moment the system would close this round by itself.
+     *
+     * Only the earliest: the job also requires the round to have been idle, so
+     * somebody still tapping checkpoints at this time keeps it open. It is what
+     * the dashboard can promise, not a guarantee of when it happens.
+     */
+    public function autoCloseDueAt(): ?\Illuminate\Support\Carbon
+    {
+        $shiftEnd = $this->shiftEndsAt();
+
+        if ($shiftEnd === null || ! config('inspection.auto_close.enabled', true)) {
+            return null;
+        }
+
+        return $shiftEnd->copy()->addHours((float) config('inspection.auto_close.grace_hours', 2));
+    }
+
+    /**
      * Parse the session's shift attribute into a list of shift IDs and shift names in DB.
      * Handles single shifts ('morning'), custom shifts ('custom_11'), and comma-separated combinations.
      *
