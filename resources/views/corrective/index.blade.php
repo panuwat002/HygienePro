@@ -370,6 +370,18 @@
                             <h5 class="fw-bolder text-dark mb-0" style="letter-spacing: -0.02em;">ประวัติที่ดำเนินการแล้ว</h5>
                         </div>
                     </div>
+
+                    {{-- Counted and named, because a single bad row in a long history
+                         is otherwise found only by chance. --}}
+                    @php $closedWithNoRecord = $completedActions->where('status', 'closed')->filter(fn ($a) => blank($a->action_taken)); @endphp
+                    @if($closedWithNoRecord->isNotEmpty())
+                        <div class="alert alert-danger border-0 mt-3 mb-0 py-2 small">
+                            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                            มี {{ $closedWithNoRecord->count() }} รายการที่ถูกปิดโดยไม่มีบันทึกว่าแก้ไขอย่างไร —
+                            เกิดจากข้อผิดพลาดเดิมที่การอนุมัติปิดใบแจ้งปัญหาที่ยังไม่มีใครดำเนินการ (แก้ไขแล้ว)
+                            รายการที่เกิดไปแล้วต้องให้คนไปตรวจสอบว่าปัญหานั้นได้รับการแก้ไขจริงหรือไม่
+                        </div>
+                    @endif
                     <div class="card-body p-0 mt-4">
                         <div class="table-responsive w-100">
                             <table class="table modern-table mb-0 w-100">
@@ -408,7 +420,17 @@
                                                 <div class="small text-muted mt-1">{{ $action->resolved_at ? $action->resolved_at->format('d/m/Y H:i') : '-' }}</div>
                                             </td>
                                             <td class="pe-4 text-center">
-                                                @if($action->status === 'closed')
+                                                {{-- A closed action with nothing recorded against it is not
+                                                     finished work, and a green tick here said it was - two
+                                                     columns from the words "ไม่ได้บันทึกวิธีแก้ไข". These rows
+                                                     exist because approval used to close findings nobody had
+                                                     touched (fixed in 8f9db8b); the ones already written
+                                                     cannot be fixed by code and need somebody to go and ask. --}}
+                                                @if($action->status === 'closed' && blank($action->action_taken))
+                                                    <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle d-inline-flex align-items-center mb-2">
+                                                        <i class="bi bi-exclamation-triangle-fill me-1"></i>ปิดโดยไม่มีบันทึก
+                                                    </span>
+                                                @elseif($action->status === 'closed')
                                                     <span class="badge badge-soft-success d-inline-flex align-items-center mb-2"><i class="bi bi-check-circle-fill me-1"></i>Closed</span>
                                                 @else
                                                     <span class="badge badge-soft-success d-inline-flex align-items-center mb-2"><i class="bi bi-check-circle-fill me-1"></i>{{ ucfirst($action->status) }}</span>
