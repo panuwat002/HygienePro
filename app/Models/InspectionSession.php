@@ -157,6 +157,67 @@ class InspectionSession extends Model
     }
 
     /**
+     * How far the round itself got: walked, part-walked, abandoned.
+     *
+     * 'completed' here means the inspector finished walking it. It says nothing
+     * about whether QA has looked at the result - that is the separate ladder
+     * in verificationStage() below. The daily report printed this one raw, so a
+     * round nobody had verified read "Completed" in English on a page where
+     * everybody takes that to mean finished and signed off.
+     */
+    public function getStatusLabelAttribute(): string
+    {
+        return match ($this->status) {
+            'draft' => 'ร่าง',
+            'in_progress' => 'กำลังตรวจ',
+            'completed' => 'ตรวจเสร็จแล้ว',
+            'approved' => 'อนุมัติแล้ว',
+            'rejected' => 'ตีกลับ',
+            default => (string) $this->status,
+        };
+    }
+
+    /**
+     * Where this round stands in the sign-off chain, read from its own logs.
+     *
+     * The two ladders are easy to confuse and were: inspection runs
+     * draft → in_progress → completed, and sign-off runs
+     * pending → reclean → awaiting approval → approved. A round can be
+     * "ตรวจเสร็จแล้ว" and still be sitting at the front of the verification
+     * queue, which is exactly the pair that looked like a contradiction.
+     *
+     * @return array{key: string, label: string, colour: string}
+     */
+    public function verificationStage(): array
+    {
+        $logs = $this->relationLoaded('logs') ? $this->logs : $this->logs()->get();
+
+        if ($logs->isEmpty()) {
+            return ['key' => 'none', 'label' => 'ยังไม่มีผลตรวจ', 'colour' => 'secondary'];
+        }
+
+        $statuses = $logs->pluck('verification_status');
+
+        if ($statuses->contains(null)) {
+            return ['key' => 'pending', 'label' => 'รอทวนสอบ', 'colour' => 'warning'];
+        }
+
+        if ($statuses->contains('rejected')) {
+            return ['key' => 'rejected', 'label' => 'ตีกลับให้แก้', 'colour' => 'danger'];
+        }
+
+        if ($statuses->contains('reclean')) {
+            return ['key' => 'reclean', 'label' => 'สั่งแก้ไข', 'colour' => 'danger'];
+        }
+
+        if ($statuses->every(fn ($status) => in_array($status, ['approved', 'auto_verified'], true))) {
+            return ['key' => 'approved', 'label' => 'อนุมัติแล้ว', 'colour' => 'success'];
+        }
+
+        return ['key' => 'awaiting_approval', 'label' => 'รออนุมัติ', 'colour' => 'info'];
+    }
+
+    /**
      * What this round inspected, in the words the report dropdown uses.
      *
      * 'machine' and the legacy 'area' are one bucket on every screen that

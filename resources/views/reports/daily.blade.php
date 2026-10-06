@@ -113,11 +113,20 @@
                                                     'rejected' => 'bg-danger'
                                                 ];
                                                 $bgInfo = $statusColors[$session->status] ?? 'bg-secondary';
+                                                $stage = $session->verificationStage();
                                             @endphp
-                                            <span class="badge {{ $bgInfo }} rounded-pill px-3 mb-2">
-                                                {{ ucfirst($session->status) }}
+                                            {{-- Two ladders, and this column only ever showed one.
+                                                 "Completed" is the ROUND being walked to the end; it
+                                                 says nothing about whether QA has looked at the
+                                                 result. A round nobody had verified therefore read
+                                                 Completed, in English, on a page where that is taken
+                                                 to mean finished and signed off. --}}
+                                            <span class="badge {{ $bgInfo }} rounded-pill px-3 d-block mb-1">
+                                                {{ $session->status_label }}
                                             </span>
-                                            <br>
+                                            <span class="badge bg-{{ $stage['colour'] }}-subtle text-{{ $stage['colour'] }}-emphasis border border-{{ $stage['colour'] }}-subtle rounded-pill px-3 d-block mb-2">
+                                                {{ $stage['label'] }}
+                                            </span>
                                             <button class="btn btn-sm btn-link text-decoration-none p-0" type="button" data-bs-toggle="collapse" data-bs-target="#details-{{ $session->id }}">
                                                 <i class="bi bi-eye"></i> ดูรายละเอียด
                                             </button>
