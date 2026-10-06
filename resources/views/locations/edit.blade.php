@@ -21,6 +21,26 @@
                                 <input type="text" name="location_name" class="form-control" value="{{ $location->location_name }}" required>
                             </div>
 
+                            {{-- Who runs the area. This is what decides who a finding
+                                 raised in it is handed to; without it the system has
+                                 nothing to go on but whoever walked the round, which
+                                 is always QA. --}}
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">แผนกที่ดูแลพื้นที่นี้</label>
+                                <select name="department_id" class="form-select">
+                                    <option value="">-- ยังไม่ระบุ --</option>
+                                    @foreach($departments as $department)
+                                        <option value="{{ $department->id }}" {{ (int) old('department_id', $location->department_id) === $department->id ? 'selected' : '' }}>
+                                            {{ $department->dept_name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <small class="text-muted">
+                                    ข้อบกพร่องที่พบในพื้นที่นี้จะถูกส่งให้แผนกนี้เป็นผู้แก้ไข
+                                    หากไม่ระบุ ระบบจะใช้แผนกของผู้ตรวจเหมือนเดิม
+                                </small>
+                            </div>
+
                             <div class="mb-3">
                                 <label class="form-label fw-bold">คำอธิบาย</label>
                                 <textarea name="description" class="form-control" rows="3">{{ $location->description }}</textarea>

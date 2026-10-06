@@ -341,55 +341,86 @@ class InspectionService
             $q->where('session_id', $session->id);
         })
             ->when($since, fn ($q) => $q->where('created_at', '>', $since))
-            ->with(['log.machine', 'log.location', 'log.employee'])->get();
+            ->with(['log.machine.location', 'log.location', 'log.employee', 'log.session'])->get();
 
         if ($cars->isEmpty()) {
             return;
         }
 
-        $summaries = $cars->map(function ($car) {
-            $log = $car->log;
-            return [
-                'car_id' => $car->id,
-                'checkpoint' => $log?->checkpoint_title_snapshot ?? 'ไม่ระบุจุดตรวจ',
-                'place' => $log?->employee ? $log->employee->fullname : (
-                    $log?->machine?->name ?? $log?->location?->location_name ?? 'ไม่ระบุพื้นที่/บุคคล'
-                ),
-            ];
-        })->all();
+        // Told to whoever runs the place, not to whoever walked the round.
+        //
+        // An area round is stamped with the inspector's own department - which
+        // is QA - so this used to announce every finding in a Production room
+        // to QA, and to nobody in Production. The people who could actually fix
+        // it were never told it existed.
+        foreach ($cars->groupBy(fn ($car) => $car->log?->owningDepartmentId()) as $departmentId => $owned) {
+            $recipients = $this->headsAnsweringFor($departmentId ? (int) $departmentId : null);
 
-        // Level 4, not 5. A department supervisor is the person who actually
-        // assigns a finding to somebody; telling only managers meant the one
-        // who has to act on it heard nothing.
-        $managers = \App\Models\User::where('department_id', $session->department_id)
+            if ($recipients->isEmpty()) {
+                continue;
+            }
+
+            $summaries = $owned->map(function ($car) {
+                $log = $car->log;
+
+                return [
+                    'car_id' => $car->id,
+                    'checkpoint' => $log?->checkpoint_title_snapshot ?? 'ไม่ระบุจุดตรวจ',
+                    'place' => $log?->employee ? $log->employee->fullname : (
+                        $log?->machine?->name ?? $log?->location?->location_name ?? 'ไม่ระบุพื้นที่/บุคคล'
+                    ),
+                ];
+            })->all();
+
+            foreach ($recipients as $recipient) {
+                $recipient->notify(new \App\Notifications\SessionCarsSummaryNotification($session, $summaries));
+            }
+        }
+    }
+
+    /**
+     * The people a department's findings should reach.
+     *
+     * Level 4, not 5: a department supervisor is the person who actually
+     * assigns a finding to somebody, and telling only managers meant the one
+     * who has to act heard nothing.
+     *
+     * A department with nobody of its own - ห้องแคะ the week it was split out
+     * of Production - told nobody at all about findings raised against a brand
+     * new work area, so its parent's heads answer for it. The same level 4 bar
+     * is used one step up rather than Department::responsibleManager(), which
+     * only recognises level 5 and would leave a parent headed by a supervisor
+     * just as silent.
+     */
+    private function headsAnsweringFor(?int $departmentId): \Illuminate\Support\Collection
+    {
+        if (! $departmentId) {
+            return collect();
+        }
+
+        $heads = \App\Models\User::where('department_id', $departmentId)
             ->where('level', '>=', 4)
             ->get();
 
-        // A department with nobody of its own - ห้องแคะ, the week it was split
-        // out of Production - told nobody at all, about findings raised against
-        // a brand new work area. Its parent's head answers for it.
-        //
-        // The same level 4 bar is applied one step up rather than calling
-        // Department::responsibleManager(), which only recognises level 5 and
-        // would leave a parent headed by a supervisor just as silent.
-        if ($managers->isEmpty()) {
-            $parentId = $session->department?->parent_department_id;
-
-            if ($parentId) {
-                $managers = \App\Models\User::where('department_id', $parentId)
-                    ->where('level', '>=', 4)
-                    ->get();
-            }
-
-            if ($managers->isEmpty()) {
-                $responsible = $session->department?->responsibleManager();
-                $managers = $responsible ? collect([$responsible]) : $managers;
-            }
+        if ($heads->isNotEmpty()) {
+            return $heads;
         }
 
-        foreach ($managers as $manager) {
-            $manager->notify(new \App\Notifications\SessionCarsSummaryNotification($session, $summaries));
+        $department = \App\Models\Department::find($departmentId);
+
+        if ($department?->parent_department_id) {
+            $heads = \App\Models\User::where('department_id', $department->parent_department_id)
+                ->where('level', '>=', 4)
+                ->get();
         }
+
+        if ($heads->isNotEmpty()) {
+            return $heads;
+        }
+
+        $responsible = $department?->responsibleManager();
+
+        return $responsible ? collect([$responsible]) : collect();
     }
 
     /**

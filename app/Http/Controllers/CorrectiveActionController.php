@@ -16,7 +16,10 @@ class CorrectiveActionController extends Controller
             'log.location', 
             'log.machine', 
             'log.employee.department',
-            'escalator', 
+            'log.location.department',
+            'log.machine.location.department',
+            'log.session',
+            'escalator',
             'assignee'
         ])
         // Sort Priority: Pending Action ('open', 'assigned') -> Resolved -> Closed
@@ -42,9 +45,20 @@ class CorrectiveActionController extends Controller
                     // canAcknowledge() was taught that; this page was not, so
                     // that head could not see a single finding raised against
                     // the area they are answerable for.
-                    $q->orWhereHas('log.session', function($sq) use ($user) {
-                        $sq->whereIn('department_id', $this->departmentsAnsweredFor($user->department_id));
-                    });
+                    $mine = $this->departmentsAnsweredFor($user->department_id);
+
+                    // Anything connected to their departments: their people,
+                    // the areas they run, the machines standing in those areas,
+                    // and rounds walked under their name.
+                    //
+                    // The last of those is what an area finding used to match
+                    // on alone - and an area round is stamped with whoever
+                    // walked it, so a Production room inspected by QA was
+                    // Production's problem that only QA could see.
+                    $q->orWhereHas('log.employee', fn ($sq) => $sq->whereIn('department_id', $mine))
+                      ->orWhereHas('log.location', fn ($sq) => $sq->whereIn('department_id', $mine))
+                      ->orWhereHas('log.machine.location', fn ($sq) => $sq->whereIn('department_id', $mine))
+                      ->orWhereHas('log.session', fn ($sq) => $sq->whereIn('department_id', $mine));
                 }
             });
         }
@@ -81,7 +95,7 @@ class CorrectiveActionController extends Controller
         // User::canAcknowledge() allows.
         $routableDepartments = $openActions
             ->mapWithKeys(fn ($action) => [
-                $action->id => $this->departmentsAnsweredFor($action->log?->session?->department_id),
+                $action->id => $this->departmentsAnsweredFor($action->log?->owningDepartmentId()),
             ]);
 
         // Calculate Stats
@@ -145,7 +159,8 @@ class CorrectiveActionController extends Controller
         }
 
         $user = auth()->user();
-        $targetDeptId = $action->log?->session?->department_id;
+        // Who owns the problem, not who found it. See InspectionLog::owningDepartmentId().
+        $targetDeptId = $action->log?->owningDepartmentId();
 
         $assignee = \App\Models\User::find($request->assigned_to);
         $routable = $this->departmentsAnsweredFor($targetDeptId);
@@ -231,7 +246,7 @@ class CorrectiveActionController extends Controller
         $log = \App\Models\InspectionLog::find($request->log_id);
         
         $user = auth()->user();
-        $targetDeptId = $log->session?->department_id;
+        $targetDeptId = $log?->owningDepartmentId();
         
         // Authorization: Admin, QA, Inspector of this session, or Manager/Supervisor of target dept
         if (!$user->isAdmin() && !$user->isQA() && $log->session?->inspector_id !== $user->id) {

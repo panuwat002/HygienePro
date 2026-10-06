@@ -39,7 +39,16 @@ class LocationController extends Controller implements HasMiddleware
 
     public function create()
     {
-        return view('locations.create');
+        return view('locations.create', ['departments' => $this->departments()]);
+    }
+
+    /**
+     * Who may own an area. Which department runs a room decides who a finding
+     * raised in it is handed to - see InspectionLog::owningDepartmentId().
+     */
+    private function departments()
+    {
+        return \App\Models\Department::orderBy('dept_name')->get();
     }
 
     public function store(Request $request)
@@ -47,6 +56,7 @@ class LocationController extends Controller implements HasMiddleware
         $request->validate([
             'location_name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'department_id' => 'nullable|exists:departments,id',
         ]);
 
         Location::create($request->all());
@@ -56,7 +66,7 @@ class LocationController extends Controller implements HasMiddleware
 
     public function edit(Location $location)
     {
-        return view('locations.edit', compact('location'));
+        return view('locations.edit', ['location' => $location, 'departments' => $this->departments()]);
     }
 
     public function update(Request $request, Location $location)
@@ -64,6 +74,7 @@ class LocationController extends Controller implements HasMiddleware
         $request->validate([
             'location_name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'department_id' => 'nullable|exists:departments,id',
         ]);
 
         $location->update($request->all());

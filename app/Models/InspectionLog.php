@@ -76,6 +76,33 @@ class InspectionLog extends Model
         });
     }
 
+    /**
+     * The department a finding against this log belongs to - who has to fix it.
+     *
+     * A person belongs to a department, so a personnel finding has always had
+     * an owner. An area or a machine did not: nothing in the data said whose
+     * room it was, so the corrective action fell back to the session's
+     * department, and an area round takes that from whoever walked it. That is
+     * always QA, so every area finding landed on QA to repair - the department
+     * that inspects became the department that fixes, and the people who run
+     * the room were never told.
+     *
+     * Rooms now carry a department. The session remains the fallback for rooms
+     * nobody has assigned yet, so nothing changes until somebody says who owns
+     * what.
+     */
+    public function owningDepartmentId(): ?int
+    {
+        if ($this->employee_id) {
+            return $this->employee?->department_id ?? $this->session?->department_id;
+        }
+
+        // A machine belongs wherever it stands.
+        $location = $this->location ?? $this->machine?->location;
+
+        return $location?->department_id ?? $this->session?->department_id;
+    }
+
     public function employee()
     {
         return $this->belongsTo(Employee::class);
