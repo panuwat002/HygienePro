@@ -67,6 +67,7 @@
                                 </th>
                                 <th class="py-3 text-muted fw-bold">ชื่อเครื่องจักร / พื้นที่ย่อย</th>
                                 <th class="py-3 text-muted fw-bold">สังกัด (Location)</th>
+                                <th class="py-3 text-muted fw-bold">แผนกที่ดูแล</th>
                                 <th class="py-3 text-muted fw-bold text-center">สถานะ</th>
                                 <th class="pe-4 py-3 text-muted fw-bold text-end">จัดการ</th>
                             </tr>
@@ -98,6 +99,22 @@
                                     <span class="badge bg-info bg-opacity-10 text-info fw-normal">
                                         <i class="bi bi-geo-alt me-1"></i> {{ $machine->location->location_name ?? 'Unassigned' }}
                                     </span>
+                                </td>
+                                {{-- Inherited from the area, never set on the machine
+                                     itself: a machine belongs to whoever runs the room
+                                     it stands in. Shown so the inheritance can be seen
+                                     rather than taken on trust. --}}
+                                <td data-label="แผนกที่ดูแล">
+                                    @if($machine->location?->department)
+                                        <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle">
+                                            <i class="bi bi-building me-1"></i>{{ $machine->location->department->dept_name }}
+                                        </span>
+                                    @else
+                                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                                              title="ตั้งแผนกที่ดูแลได้ที่หน้าจุดประจำการ (Areas)">
+                                            <i class="bi bi-exclamation-triangle me-1"></i>ยังไม่ระบุ
+                                        </span>
+                                    @endif
                                 </td>
                                 <td data-label="สถานะ" class="text-center">
                                     @if($machine->is_active)

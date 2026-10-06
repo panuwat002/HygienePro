@@ -171,3 +171,34 @@ it('tells the department that runs the room, not the one that walked the round',
         App\Notifications\SessionCarsSummaryNotification::class
     );
 });
+
+/**
+ * The inheritance has to be visible, not taken on trust: a machine carries no
+ * department of its own, so the only way to check one is set correctly is to
+ * see the room's showing against it.
+ */
+it('shows a machine the department of the room it stands in', function () {
+    $admin = User::create([
+        'name' => 'Admin', 'email' => 'admin@example.com', 'password' => bcrypt('x'),
+        'role' => 'admin', 'level' => 9, 'department_id' => $this->qa->id,
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('machines.index'))
+        ->assertSuccessful()
+        ->assertSee('Production');
+});
+
+it('marks a machine whose room has no owner', function () {
+    $this->room->update(['department_id' => null]);
+
+    $admin = User::create([
+        'name' => 'Admin', 'email' => 'admin2@example.com', 'password' => bcrypt('x'),
+        'role' => 'admin', 'level' => 9, 'department_id' => $this->qa->id,
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('machines.index'))
+        ->assertSuccessful()
+        ->assertSee('ยังไม่ระบุ');
+});

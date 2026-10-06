@@ -31,7 +31,10 @@ class MachineController extends Controller implements HasMiddleware
     }
     public function index()
     {
-        $machines = Machine::with('location')->orderBy('location_id')->paginate(15);
+        // location.department: a machine is owned by whoever runs the room it
+        // stands in, and the list shows that rather than making it be taken on
+        // trust. Eager-loaded, or it is a query per row.
+        $machines = Machine::with('location.department')->orderBy('location_id')->paginate(15);
         return view('machines.index', compact('machines'));
     }
 
