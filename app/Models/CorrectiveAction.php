@@ -18,6 +18,7 @@ class CorrectiveAction extends Model
         'approval_status',
         'escalated_by',
         'assigned_to',
+        'resolved_by', // who actually did it - never the same column as who it was given to
         'root_cause',
         'action_taken',
         'proof_image',
@@ -110,6 +111,67 @@ class CorrectiveAction extends Model
     public function assignee()
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    public function resolver()
+    {
+        return $this->belongsTo(User::class, 'resolved_by');
+    }
+
+    /**
+     * Was this dealt with by somebody outside the department that owns it?
+     *
+     * QA stepping in for Production is deliberate - it gets the floor cleaned
+     * sooner than waiting for the department to pick the ticket up. The risk is
+     * not that it happens; it is that it happens every time and nobody notices,
+     * because once it is done the record looks exactly like Production having
+     * fixed their own problem.
+     *
+     * Derived, not stored: a stored flag could be set without the people
+     * changing, or the people change without the flag. The departments are the
+     * fact.
+     */
+    public function wasResolvedOnBehalf(): bool
+    {
+        $resolver = $this->resolver;
+
+        if (! $resolver || ! $this->resolved_at) {
+            return false;
+        }
+
+        $owner = $this->log?->owningDepartmentId();
+
+        if (! $owner || ! $resolver->department_id) {
+            return false;
+        }
+
+        // A department answers for anything split out of it and for the one it
+        // was split out of: ห้องแคะ's head is Production's head, and neither is
+        // standing in for the other.
+        return ! in_array($resolver->department_id, self::departmentsAnsweringFor($owner), true);
+    }
+
+    /**
+     * The owning department, the one it was split out of, and the ones split
+     * out of it. Same reach as User::canAcknowledge().
+     *
+     * @return array<int, int>
+     */
+    public static function departmentsAnsweringFor(int $departmentId): array
+    {
+        $department = Department::select('id', 'parent_department_id')->find($departmentId);
+
+        if (! $department) {
+            return [$departmentId];
+        }
+
+        return Department::query()
+            ->where('id', $departmentId)
+            ->orWhere('parent_department_id', $departmentId)
+            ->when($department->parent_department_id, fn ($q) => $q
+                ->orWhere('id', $department->parent_department_id))
+            ->pluck('id')
+            ->all();
     }
 
     public function getApprovalDetails()

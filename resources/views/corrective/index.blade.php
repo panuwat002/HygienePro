@@ -157,6 +157,41 @@
             </div>
         </div>
 
+        {{-- One department stepping in for another is deliberate: it gets the floor
+             cleaned sooner than waiting for the owner to pick the ticket up. The
+             risk is that it quietly becomes every time, because a finished record
+             looks the same either way. Counted so the pattern can be taken to the
+             department as a number rather than a feeling. --}}
+        @if(isset($onBehalfStats) && $onBehalfStats['count'] > 0)
+        <div class="row g-3 mb-4">
+            <div class="col-12">
+                <div class="impeccable-card p-3 p-md-4" style="border-left: 4px solid #f59e0b;">
+                    <div class="d-flex flex-wrap align-items-center gap-3">
+                        <div>
+                            <h6 class="text-muted fw-bold mb-1">
+                                <i class="bi bi-lightning-charge-fill text-warning me-1"></i>
+                                ดำเนินการแทนแผนกอื่น (เดือนนี้)
+                            </h6>
+                            <h2 class="fw-bolder text-warning mb-0">{{ $onBehalfStats['count'] }} <small class="fs-6 text-muted">ใบ</small></h2>
+                        </div>
+                        <div class="ms-md-auto d-flex flex-wrap gap-2">
+                            @foreach($onBehalfStats['byDepartment'] as $department => $count)
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-3 py-2">
+                                    {{ $department }} · {{ $count }}
+                                </span>
+                            @endforeach
+                        </div>
+                    </div>
+                    <div class="small text-muted mt-2">
+                        ใบแจ้งปัญหาที่คนนอกแผนกเจ้าของเป็นผู้ลงมือแก้ไข —
+                        ทำได้และช่วยให้งานเร็วขึ้น แต่ถ้าตัวเลขของแผนกใดสูงต่อเนื่อง
+                        แปลว่าแผนกนั้นไม่ได้ดูแลปัญหาของตัวเอง
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endif
+
         @if(isset($aiTagsTrend) && $aiTagsTrend->isNotEmpty())
         <!-- AI Smart Tags Trend -->
         <div class="row mb-4">
@@ -416,8 +451,18 @@
                                                 @endif
                                             </td>
                                             <td>
-                                                <div class="fw-medium text-dark">{{ $action->assignee->name ?? $action->escalator->name }}</div>
+                                                {{-- The resolver, in its own column now. It used to be
+                                                     written into assigned_to, so a finding QA fixed for
+                                                     Production stopped saying it had ever been
+                                                     Production's. --}}
+                                                <div class="fw-medium text-dark">{{ $action->resolver->name ?? $action->assignee->name ?? $action->escalator->name }}</div>
                                                 <div class="small text-muted mt-1">{{ $action->resolved_at ? $action->resolved_at->format('d/m/Y H:i') : '-' }}</div>
+                                                @if($action->wasResolvedOnBehalf())
+                                                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle mt-1"
+                                                          title="คนนอกแผนกเจ้าของปัญหาเป็นผู้ลงมือแก้ไข">
+                                                        <i class="bi bi-lightning-charge me-1"></i>ดำเนินการแทน
+                                                    </span>
+                                                @endif
                                             </td>
                                             <td class="pe-4 text-center">
                                                 {{-- A closed action with nothing recorded against it is not

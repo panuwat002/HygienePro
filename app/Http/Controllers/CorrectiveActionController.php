@@ -107,10 +107,32 @@ class CorrectiveActionController extends Controller
             'overdue' => $actions->where('due_date', '<', now())->whereNotIn('status', ['closed', 'verified'])->count(),
         ];
 
+        // QA stepping in for another department is deliberate - it gets the
+        // floor cleaned sooner than waiting for the department to pick the
+        // ticket up. The risk is not that it happens; it is that it becomes
+        // every time and nobody notices, because a finished record looks the
+        // same either way. Counted here so the pattern can be taken to the
+        // department with a number rather than a feeling.
+        $onBehalf = $actions
+            ->filter(fn ($action) => $action->resolved_at
+                && $action->resolved_at->greaterThanOrEqualTo(now()->startOfMonth())
+                && $action->wasResolvedOnBehalf());
+
+        $onBehalfStats = [
+            'count' => $onBehalf->count(),
+            'byDepartment' => $onBehalf
+                ->groupBy(fn ($action) => $action->log?->owningDepartmentId())
+                ->map->count()
+                ->mapWithKeys(fn ($count, $departmentId) => [
+                    (\App\Models\Department::find($departmentId)?->dept_name ?? 'ไม่ระบุแผนก') => $count,
+                ])
+                ->sortDesc(),
+        ];
+
         // AI Smart Tags Trend (Top 5 tags)
         $aiTagsTrend = $actions->pluck('ai_tags')->flatten()->filter()->countBy()->sortDesc()->take(5);
 
-        return view('corrective.index', compact('openActions', 'completedActions', 'assignableUsers', 'routableDepartments', 'stats', 'aiTagsTrend'));
+        return view('corrective.index', compact('openActions', 'completedActions', 'assignableUsers', 'routableDepartments', 'stats', 'onBehalfStats', 'aiTagsTrend'));
     }
 
     /**
@@ -367,7 +389,18 @@ class CorrectiveActionController extends Controller
             'preventive_action' => $request->preventive_action,
             'proof_image' => $path,
             'resolved_at' => now(),
-            'assigned_to' => auth()->id() // Auto-claim by resolver
+            // Who did it, in its own column.
+            //
+            // This used to write the resolver into assigned_to - "auto-claim by
+            // resolver" - so the moment QA fixed something on Production's
+            // behalf, the record stopped saying it had ever been Production's.
+            // Stepping in for another department is meant to be an exception
+            // made for speed, and nothing could count it; what cannot be
+            // counted cannot be noticed turning into the rule.
+            'resolved_by' => $user->id,
+            // Nobody had it, so the person who did it takes it. If somebody was
+            // already assigned, that stays - it is who was answerable.
+            'assigned_to' => $action->assigned_to ?? $user->id,
         ]);
 
         if ($action->log) {
