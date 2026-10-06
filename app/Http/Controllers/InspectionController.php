@@ -2607,11 +2607,18 @@ class InspectionController extends Controller
      */
     private function verificationGroupKey(InspectionLog $log): string
     {
-        if ($log->employee_id) {
-            return $log->session_id . '_personnel';
-        }
+        $base = $log->employee_id
+            ? $log->session_id . '_personnel'
+            : $log->session_id . '_loc_' . ($log->location_id ?? ($log->machine->location_id ?? 'unknown'));
 
-        return $log->session_id . '_loc_' . ($log->location_id ?? ($log->machine->location_id ?? 'unknown'));
+        // Must mirror VerificationGroups::IS_FINDING_SQL exactly. The page
+        // groups the loaded logs with this and matches them to rows the
+        // database grouped with that; a disagreement and a card's counts stop
+        // describing its contents.
+        $isFinding = $log->result === 'fail'
+            && ! in_array($log->verification_status, ['approved', 'auto_verified'], true);
+
+        return $base . ($isFinding ? '_finding' : '');
     }
 
     /**

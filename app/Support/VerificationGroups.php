@@ -28,6 +28,18 @@ class VerificationGroups
     public const RECENTLY_CLOSED_DAYS = 7;
 
     /**
+     * A log that failed and has not been signed off: a finding still standing.
+     *
+     * Written once, used by the SQL that groups cards and mirrored by
+     * InspectionController::verificationGroupKey() for the loaded logs. The two
+     * must agree or a card's summary and its contents come apart.
+     */
+    public const IS_FINDING_SQL = "case when inspection_logs.result = 'fail'"
+        . " and (inspection_logs.verification_status is null"
+        . " or inspection_logs.verification_status not in ('approved', 'auto_verified'))"
+        . ' then 1 else 0 end';
+
+    /**
      * The rows /verification works from, for a given date window and scope.
      *
      * The page summarises these in SQL and then loads only the groups it shows;
@@ -143,6 +155,19 @@ class VerificationGroups
                 // group per location, and a machine counts as its location.
                 'case when inspection_logs.employee_id is not null then null'
                     . ' else coalesce(inspection_logs.location_id, machines.location_id) end as loc_id',
+                // ...and findings are their own card.
+                //
+                // A round used to be one card holding everything in it, so ten
+                // people who passed and the one who did not arrived together,
+                // and the tab was decided by a single status for the lot: an
+                // unverified log outranked a re-clean, so a round with a
+                // finding still sat in รอทวนสอบ while สั่งแก้ไข read 0.
+                //
+                // Splitting here rather than by target keeps this a plain
+                // expression over the row - no window function, no derived
+                // table - on the one query whose cost already had to be fought
+                // down from 17,993 rows to render twenty.
+                self::IS_FINDING_SQL . ' as is_finding',
                 'count(*) as n_total',
                 'sum(case when inspection_logs.verified_at is null then 1 else 0 end) as n_unverified',
                 "sum(case when inspection_logs.verification_status = 'rejected' then 1 else 0 end) as n_rejected",
@@ -151,15 +176,17 @@ class VerificationGroups
                 "sum(case when inspection_logs.verification_status = 'auto_verified' then 1 else 0 end) as n_auto",
                 'max(inspection_logs.inspected_at) as last_inspected_at',
             ], $cardDetail)))
-            ->groupBy('session_id', 'is_person', 'loc_id')
+            ->groupBy('session_id', 'is_person', 'loc_id', 'is_finding')
             ->orderByDesc('last_inspected_at')
             ->toBase()
             ->get()
             ->map(function ($row) {
                 $row->is_person = (bool) $row->is_person;
-                $row->group_key = $row->is_person
+                $row->is_finding = (bool) $row->is_finding;
+                $row->group_key = ($row->is_person
                     ? $row->session_id . '_personnel'
-                    : $row->session_id . '_loc_' . ($row->loc_id ?? 'unknown');
+                    : $row->session_id . '_loc_' . ($row->loc_id ?? 'unknown'))
+                    . ($row->is_finding ? '_finding' : '');
                 $row->group_status = $this->statusFromCounts($row);
 
                 return $row;
@@ -206,7 +233,24 @@ class VerificationGroups
             return 'auto_verified';
         }
 
-        if ((int) $row->n_rejected > 0 || (int) $row->n_unverified > 0) {
+        // Sent back to the inspector because the record itself is wrong. That
+        // is a different problem from something needing re-cleaning, and it
+        // keeps its place at the front of the queue.
+        if ((int) $row->n_rejected > 0) {
+            return 'pending';
+        }
+
+        // A card of findings belongs in สั่งแก้ไข from the moment it exists.
+        // Before the split it could not: its logs were mixed in with the
+        // round's passes, and an unverified log outranked a re-clean, so a
+        // round with a finding sat in รอทวนสอบ while สั่งแก้ไข read 0 - even
+        // though every one of those failures already had a corrective action
+        // opened against it automatically.
+        if (! empty($row->is_finding)) {
+            return 'reclean';
+        }
+
+        if ((int) $row->n_unverified > 0) {
             return 'pending';
         }
 

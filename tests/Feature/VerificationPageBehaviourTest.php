@@ -485,15 +485,31 @@ it('counts the people and the failures in a mixed round', function () {
         }
     }
 
-    $group = pageData($this, 'filter_type=person&tab=awaiting_approval')['groups']->first();
+    // Rewritten on 2026-10-06 when a round stopped being one card.
+    //
+    // It used to arrive as a single card of six logs whose status was 'fail' -
+    // the five clean results and the one finding together, in whichever tab the
+    // status ladder picked for the lot. A supervisor then had to open the modal
+    // and scroll to find the red row, and approving the card swept the finding
+    // along with it.
+    //
+    // The clean results now wait for approval on their own, and the finding is
+    // a card of its own in สั่งแก้ไข from the moment it exists.
+    $passing = pageData($this, 'filter_type=person&tab=awaiting_approval')['groups']->first();
 
-    expect($group->name)->toContain('3 คน')
-        ->and($group->name)->toContain('พบข้อบกพร่อง')
-        ->and($group->status)->toBe('fail')
-        ->and($group->findings)->toHaveCount(1)
-        ->and($group->all_logs)->toHaveCount(6)
+    expect($passing->name)->toContain('3 คน')
+        ->and($passing->status)->not->toBe('fail')
+        ->and($passing->all_logs)->toHaveCount(5)
+        ->and($passing->findings)->toHaveCount(0)
         // Only one of the three was acknowledged.
-        ->and($group->is_acknowledged)->toBeFalse();
+        ->and($passing->is_acknowledged)->toBeFalse();
+
+    $finding = pageData($this, 'filter_type=person&tab=reclean')['groups']->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('fail')
+        ->and($finding->all_logs)->toHaveCount(1)
+        ->and($finding->findings)->toHaveCount(1);
 });
 
 it('counts machines and bare area checks separately in one location', function () {
