@@ -54,6 +54,79 @@
                 </div>
             </div>
 
+            {{-- Hundreds of machines, fifteen a page, and no way to narrow them:
+                 finding one meant paging through the lot, and selecting a room's
+                 worth to move was impossible because "select all" reaches only the
+                 page in front of you. --}}
+            <div class="card border-0 rounded-4 shadow-sm mb-4">
+                <div class="card-body p-3">
+                    <form action="{{ route('machines.index') }}" method="GET" class="row g-2 align-items-center">
+                        <div class="col-md-3">
+                            <div class="input-group">
+                                <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                                <input type="text" name="search" class="form-control border-start-0 ps-0"
+                                       placeholder="ค้นหาชื่อเครื่องจักร, รหัส..." value="{{ request('search') }}">
+                            </div>
+                        </div>
+
+                        <div class="col-md-3">
+                            <select name="location_id" class="form-select">
+                                <option value="">-- ทุกพื้นที่ --</option>
+                                @foreach($locations as $location)
+                                    <option value="{{ $location->id }}" {{ (int) request('location_id') === $location->id ? 'selected' : '' }}>
+                                        {{ $location->location_name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="col-md-2">
+                            <select name="department_id" class="form-select">
+                                <option value="">-- ทุกแผนก --</option>
+                                {{-- The list that has to be worked through. --}}
+                                <option value="none" {{ request('department_id') === 'none' ? 'selected' : '' }}>⚠ ยังไม่ระบุแผนก</option>
+                                @foreach($departments as $department)
+                                    <option value="{{ $department->id }}" {{ (string) request('department_id') === (string) $department->id ? 'selected' : '' }}>
+                                        {{ $department->dept_name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="col-md-2">
+                            <select name="status" class="form-select">
+                                @foreach(['all' => 'ทุกสถานะ', 'active' => 'ใช้งานอยู่', 'inactive' => 'ปิดใช้งาน'] as $value => $label)
+                                    <option value="{{ $value }}" {{ request('status', 'all') === $value ? 'selected' : '' }}>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="col-md-1">
+                            <select name="per_page" class="form-select" title="จำนวนต่อหน้า">
+                                @foreach([15, 50, 100, 300] as $size)
+                                    <option value="{{ $size }}" {{ (int) request('per_page', 15) === $size ? 'selected' : '' }}>{{ $size }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="col-md-1 d-flex gap-2">
+                            <button type="submit" class="btn btn-primary-custom flex-grow-1"><i class="bi bi-search"></i></button>
+                            @if(request()->hasAny(['search', 'location_id', 'department_id', 'status', 'per_page']))
+                                <a href="{{ route('machines.index') }}" class="btn btn-outline-secondary" title="ล้างการค้นหา"><i class="bi bi-x-lg"></i></a>
+                            @endif
+                        </div>
+                    </form>
+
+                    <div class="small text-muted mt-2">
+                        พบ {{ number_format($machines->total()) }} เครื่องจักร
+                        @if($machines->hasPages())
+                            · แสดงหน้า {{ $machines->currentPage() }} จาก {{ $machines->lastPage() }}
+                            · เลือก "ทั้งหมด" บนหัวตารางจะเลือกได้เฉพาะที่แสดงอยู่ในหน้านี้
+                        @endif
+                    </div>
+                </div>
+            </div>
+
             @if(session('success'))
             <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm mb-4" role="alert">
                 <i class="bi bi-check-circle-fill me-2"></i>{{ session('success') }}

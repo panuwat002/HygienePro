@@ -29,19 +29,71 @@ class MachineController extends Controller implements HasMiddleware
             }),
         ];
     }
-    public function index()
+    public function index(Request $request)
     {
         // location.department: a machine is owned by whoever runs the room it
         // stands in, and the list shows that rather than making it be taken on
         // trust. Eager-loaded, or it is a query per row.
-        $machines = Machine::with('location.department')->orderBy('location_id')->paginate(15);
+        $query = Machine::with('location.department');
+
+        if ($request->filled('search')) {
+            // Trimmed: a code pasted off a label or out of a spreadsheet brings
+            // whitespace with it.
+            $search = trim((string) $request->search);
+
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('code', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('location_id')) {
+            $query->where('location_id', $request->location_id);
+        }
+
+        // 'none' finds the machines whose area has no owner - the ones whose
+        // findings still fall back to whoever walked the round. That is the
+        // list somebody actually has to work through.
+        $department = $request->input('department_id');
+        if ($department === 'none') {
+            $query->where(function ($q) {
+                $q->whereHas('location', fn ($sq) => $sq->whereNull('department_id'))
+                  ->orWhereDoesntHave('location');
+            });
+        } elseif (filled($department)) {
+            $query->whereHas('location', fn ($q) => $q->where('department_id', $department));
+        }
+
+        $status = $request->input('status', 'all');
+        if ($status === 'active') {
+            $query->where('is_active', true);
+        } elseif ($status === 'inactive') {
+            $query->where('is_active', false);
+        }
+
+        // Fifteen a page is unusable for the thing the bulk action is for -
+        // picking out a room's worth of machines to move - because "select
+        // all" only ever reaches the page in front of you.
+        $perPage = (int) $request->input('per_page', 15);
+        $perPage = in_array($perPage, [15, 50, 100, 300], true) ? $perPage : 15;
+
+        $machines = $query->orderBy('location_id')->paginate($perPage)->withQueryString();
+
+        // Narrowing the list from page 4 leaves ?page=4 pointing past the end
+        // of the result, and the page then renders empty over rows that are
+        // really there.
+        if ($machines->isEmpty() && $machines->currentPage() > 1) {
+            return redirect()->route('machines.index', $request->except('page'));
+        }
 
         // Each area with the department that runs it, so the bulk move can say
         // where a machine's findings will go after it rather than only which
         // room it will be in.
         $locations = Location::with('department')->orderBy('location_name')->get();
+        $departments = \App\Models\Department::orderBy('dept_name')->get();
 
-        return view('machines.index', compact('machines', 'locations'));
+        return view('machines.index', compact('machines', 'locations', 'departments'));
     }
 
     public function create()
