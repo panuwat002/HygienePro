@@ -424,8 +424,32 @@ class ReportController extends Controller
                 ->whereNull('machine_id')
                 ->whereNull('employee_id');
 
+            // Only rooms the report is already about.
+            //
+            // The widening above exists to fill in a room's own floor and wall
+            // checks when the round being reported did not record them - a room
+            // the form is already printing. It was also creating rooms outright,
+            // so exporting one personnel round printed every area inspected
+            // anywhere that day: seven rooms that round never visited, under a
+            // form headed with that round's shift and signed by its inspector.
+            //
+            // A room counts as being in the report if it carries its own area
+            // results, or if one of its machines does.
+            $roomsInReport = array_keys($areaMatrix);
+            foreach ($machineMatrix as $machineRow) {
+                if ($locationId = $machineRow['info']->location_id ?? null) {
+                    $roomsInReport[] = $locationId;
+                }
+            }
+            $roomsInReport = array_flip(array_unique($roomsInReport));
+
             foreach ($areaFallbackQuery->get() as $log) {
                 $lId = $log->location_id;
+
+                if (! isset($roomsInReport[$lId])) {
+                    continue;
+                }
+
                 if (!isset($areaMatrix[$lId])) {
                     $loc = $log->location;
                     if (!$loc) continue;
