@@ -279,10 +279,21 @@
                             <td class="text-center" data-label="เวลาเริ่ม">
                                 <span class="text-muted small"><i class="bi bi-clock me-1"></i>{{ $activeSess->created_at->format('H:i') }} น.</span>
                                 @php
-                                    $hoursDiff = $activeSess->created_at->diffInHours(now());
+                                    // diffInHours() returns a float in Carbon 3, so this
+                                    // printed "นานเกินไป (5.8002289908333 ชม.)".
+                                    $minutesOpen = (int) $activeSess->created_at->diffInMinutes(now());
                                 @endphp
-                                @if($hoursDiff >= 2)
-                                    <br><span class="badge bg-danger mt-1" style="font-size: 0.65rem;">นานเกินไป ({{ $hoursDiff }} ชม.)</span>
+                                @if($minutesOpen >= 120)
+                                    {{-- "นานเกินไป" told somebody the round had been open a
+                                         long time without saying what that meant or what to
+                                         do. It means the inspector never pressed finish, and
+                                         finishing is what sends the summary, tells the
+                                         supervisor there is something to verify and closes
+                                         off a random audit. --}}
+                                    <br><span class="badge bg-danger mt-1" style="font-size: 0.65rem;"
+                                              title="ผู้ตรวจยังไม่ได้กดจบรอบ — การจบรอบคือสิ่งที่ส่งสรุปผล แจ้งหัวหน้าให้มาทวนสอบ และปิดภารกิจสุ่มตรวจ">
+                                        ยังไม่ได้ปิดรอบ ({{ intdiv($minutesOpen, 60) }} ชม. {{ $minutesOpen % 60 }} นาที)
+                                    </span>
                                 @endif
                             </td>
                             <td class="text-end pe-3" data-label="จัดการ">
