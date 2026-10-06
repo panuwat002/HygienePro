@@ -33,12 +33,17 @@ class CorrectiveActionController extends Controller
             $query->where(function($q) use ($user) {
                 $q->where('assigned_to', $user->id)
                   ->orWhere('escalated_by', $user->id);
-                
+
                 // Manager/Supervisor Visibility: See all items in their department
                 // ONLY if user is Supervisor/Manager (Level >= 4)
                 if ($user->department_id && $user->level >= 4) {
+                    // ...and of any department under theirs. ห้องแคะ was split
+                    // out of Production and kept Production's head, and
+                    // canAcknowledge() was taught that; this page was not, so
+                    // that head could not see a single finding raised against
+                    // the area they are answerable for.
                     $q->orWhereHas('log.session', function($sq) use ($user) {
-                        $sq->where('department_id', $user->department_id);
+                        $sq->whereIn('department_id', $this->departmentsAnsweredFor($user->department_id));
                     });
                 }
             });
@@ -49,15 +54,35 @@ class CorrectiveActionController extends Controller
         $openActions = $actions->whereIn('status', ['open', 'assigned', 'resolved']);
         $completedActions = $actions->whereIn('status', ['closed', 'verified']);
         
-        $assignableUsers = \App\Models\User::whereHas('department', function($q) {
-            $q->where('dept_name', 'like', '%Production%')
-              ->orWhere('dept_name', 'like', '%ผลิต%');
-        })
-        ->where(function($q) {
-            $q->whereIn('role', ['supervisor', 'manager'])
-              ->orWhere('level', '>=', 4);
-        })
-        ->get();
+        // Who a finding can be handed to.
+        //
+        // This used to be "anyone in a department whose NAME contains
+        // Production or ผลิต", so a finding raised in Quality Assurance could
+        // only ever be assigned to somebody in Production - the department that
+        // owns the problem could not be given it. Matching on the name also
+        // meant renaming a department broke assignment with nothing to show
+        // for it.
+        //
+        // It is now everyone senior enough to take responsibility for work,
+        // wherever they are; which of them a given finding may go to is decided
+        // per finding below, from the department that finding belongs to.
+        $assignableUsers = \App\Models\User::with('department')
+            ->where(function($q) {
+                $q->whereIn('role', ['supervisor', 'manager'])
+                  ->orWhere('level', '>=', 4);
+            })
+            ->orderBy('department_id')
+            ->orderBy('name')
+            ->get();
+
+        // Per finding: the department it was raised against, that department's
+        // parent, and any department under it. A head answers for their own
+        // area and for anything split out of it - the same reach
+        // User::canAcknowledge() allows.
+        $routableDepartments = $openActions
+            ->mapWithKeys(fn ($action) => [
+                $action->id => $this->departmentsAnsweredFor($action->log?->session?->department_id),
+            ]);
 
         // Calculate Stats
         $stats = [
@@ -71,7 +96,37 @@ class CorrectiveActionController extends Controller
         // AI Smart Tags Trend (Top 5 tags)
         $aiTagsTrend = $actions->pluck('ai_tags')->flatten()->filter()->countBy()->sortDesc()->take(5);
 
-        return view('corrective.index', compact('openActions', 'completedActions', 'assignableUsers', 'stats', 'aiTagsTrend'));
+        return view('corrective.index', compact('openActions', 'completedActions', 'assignableUsers', 'routableDepartments', 'stats', 'aiTagsTrend'));
+    }
+
+    /**
+     * A department, the one it was split out of, and the ones split out of it.
+     *
+     * ห้องแคะ was separated from Production and kept Production's head, so a
+     * finding in either is that head's business. Used both for who may see a
+     * finding and for who it may be handed to, so the two cannot disagree.
+     *
+     * @return array<int, int>
+     */
+    private function departmentsAnsweredFor(?int $departmentId): array
+    {
+        if (! $departmentId) {
+            return [];
+        }
+
+        $department = \App\Models\Department::select('id', 'parent_department_id')->find($departmentId);
+
+        if (! $department) {
+            return [$departmentId];
+        }
+
+        return \App\Models\Department::query()
+            ->where('id', $departmentId)
+            ->orWhere('parent_department_id', $departmentId)
+            ->when($department->parent_department_id, fn ($q) => $q
+                ->orWhere('id', $department->parent_department_id))
+            ->pluck('id')
+            ->all();
     }
 
     public function assign(Request $request)
@@ -92,17 +147,27 @@ class CorrectiveActionController extends Controller
         $user = auth()->user();
         $targetDeptId = $action->log?->session?->department_id;
 
+        $assignee = \App\Models\User::find($request->assigned_to);
+        $routable = $this->departmentsAnsweredFor($targetDeptId);
+
         // Authorization: Admin, QA, or Manager/Supervisor (level >= 4) of the target department
         if (!$user->isAdmin() && !$user->isQA()) {
-            if ($user->level < 4 || $user->department_id !== $targetDeptId) {
+            if ($user->level < 4 || ! in_array($user->department_id, $routable, true)) {
                 return back()->with('error', 'คุณไม่มีสิทธิ์กำหนดผู้รับผิดชอบงานนี้ (Unauthorized to assign)');
             }
-            
-            // SECURITY FIX: Ensure the assignee is from the SAME department
-            $assignee = \App\Models\User::find($request->assigned_to);
-            if ($assignee && $assignee->department_id !== $targetDeptId && !$assignee->isAdmin() && !$assignee->isQA()) {
-                return back()->with('error', 'ไม่สามารถจ่ายงานข้ามแผนกได้ (Cannot assign to user in different department)');
-            }
+        }
+
+        // Where the work may go, for everyone including QA and admin. The
+        // dropdown hides the people a finding cannot be handed to, and a check
+        // that only lives in the browser is decoration.
+        //
+        // QA and admins stay assignable from any department: QA taking a
+        // finding on themselves is one of the three routes this page is for.
+        if ($assignee
+            && ! $assignee->isAdmin()
+            && ! $assignee->isQA()
+            && ! in_array($assignee->department_id, $routable, true)) {
+            return back()->with('error', 'มอบหมายข้ามสายงานไม่ได้ — เลือกคนในแผนกที่พบข้อบกพร่อง แผนกแม่ หรือแผนกย่อยของแผนกนั้น');
         }
         
         $oldAssignee = $action->assigned_to;

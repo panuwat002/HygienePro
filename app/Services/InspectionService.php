@@ -358,9 +358,34 @@ class InspectionService
             ];
         })->all();
 
+        // Level 4, not 5. A department supervisor is the person who actually
+        // assigns a finding to somebody; telling only managers meant the one
+        // who has to act on it heard nothing.
         $managers = \App\Models\User::where('department_id', $session->department_id)
-            ->where('level', '>=', 5)
+            ->where('level', '>=', 4)
             ->get();
+
+        // A department with nobody of its own - ห้องแคะ, the week it was split
+        // out of Production - told nobody at all, about findings raised against
+        // a brand new work area. Its parent's head answers for it.
+        //
+        // The same level 4 bar is applied one step up rather than calling
+        // Department::responsibleManager(), which only recognises level 5 and
+        // would leave a parent headed by a supervisor just as silent.
+        if ($managers->isEmpty()) {
+            $parentId = $session->department?->parent_department_id;
+
+            if ($parentId) {
+                $managers = \App\Models\User::where('department_id', $parentId)
+                    ->where('level', '>=', 4)
+                    ->get();
+            }
+
+            if ($managers->isEmpty()) {
+                $responsible = $session->department?->responsibleManager();
+                $managers = $responsible ? collect([$responsible]) : $managers;
+            }
+        }
 
         foreach ($managers as $manager) {
             $manager->notify(new \App\Notifications\SessionCarsSummaryNotification($session, $summaries));

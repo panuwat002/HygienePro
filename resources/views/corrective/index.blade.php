@@ -326,7 +326,7 @@
                                             @endif
                                         @else
                                             @if($action->status == 'open' || auth()->user()->level >= 5 || auth()->user()->isAdmin())
-                                            <button class="btn btn-sm text-dark px-3 fw-medium" style="background-color: #fef3c7; border: 1px solid #fde68a;" onclick="openAssignModal({{ $action->id }}, '{{ $action->assigned_to ?? '' }}', '{{ $action->due_date ? $action->due_date->format('Y-m-d') : '' }}')">
+                                            <button class="btn btn-sm text-dark px-3 fw-medium" style="background-color: #fef3c7; border: 1px solid #fde68a;" onclick="openAssignModal({{ $action->id }}, '{{ $action->assigned_to ?? '' }}', '{{ $action->due_date ? $action->due_date->format('Y-m-d') : '' }}', '{{ implode(',', $routableDepartments[$action->id] ?? []) }}')">
                                                 <i class="bi bi-person-plus text-warning"></i> {{ $action->status == 'assigned' ? 'เปลี่ยนคน' : 'มอบหมาย' }}
                                             </button>
                                             @endif
@@ -454,12 +454,28 @@
                             <label class="form-label fw-bold">เลือกพนักงาน (Assignee):</label>
                             <select name="assigned_to" class="form-select rounded-3 p-2" required>
                                 <option value="">-- กรุณาเลือก --</option>
+                                {{-- Every option is rendered, and openAssignModal()
+                                     leaves visible only those in the department the
+                                     finding was raised against (plus its parent and
+                                     any department under it). The list used to be
+                                     everyone in a department named like Production,
+                                     whatever department the finding came from. --}}
                                 @foreach($assignableUsers as $u)
-                                    <option value="{{ $u->id }}">
-                                        {{ $u->name }} @if($u->job_title) ({{ \Illuminate\Support\Str::limit($u->job_title, 20) }}) @endif
+                                    <option value="{{ $u->id }}" data-dept-id="{{ $u->department_id }}">
+                                        {{ $u->name }}
+                                        @if($u->department) — {{ $u->department->dept_name }} @endif
+                                        @if($u->job_title) ({{ \Illuminate\Support\Str::limit($u->job_title, 20) }}) @endif
                                     </option>
                                 @endforeach
                             </select>
+                            {{-- A department with nobody senior enough to take work is a
+                                 real situation, and silently showing an empty dropdown
+                                 reads as a broken page. --}}
+                            <div id="assignNoCandidates" class="alert alert-warning mt-2 mb-0 py-2 small" hidden>
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                แผนกนี้ยังไม่มีหัวหน้าหรือผู้จัดการในระบบ จึงมอบหมายให้ใครไม่ได้ —
+                                เพิ่มผู้ใช้ระดับหัวหน้าให้แผนกนั้นก่อน
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">กำหนดเสร็จภายใน (Due Date):</label>
@@ -546,10 +562,28 @@
 
     @push('scripts')
     <script>
-        function openAssignModal(id, assigneeId = '', dueDate = '') {
+        function openAssignModal(id, assigneeId = '', dueDate = '', routableDepts = '') {
             document.getElementById('assignActionId').value = id;
-            
+
             let selectUser = document.querySelector('#assignModal select[name="assigned_to"]');
+
+            // Show only the people this finding can actually go to: its own
+            // department, the one it was split out of, and any split out of it.
+            // An empty list means the finding has no department on it, so the
+            // whole list stays - better than offering nobody.
+            const allowed = routableDepts ? routableDepts.split(',').filter(Boolean) : [];
+            let offered = 0;
+
+            selectUser.querySelectorAll('option[data-dept-id]').forEach(function (option) {
+                const show = allowed.length === 0 || allowed.includes(option.dataset.deptId);
+                option.hidden = !show;
+                option.disabled = !show;
+                if (show) offered++;
+            });
+
+            const empty = document.getElementById('assignNoCandidates');
+            if (empty) empty.hidden = offered > 0;
+
             if (assigneeId) {
                 selectUser.value = assigneeId;
             } else {
