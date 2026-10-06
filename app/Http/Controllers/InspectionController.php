@@ -559,7 +559,16 @@ class InspectionController extends Controller
                 $shifts = [$shift];
             }
             // Loop Engineering Fix: Cross-Midnight Bug
-            $today = now()->hour < 6 ? now()->subDay()->toDateString() : now()->toDateString();
+            //
+            // ...and, when the inspector is about to record a round for an
+            // earlier day, that day instead. This whole method answers "what is
+            // there to inspect, and how much of it is done" - and it answered
+            // it for today even while the round being started was for the 5th.
+            // Shift cards with no one rostered TODAY are dropped a few dozen
+            // lines down, so a shift that worked on the 5th and not on the 6th
+            // could not be picked at all, and the backdated round for it could
+            // not be started.
+            $today = $this->inspectionService->resolveViewDate(Auth::user(), $request->query('for_date'));
 
             // 1. Get locations and optionally machines
             $query = Location::query()
@@ -676,7 +685,9 @@ class InspectionController extends Controller
                                         ->get();
                     $totalDeptEmployees = $allEmployees->count();
 
-                    $schedules = \App\Models\EmployeeSchedule::where('date', now()->startOfDay())
+                    // The roster of the day being counted, not of today - the
+                    // two differ precisely when a round is being backdated.
+                    $schedules = \App\Models\EmployeeSchedule::where('date', \Illuminate\Support\Carbon::parse($today)->startOfDay())
                         ->whereIn('employee_id', $allEmployees->pluck('id'))
                         ->get()
                         ->keyBy('employee_id');

@@ -573,15 +573,19 @@
                                         </small>
                                     </label>
                                     <input class="form-check-input ms-0" type="checkbox" role="switch" id="backdate_switch"
-                                           onchange="document.getElementById('backdate_box').style.display = this.checked ? 'block' : 'none'; if(!this.checked){document.getElementById('backdate_to').value=''; document.getElementById('backdate_reason').value='';}">
+                                           onchange="document.getElementById('backdate_box').style.display = this.checked ? 'block' : 'none'; if(!this.checked){document.getElementById('backdate_to').value=''; document.getElementById('backdate_reason').value=''; if (window.fetchStats) window.fetchStats();}">
                                 </div>
 
                                 <div id="backdate_box" class="mt-3" style="display: none;">
                                     <div class="row g-2">
                                         <div class="col-md-4">
                                             <label for="backdate_to" class="form-label small fw-bold text-warning-emphasis">วันที่ของการตรวจ</label>
+                                            {{-- Reloads the shift cards for the day chosen: their
+                                                 counts come from that day's roster, and a shift
+                                                 nobody worked today is otherwise not offered. --}}
                                             <input type="date" name="backdate_to" id="backdate_to" class="form-control form-control-sm"
-                                                   min="{{ $backdateFloor }}" max="{{ $backdateCeiling }}">
+                                                   min="{{ $backdateFloor }}" max="{{ $backdateCeiling }}"
+                                                   onchange="if (window.fetchStats) window.fetchStats();">
                                         </div>
                                         <div class="col-md-8">
                                             <label for="backdate_reason" class="form-label small fw-bold text-warning-emphasis">เหตุผล (จะถูกพิมพ์ลงในแบบฟอร์ม)</label>
@@ -685,6 +689,15 @@
             if ('{{ $type }}' === 'personnel' && typeof selectedShiftsArray !== 'undefined') {
                 const queryParams = selectedShiftsArray.map(s => `shifts[]=${encodeURIComponent(s)}`).join('&');
                 url = `/inspection/summary/{{ $type }}/${deptId}?${queryParams}`;
+            }
+
+            // Counting the day the round is FOR. Without this the cards show
+            // today's roster while the round goes to the 5th - and a shift with
+            // nobody rostered today is hidden entirely, so the backdated round
+            // for it could not be started at all.
+            const backdateField = document.getElementById('backdate_to');
+            if (backdateField && backdateField.value) {
+                url += (url.includes('?') ? '&' : '?') + 'for_date=' + encodeURIComponent(backdateField.value);
             }
 
             // Loading state

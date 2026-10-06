@@ -128,6 +128,34 @@ class InspectionService
     }
 
     /**
+     * Which day a read-only screen should describe.
+     *
+     * The same bounds as backdating a round, but lenient: a screen that is
+     * only counting things falls back to today rather than throwing, because
+     * a stale or hand-edited query string should not break the page. Writing
+     * still goes through resolveBackdate(), which refuses instead.
+     */
+    public function resolveViewDate(User $user, ?string $date): string
+    {
+        $businessToday = now()->hour < 6 ? now()->subDay()->startOfDay() : now()->startOfDay();
+
+        if (blank($date) || ! $user->can('verify')) {
+            return $businessToday->toDateString();
+        }
+
+        try {
+            $target = Carbon::parse($date)->startOfDay();
+        } catch (\Throwable $e) {
+            return $businessToday->toDateString();
+        }
+
+        $withinWindow = $target->lessThanOrEqualTo($businessToday)
+            && $target->greaterThanOrEqualTo($businessToday->copy()->subDays(InspectionSession::BACKDATE_LIMIT_DAYS));
+
+        return $withinWindow ? $target->toDateString() : $businessToday->toDateString();
+    }
+
+    /**
      * Check a request to date a round to an earlier day, and say what it means.
      *
      * Returns null for an ordinary round, or ['date' => ..., 'reason' => ...].

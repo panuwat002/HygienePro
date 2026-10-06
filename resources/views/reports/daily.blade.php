@@ -80,6 +80,16 @@
                                             <span class="badge rounded-pill mt-1 bg-{{ $isPersonnel ? 'primary' : 'info' }}-subtle text-{{ $isPersonnel ? 'primary' : 'info' }}-emphasis border border-{{ $isPersonnel ? 'primary' : 'info' }}-subtle">
                                                 <i class="bi {{ $isPersonnel ? 'bi-people-fill' : 'bi-gear-wide-connected' }} me-1"></i>{{ $session->type_label }}
                                             </span>
+                                            {{-- The PDF declares a backdated round; the page it is
+                                                 picked from has to as well, or somebody chooses
+                                                 rounds to export without knowing one of them is an
+                                                 exception. --}}
+                                            @if($session->isBackdated())
+                                                <span class="badge rounded-pill mt-1 bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                                                      title="บันทึกเมื่อ {{ $session->created_at->format('d/m/Y') }} — {{ $session->backdated_reason }}">
+                                                    <i class="bi bi-calendar-event me-1"></i>บันทึกย้อนหลัง
+                                                </span>
+                                            @endif
                                             <div class="small text-muted mt-1">
                                                 <i class="bi bi-clock"></i> กะ: {{ $session->shift_label }}
                                             </div>
