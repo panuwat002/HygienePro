@@ -831,7 +831,16 @@ class ReportController extends Controller
 
                 $room = array_slice($room, $spaceLeft);
                 if ($room !== []) {
-                    array_unshift($room, array_merge($header, ['continued' => true]));
+                    // The repeat says which room these machines are in, and
+                    // nothing else. Carrying the results over printed the room's
+                    // X and its "ยังไม่ได้แก้ไข" a second time, so one finding
+                    // appeared twice on the same form - and on a sheet that is
+                    // audit evidence, a finding counted twice is a finding
+                    // reported wrongly.
+                    array_unshift($room, array_merge($header, [
+                        'continued' => true,
+                        'results' => [],
+                    ]));
                 }
             }
         }

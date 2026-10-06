@@ -183,3 +183,25 @@ it('still never strands a heading, however the rooms fall', function () {
         }
     }
 });
+
+/**
+ * The repeat is only there to say which room these machines are in. Carrying
+ * the room's results over printed its X and its "ยังไม่ได้แก้ไข" a second
+ * time, so one finding appeared twice on the same form - and on a sheet kept
+ * as audit evidence, a finding counted twice is a finding reported wrongly.
+ */
+it('carries no results onto a repeated header', function () {
+    $rows = roomRows('ห้อง ใหญ่', 40);
+
+    // The room's own row holds the area result.
+    $rows[0]['results'] = ['42' => 'the area check'];
+
+    $pages = pagesOf($rows);
+
+    expect(firstOf($pages[0])['results'])->toBe(['42' => 'the area check']);
+
+    foreach (array_slice($pages, 1) as $page) {
+        expect(firstOf($page)['continued'])->toBeTrue()
+            ->and(firstOf($page)['results'])->toBe([]);
+    }
+});
