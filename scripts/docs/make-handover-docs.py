@@ -210,14 +210,25 @@ def build_handover(path):
         ["ที่ตั้งโปรแกรม", r"C:\Users\azure.ad\Documents\project\hygiene-checklist"],
         ["Document root", r"...\hygiene-checklist\public"],
         ["PHP", r"C:\PHP\php-cgi.exe (CLI: C:\PHP\php.exe) · PHP 8.2 · อ่านค่าจาก C:\PHP\php.ini"],
-        ["ฐานข้อมูล", "MySQL — ฐานข้อมูลชื่อ hygiene_db (127.0.0.1:3306)"],
+        ["ฐานข้อมูล", "MySQL (บริการแยกต่างหาก ไม่ใช่ของ XAMPP) — ฐานข้อมูลชื่อ hygiene_db ที่ 127.0.0.1:3306"],
         ["Framework", "Laravel 12"],
         ["Python (ใช้นำเข้าไฟล์ Excel)", r"C:\Program Files\Python312\python.exe (ต้องมี pandas และ openpyxl)"],
         ["Queue / Cache / Session", "เก็บในฐานข้อมูล (database driver) ไม่ได้ใช้ Redis"],
     ], widths=[5, 11])
 
-    note(doc, "หมายเหตุสำคัญ: เครื่องนี้มี XAMPP ติดตั้งอยู่ด้วย แต่ HygienePro "
-              r"ไม่ได้ใช้ C:\xampp\php\php.ini การแก้ไขค่า PHP ต้องแก้ที่ C:\PHP\php.ini เท่านั้น")
+    h(doc, "2.1 สิ่งที่อยู่บนเครื่องเดียวกันแต่ไม่เกี่ยวข้องกับระบบนี้", 2)
+    para(doc, "เครื่อง 192.168.1.201 มีระบบงานอื่นติดตั้งอยู่ด้วย "
+              "รายการต่อไปนี้ไม่ใช่ส่วนหนึ่งของ HygienePro และไม่ต้องติดตั้งเพิ่มเมื่อย้ายเครื่อง "
+              "บันทึกไว้เพื่อไม่ให้แก้ผิดที่")
+    table(doc, ["สิ่งที่อยู่บนเครื่อง", "เกี่ยวข้องกับ HygienePro หรือไม่"], [
+        ["XAMPP (Apache + PHP + MariaDB)",
+         r"ไม่เกี่ยวข้อง — HygienePro ใช้ IIS กับ C:\PHP และใช้ MySQL บริการแยกต่างหาก "
+         r"การแก้ค่า PHP ต้องแก้ที่ C:\PHP\php.ini เท่านั้น ไม่ใช่ C:\xampp\php\php.ini"],
+        ["e-contract และ asset-control",
+         "ไม่เกี่ยวข้อง — เป็นคนละระบบ แต่ใช้ PHP ตัวเดียวกัน จึงต้องระวังเมื่อแก้ php.ini"],
+    ], widths=[5, 11])
+    note(doc, r"ข้อควรระวังเมื่อย้ายเครื่องหรือติดตั้งใหม่: ต้องเตรียม MySQL, IIS และ C:\PHP "
+              "เท่านั้น ไม่ต้องติดตั้ง XAMPP")
 
     note(doc, r"ห้ามปิด extension=snmp ใน C:\PHP\php.ini — มีระบบงานอื่นบนเครื่องเดียวกันใช้อยู่ "
               "ข้อความเตือนเรื่อง MIB ที่ขึ้นตอนรันคำสั่ง artisan เป็นผลข้างเคียงของ extension นี้ "
