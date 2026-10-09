@@ -56,6 +56,10 @@ Thumbs.db
 # ...except the server deployment scripts: the Task Scheduler entries on the UAT
 # box point straight at scripts/server/, so they have to ship with the repo.
 !/scripts/server/
+# ...and the generator for the handover .docx, which carries paths, schedules and
+# version numbers that have to match the running system. Keeping it in the repo is
+# what lets the document be reviewed alongside the code it describes.
+!/scripts/docs/
 /storage/fonts/
 /public/storage_backup/
 /public/test-render.html
