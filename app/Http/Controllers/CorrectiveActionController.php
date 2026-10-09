@@ -104,7 +104,11 @@ class CorrectiveActionController extends Controller
             'open' => $openActions->whereIn('status', ['open', 'assigned'])->count(),
             'resolved' => $openActions->where('status', 'resolved')->count(),
             'closed' => $completedActions->count(),
-            'overdue' => $actions->where('due_date', '<', now())->whereNotIn('status', ['closed', 'verified'])->count(),
+            // Only work nobody has done yet. A finding that was fixed and is
+            // waiting on QA has its own card ("แก้ไขแล้ว (รอตรวจ)") and counting
+            // it here too made this number disagree with the morning notice,
+            // which is how one screen ends up arguing with another.
+            'overdue' => $actions->where('due_date', '<', now())->whereIn('status', ['open', 'assigned'])->count(),
         ];
 
         // QA stepping in for another department is deliberate - it gets the
