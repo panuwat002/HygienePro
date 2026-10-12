@@ -351,7 +351,19 @@
                                                 || auth()->user()->isAdmin() 
                                                 || auth()->user()->isQA()
                                                 || auth()->user()->level >= 5)
-                                                <a href="{{ route('inspection.verification') }}" class="premium-btn-success btn btn-sm flex-grow-1 px-3 py-1">
+                                                {{-- Landing on the default tab meant landing on today's รอทวนสอบ,
+                                                     where this finding is not: it is a finding, from the day it was
+                                                     found, sitting in สั่งแก้ไข. The button looked like it did
+                                                     nothing. It now opens the tab and date the card is actually on. --}}
+                                                @php
+                                                    $verifyLog = $action->log;
+                                                    $verifyDate = $verifyLog?->session?->inspection_date;
+                                                @endphp
+                                                <a href="{{ route('inspection.verification', [
+                                                        'date' => $verifyDate ? \Illuminate\Support\Carbon::parse($verifyDate)->toDateString() : null,
+                                                        'filter_type' => $verifyLog?->employee_id ? 'person' : 'machine',
+                                                        'tab' => 'reclean',
+                                                   ]) }}" class="premium-btn-success btn btn-sm flex-grow-1 px-3 py-1">
                                                     <i class="bi bi-check2-circle me-1"></i> ทวนสอบงาน
                                                 </a>
                                             @else

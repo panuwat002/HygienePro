@@ -246,7 +246,19 @@ class VerificationGroups
         // round with a finding sat in รอทวนสอบ while สั่งแก้ไข read 0 - even
         // though every one of those failures already had a corrective action
         // opened against it automatically.
-        if (! empty($row->is_finding)) {
+        //
+        // While something about it is still outstanding. Without that
+        // condition the shortcut had no exit: is_finding stays true until a
+        // log is 'approved', so a finding that had been fixed and verified
+        // was still sent back to สั่งแก้ไข, could never be reported as
+        // 'verified', and so never reached the รออนุมัติ tab where approving
+        // happens. The one state that would release it was only reachable
+        // from a tab it could not enter - the card sat in a supervisor's
+        // สั่งแก้ไข list forever, with nothing in its detail view left to
+        // press.
+        $outstanding = (int) $row->n_unverified > 0 || (int) $row->n_reclean > 0;
+
+        if (! empty($row->is_finding) && $outstanding) {
             return 'reclean';
         }
 

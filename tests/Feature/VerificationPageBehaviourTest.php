@@ -475,11 +475,19 @@ it('counts the people and the failures in a mixed round', function () {
         ]);
 
         foreach (['pass', $i === 3 ? 'fail' : 'pass'] as $result) {
+            // The finding arrives unverified, which is the state a round
+            // actually ends in: QA has not looked at it yet. That is what puts
+            // it in สั่งแก้ไข, and it is what this test is about. A finding
+            // already verified belongs with the work waiting for approval -
+            // see the test below.
+            $outstanding = $result === 'fail';
+
             InspectionLog::create([
                 'session_id' => $session->id, 'checkpoint_id' => $this->personCheckpoint->id,
                 'employee_id' => $employee->id, 'result' => $result,
                 'inspected_at' => now()->subSeconds(1000 - (++$this->clock)),
-                'verification_status' => 'verified', 'verified_at' => now(),
+                'verification_status' => $outstanding ? null : 'verified',
+                'verified_at' => $outstanding ? null : now(),
                 'acknowledged_at' => $i === 1 ? now() : null,
             ]);
         }
@@ -510,6 +518,44 @@ it('counts the people and the failures in a mixed round', function () {
         ->and($finding->status)->toBe('fail')
         ->and($finding->all_logs)->toHaveCount(1)
         ->and($finding->findings)->toHaveCount(1);
+});
+
+it('lets a verified finding leave สั่งแก้ไข and wait for approval', function () {
+    // The complaint behind this: fixed on the 7th, verified on the 7th, and on
+    // the 12th the สั่งแก้ไข badge still read 1 with nothing left to press.
+    //
+    // A card of findings was sent to สั่งแก้ไข for as long as it was a card of
+    // findings, which is until a log reaches 'approved'. Approving is offered
+    // on the รออนุมัติ tab, and that tab lists cards reported as 'verified' -
+    // which that rule made impossible. The only exit was through a door the
+    // card could not reach.
+    $session = newSession($this, 'personnel');
+
+    $employee = Employee::create([
+        'employee_id' => 'E9', 'fullname' => 'Worker 9', 'department_id' => $this->dept->id,
+        'shift_id' => $this->shift->id, 'qr_code_hash' => 'h9', 'is_active' => true,
+    ]);
+
+    $finding = InspectionLog::create([
+        'session_id' => $session->id, 'checkpoint_id' => $this->personCheckpoint->id,
+        'employee_id' => $employee->id, 'result' => 'fail',
+        'inspected_at' => now()->subSeconds(1000 - (++$this->clock)),
+    ]);
+
+    expect(pageData($this, 'filter_type=person&tab=reclean')['groups'])->toHaveCount(1)
+        ->and(pageData($this, 'filter_type=person&tab=awaiting_approval')['groups'])->toHaveCount(0);
+
+    // QA checks the fix and signs it off.
+    $finding->update(['verification_status' => 'verified', 'verified_at' => now()]);
+
+    expect(pageData($this, 'filter_type=person&tab=reclean')['groups'])->toHaveCount(0)
+        ->and(pageData($this, 'filter_type=person&tab=awaiting_approval')['groups'])->toHaveCount(1);
+
+    // And the manager's approval is what finally takes it off every queue.
+    $finding->update(['verification_status' => 'approved']);
+
+    expect(pageData($this, 'filter_type=person&tab=awaiting_approval')['groups'])->toHaveCount(0)
+        ->and(pageData($this, 'filter_type=person&tab=reclean')['groups'])->toHaveCount(0);
 });
 
 it('counts machines and bare area checks separately in one location', function () {

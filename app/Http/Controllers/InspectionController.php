@@ -2047,8 +2047,11 @@ class InspectionController extends Controller
             // attached. The reopened finding could then satisfy the "nothing
             // closes without a record of what was done" guard using evidence
             // from an entirely different incident.
+            // 'verified' belongs in this list too: QA has already checked that
+            // fix, so reopening it rewrites a finished record exactly as
+            // reopening a resolved one does.
             $finishedLogIds = \App\Models\CorrectiveAction::whereIn('inspection_log_id', $failedLogs->pluck('id'))
-                ->whereIn('status', ['resolved', 'closed'])
+                ->whereIn('status', ['resolved', 'verified', 'closed'])
                 ->pluck('inspection_log_id')
                 ->all();
 
