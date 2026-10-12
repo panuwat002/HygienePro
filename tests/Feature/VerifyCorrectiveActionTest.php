@@ -36,6 +36,11 @@ beforeEach(function () {
     $this->outsider = User::factory()->create([
         'role' => 'staff', 'level' => 1, 'department_id' => $this->dept->id,
     ]);
+    // The page scopes rows by department; an admin sees every row, which is
+    // what this is for - the badge, not the scoping.
+    $this->admin = User::factory()->create([
+        'role' => 'admin', 'level' => 9, 'department_id' => $this->dept->id,
+    ]);
 });
 
 function resolvedFinding($ctx, array $overrides = []): CorrectiveAction
@@ -80,16 +85,46 @@ test('it clears the reclean flag on the inspection log', function () {
         ->and($action->log->fresh()->verifier_id)->toBe($this->qa->id);
 });
 
-test('the person who fixed it cannot verify their own work', function () {
-    // The fixer is also the one who raised it, so authorisation would let them
-    // through. Having done the work is the thing that stops them.
+test('the person who fixed it may verify it, and the record says so', function () {
+    // Refusing this does not produce a second pair of eyes on a shift with one
+    // QA supervisor. It produces a finding nobody can close, which hides more
+    // than a labelled self-check does.
     $action = resolvedFinding($this, ['escalated_by' => $this->fixer->id]);
 
     $this->actingAs($this->fixer)
         ->post(route('corrective.verify'), ['action_id' => $action->id])
-        ->assertSessionHas('error');
+        ->assertSessionHas('success');
 
-    expect($action->fresh()->status)->toBe('resolved');
+    $action->refresh();
+
+    expect($action->status)->toBe('verified')
+        ->and($action->wasSelfVerified())->toBeTrue();
+});
+
+test('a fix checked by somebody else is not marked as self-verified', function () {
+    $action = resolvedFinding($this);
+
+    $this->actingAs($this->qa)->post(route('corrective.verify'), ['action_id' => $action->id]);
+
+    expect($action->fresh()->wasSelfVerified())->toBeFalse();
+});
+
+test('the issues page names the checker, or says it was the same person', function () {
+    $own = resolvedFinding($this, ['escalated_by' => $this->fixer->id]);
+    $this->actingAs($this->fixer)->post(route('corrective.verify'), ['action_id' => $own->id]);
+
+    $this->actingAs($this->admin)
+        ->get(route('corrective.index'))
+        ->assertSuccessful()
+        ->assertSee('แก้ไข+ทวนสอบคนเดียวกัน');
+
+    $other = resolvedFinding($this);
+    $this->actingAs($this->qa)->post(route('corrective.verify'), ['action_id' => $other->id]);
+
+    $this->actingAs($this->admin)
+        ->get(route('corrective.index'))
+        ->assertSuccessful()
+        ->assertSee('ทวนสอบโดย ' . $this->qa->name);
 });
 
 test('somebody with no part in it cannot verify', function () {

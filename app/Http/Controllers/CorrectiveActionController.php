@@ -20,7 +20,11 @@ class CorrectiveActionController extends Controller
             'log.machine.location.department',
             'log.session',
             'escalator',
-            'assignee'
+            'assignee',
+            // The history column names all four people on every row, so all
+            // four load with the page rather than one query per row.
+            'resolver',
+            'verifier',
         ])
         // Sort Priority: Pending Action ('open', 'assigned') -> Resolved -> Closed
         ->orderByRaw("CASE WHEN status IN ('open', 'assigned') THEN 0 ELSE 1 END ASC")
@@ -506,12 +510,16 @@ class CorrectiveActionController extends Controller
             return back()->with('error', 'ทวนสอบได้เฉพาะรายการที่บันทึกการแก้ไขแล้วเท่านั้น (Only a resolved finding can be verified)');
         }
 
-        // Checking your own work is not a check. The record would still show
-        // two names, but they would be the same name.
-        if ($action->resolved_by && $action->resolved_by === $user->id && ! $user->isAdmin()) {
-            return back()->with('error', 'ผู้ที่แก้ไขเองไม่สามารถทวนสอบงานของตัวเองได้ กรุณาให้ผู้อื่นทวนสอบ (The person who fixed it cannot verify it)');
-        }
-
+        // Checking your own work is not much of a check, and this used to
+        // refuse it. On a shift with one QA supervisor - who is often also the
+        // person who stepped in and did the fix - that refusal did not produce
+        // a second pair of eyes. It produced a finding that could never be
+        // closed by anyone, which hides more than a self-check does.
+        //
+        // So it is allowed and labelled instead, the way the verification page
+        // already labels a round whose inspector and verifier are the same
+        // person. The second signature still exists: a manager approves after
+        // this, and that is someone else by construction.
         if (blank($action->action_taken)) {
             return back()->with('error', 'ยังไม่ได้บันทึกวิธีแก้ไข จึงทวนสอบไม่ได้ (No action recorded to verify)');
         }

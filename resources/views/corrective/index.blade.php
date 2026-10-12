@@ -473,6 +473,21 @@
                                                         <i class="bi bi-lightning-charge me-1"></i>ดำเนินการแทน
                                                     </span>
                                                 @endif
+                                                {{-- Allowed, so that a shift with one QA supervisor is not
+                                                     left with findings nobody can close. Said out loud,
+                                                     because the auditor's question is not whether it was
+                                                     checked but who checked it. --}}
+                                                @if($action->wasSelfVerified())
+                                                    <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle mt-1"
+                                                          title="ผู้แก้ไขและผู้ทวนสอบเป็นคนเดียวกัน — ลายเซ็นที่สองคือการอนุมัติของผู้จัดการ">
+                                                        <i class="bi bi-person-exclamation me-1"></i>แก้ไข+ทวนสอบคนเดียวกัน
+                                                    </span>
+                                                @endif
+                                                @if($action->verifier && ! $action->wasSelfVerified())
+                                                    <div class="small text-muted mt-1">
+                                                        <i class="bi bi-shield-check me-1"></i>ทวนสอบโดย {{ $action->verifier->name }}
+                                                    </div>
+                                                @endif
                                             </td>
                                             <td class="pe-4 text-center">
                                                 {{-- A closed action with nothing recorded against it is not

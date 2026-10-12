@@ -127,6 +127,25 @@ class CorrectiveAction extends Model
     }
 
     /**
+     * Did the person who made the fix also sign off on it?
+     *
+     * Allowed, because a shift with one QA supervisor - often the same person
+     * who stepped in and did the work - would otherwise be left with findings
+     * nobody at all could close. But said out loud wherever the record is
+     * read, because an auditor's question is not whether it was checked, it is
+     * who checked it.
+     *
+     * Derived from the two columns rather than stored: a flag could be set
+     * without the people changing, or the people change without the flag.
+     */
+    public function wasSelfVerified(): bool
+    {
+        return $this->verified_by !== null
+            && $this->resolved_by !== null
+            && $this->verified_by === $this->resolved_by;
+    }
+
+    /**
      * Was this dealt with by somebody outside the department that owns it?
      *
      * QA stepping in for Production is deliberate - it gets the floor cleaned
