@@ -351,21 +351,19 @@
                                                 || auth()->user()->isAdmin() 
                                                 || auth()->user()->isQA()
                                                 || auth()->user()->level >= 5)
-                                                {{-- Landing on the default tab meant landing on today's รอทวนสอบ,
-                                                     where this finding is not: it is a finding, from the day it was
-                                                     found, sitting in สั่งแก้ไข. The button looked like it did
-                                                     nothing. It now opens the tab and date the card is actually on. --}}
-                                                @php
-                                                    $verifyLog = $action->log;
-                                                    $verifyDate = $verifyLog?->session?->inspection_date;
-                                                @endphp
-                                                <a href="{{ route('inspection.verification', [
-                                                        'date' => $verifyDate ? \Illuminate\Support\Carbon::parse($verifyDate)->toDateString() : null,
-                                                        'filter_type' => $verifyLog?->employee_id ? 'person' : 'machine',
-                                                        'tab' => 'reclean',
-                                                   ]) }}" class="premium-btn-success btn btn-sm flex-grow-1 px-3 py-1">
-                                                    <i class="bi bi-check2-circle me-1"></i> ทวนสอบงาน
-                                                </a>
+                                                {{-- This used to be a link to the verification page, which left the
+                                                     finding with no action anywhere able to move it: the matching
+                                                     card there was already verified as an inspection record and had
+                                                     nothing left to press. Checking a fix now happens where the fix
+                                                     is written down. --}}
+                                                <form action="{{ route('corrective.verify') }}" method="POST" class="flex-grow-1"
+                                                      onsubmit="return confirm('ยืนยันว่าได้ตรวจสอบแล้วว่าแก้ไขจริง? รายการนี้จะถูกส่งต่อให้ผู้จัดการอนุมัติปิดงาน');">
+                                                    @csrf
+                                                    <input type="hidden" name="action_id" value="{{ $action->id }}">
+                                                    <button type="submit" class="premium-btn-success btn btn-sm w-100 px-3 py-1">
+                                                        <i class="bi bi-check2-circle me-1"></i> ทวนสอบงาน
+                                                    </button>
+                                                </form>
                                             @else
                                                 <span class="badge badge-soft-success w-100 py-1 d-flex align-items-center justify-content-center" style="font-size:0.8rem;">
                                                     <i class="bi bi-hourglass-split me-1"></i> รอ QA ตรวจสอบ

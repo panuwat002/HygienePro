@@ -19,12 +19,14 @@ class CorrectiveAction extends Model
         'escalated_by',
         'assigned_to',
         'resolved_by', // who actually did it - never the same column as who it was given to
+        'verified_by', // who went and looked afterwards - a third person, a third column
         'root_cause',
         'action_taken',
         'proof_image',
         'escalated_at',
         'assigned_at',
         'resolved_at',
+        'verified_at',
         'closed_at',
         'due_date',
         'financial_loss',
@@ -34,6 +36,7 @@ class CorrectiveAction extends Model
         'escalated_at' => 'datetime',
         'assigned_at' => 'datetime',
         'resolved_at' => 'datetime',
+        'verified_at' => 'datetime',
         'closed_at' => 'datetime',
         'due_date' => 'datetime',
         'ai_tags' => 'array',
@@ -116,6 +119,11 @@ class CorrectiveAction extends Model
     public function resolver()
     {
         return $this->belongsTo(User::class, 'resolved_by');
+    }
+
+    public function verifier()
+    {
+        return $this->belongsTo(User::class, 'verified_by');
     }
 
     /**

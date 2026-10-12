@@ -102,6 +102,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/corrective-action/escalate', [App\Http\Controllers\CorrectiveActionController::class, 'escalate'])->name('corrective.escalate');
         Route::get('/corrective-actions', [App\Http\Controllers\CorrectiveActionController::class, 'index'])->name('corrective.index');
         Route::post('/corrective-action/resolve', [App\Http\Controllers\CorrectiveActionController::class, 'resolve'])->name('corrective.resolve');
+        Route::post('/corrective-action/verify', [App\Http\Controllers\CorrectiveActionController::class, 'verifyFix'])->name('corrective.verify');
         Route::post('/corrective-action/close', [App\Http\Controllers\CorrectiveActionController::class, 'close'])->name('corrective.close');
         Route::post('/corrective-action/assign', [App\Http\Controllers\CorrectiveActionController::class, 'assign'])->name('corrective.assign');
         

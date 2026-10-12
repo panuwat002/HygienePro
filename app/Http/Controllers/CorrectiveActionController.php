@@ -469,6 +469,82 @@ class CorrectiveActionController extends Controller
         return back()->with('success', 'มอบหมายงานเรียบร้อยแล้ว (Work delegated successfully.)');
     }
 
+    /**
+     * QA confirms the fix was really made.
+     *
+     * This step existed in the data and nowhere in the building. A finding
+     * reached 'resolved' here, and the only control offered was a link to the
+     * verification page - where the matching card, already verified as an
+     * inspection record, had nothing left to press. The finding sat in
+     * "สิ่งที่ต้องดำเนินการ" with no action in the system able to move it, for
+     * as long as anyone cared to look at it.
+     *
+     * The two records are brought back together here as well: the log keeps
+     * its own verification_status, and leaving it at 'reclean' after the fix
+     * had been checked is what kept the card in สั่งแก้ไข. One act of
+     * checking, so one write to both.
+     */
+    public function verifyFix(Request $request)
+    {
+        $request->validate(['action_id' => 'required|exists:corrective_actions,id']);
+
+        $action = \App\Models\CorrectiveAction::with('log')->findOrFail($request->action_id);
+        $user = auth()->user();
+
+        // Same reach as close(): QA, an admin, the person who raised it, or a
+        // manager answering for the department that owns it.
+        $owner = $action->log?->owningDepartmentId();
+        $isAuthorisedManager = $user->level >= 5
+            && $owner !== null
+            && in_array($user->department_id, \App\Models\CorrectiveAction::departmentsAnsweringFor($owner), true);
+
+        if ($user->id !== $action->escalated_by && ! $user->isAdmin() && ! $user->isQA() && ! $isAuthorisedManager) {
+            return back()->with('error', 'คุณไม่มีสิทธิ์ทวนสอบรายการนี้ (Only QA, the escalator, or the owning manager can verify)');
+        }
+
+        if ($action->status !== 'resolved') {
+            return back()->with('error', 'ทวนสอบได้เฉพาะรายการที่บันทึกการแก้ไขแล้วเท่านั้น (Only a resolved finding can be verified)');
+        }
+
+        // Checking your own work is not a check. The record would still show
+        // two names, but they would be the same name.
+        if ($action->resolved_by && $action->resolved_by === $user->id && ! $user->isAdmin()) {
+            return back()->with('error', 'ผู้ที่แก้ไขเองไม่สามารถทวนสอบงานของตัวเองได้ กรุณาให้ผู้อื่นทวนสอบ (The person who fixed it cannot verify it)');
+        }
+
+        if (blank($action->action_taken)) {
+            return back()->with('error', 'ยังไม่ได้บันทึกวิธีแก้ไข จึงทวนสอบไม่ได้ (No action recorded to verify)');
+        }
+
+        $action->update([
+            'status' => 'verified',
+            'verified_by' => $user->id,
+            'verified_at' => now(),
+        ]);
+
+        // The inspection log is the other half of the same finding. Left at
+        // 'reclean' it keeps the card on the supervisor's สั่งแก้ไข tab after
+        // the work is done, which is the shape of stuck this whole change is
+        // about.
+        if ($action->log && in_array($action->log->verification_status, ['reclean', null], true)) {
+            $action->log->update([
+                'verification_status' => 'verified',
+                'verified_at' => now(),
+                'verifier_id' => $user->id,
+            ]);
+        }
+
+        try {
+            $action->startApprovalFlow();
+        } catch (\Throwable $e) {
+            // No approval flow configured is a setup question, not a reason to
+            // lose the verification that just happened.
+            \Log::warning('CAR verified but approval flow did not start: ' . $e->getMessage());
+        }
+
+        return back()->with('success', 'ทวนสอบเรียบร้อย รายการนี้รอการอนุมัติปิดงาน');
+    }
+
     public function close(Request $request)
     {
         $request->validate(['action_id' => 'required|exists:corrective_actions,id']);
